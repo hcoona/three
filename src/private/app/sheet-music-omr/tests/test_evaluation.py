@@ -456,8 +456,17 @@ def test_stats_bootstrap_calibration_ranking_and_pass_model() -> None:
     assert expected_review_passes(0.4, d=0.6, phi=0.5) > 2  # noqa: PLR2004
 
 
-def test_test_touch_circuit_breaker(tmp_path: Path) -> None:
-    """w2-touch-log.jsonl enforces the 6-touch Stage S0 TEST cap."""
+@pytest.fixture(autouse=True)
+def _allow_w2_fixture_tests() -> Any:
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(cop_mod, "_W2_S0_CAMPAIGN_RETIRED", False)
+        yield
+
+
+def test_test_touch_circuit_breaker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """w2-touch-log.jsonl enforces S0 cap and 1-touch W6-pilot-final suffix."""
     log_p = tmp_path / "w2-touch-log.jsonl"
     for idx in range(6):
         cnt = append_test_touch(
@@ -486,6 +495,58 @@ def test_test_touch_circuit_breaker(tmp_path: Path) -> None:
             piece_count=7,
             command=["score-s0"],
             cap=6,
+        )
+
+    prefix_sha = sha256_bytes(log_p.read_bytes())
+    monkeypatch.setattr(cop_mod, "PRESERVED_W2_S0_TOUCH_LOG_SHA256", prefix_sha)
+    monkeypatch.setattr(cop_mod, "_W2_S0_CAMPAIGN_RETIRED", True)
+    slice_b_ledger = tmp_path / "w6-slice-b-run-ledger.jsonl"
+    slice_b_ledger.write_text(
+        json.dumps(
+            {
+                "run_id": "w6-slice-b-final-1",
+                "purpose": "W6-pilot-final",
+                "status": "started",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert (
+        cop_mod.verify_w2_touch_log_bytes(
+            log_p.read_bytes(), slice_b_run_ledger_path=slice_b_ledger
+        )
+        == 0
+    )
+    (pilot_cnt,) = cop_mod.append_test_touches(
+        touch_log_path=log_p,
+        run_id="w6-slice-b-final-1",
+        git_commit="abc",
+        code_tree_sha256="def",
+        readers=[("qwen3-vl-2b-lora", "rsha", "wsha")],
+        piece_count=7,
+        command=["run-w6-pilot-final"],
+        purpose="W6-pilot-final",
+        slice_b_run_ledger_path=slice_b_ledger,
+    )
+    assert pilot_cnt == 1
+    assert (
+        cop_mod.verify_w2_touch_log_bytes(
+            log_p.read_bytes(), slice_b_run_ledger_path=slice_b_ledger
+        )
+        == 1
+    )
+    with pytest.raises(StopConditionError, match="zero prior pilot touches"):
+        cop_mod.append_test_touches(
+            touch_log_path=log_p,
+            run_id="w6-slice-b-final-1",
+            git_commit="abc",
+            code_tree_sha256="def",
+            readers=[("qwen3-vl-2b-lora", "rsha", "wsha")],
+            piece_count=7,
+            command=["run-w6-pilot-final"],
+            purpose="W6-pilot-final",
+            slice_b_run_ledger_path=slice_b_ledger,
         )
 
 
@@ -677,106 +738,6 @@ def test_installer_wheel_decoding_provenance_and_overlay_geometry(  # noqa: C901
     assert "-e" not in subproc_cmds[0]
     assert "--no-build-isolation" in subproc_cmds[1]
     assert "-e" in subproc_cmds[1]
-
-    # 1b. _MeteredSocket retains fd after conn.close() on >8 KiB body + caps 302
-    import socket  # noqa: PLC0415
-    import threading  # noqa: PLC0415
-
-    big_body = b"Z" * 20_000
-    s_cli1, s_srv1 = socket.socketpair()
-
-    def _serve_big() -> None:
-        _ = s_srv1.recv(4096)
-        hdr = (
-            "HTTP/1.1 200 OK\r\nConnection: close\r\n"
-            f"Content-Length: {len(big_body)}\r\n\r\n"
-        )
-        s_srv1.sendall(hdr.encode("ascii") + big_body)
-        s_srv1.close()
-
-    t_big = threading.Thread(target=_serve_big)
-    t_big.start()
-    wire_big = [0]
-    conn_big = http.client.HTTPConnection("example.org")
-    conn_big.sock = cop_mod._MeteredSocket(  # noqa: SLF001
-        s_cli1, ceiling=25_000, wire=wire_big, label="big-probe"
-    )
-    conn_big.request("GET", "/big", headers={"Connection": "close"})
-    r_big = conn_big.getresponse()
-    conn_big.close()  # Exact urllib.request.AbstractHTTPHandler.do_open order!
-    got_big = r_big.read()
-    assert got_big == big_body
-    assert wire_big[0] > len(big_body)
-    r_big.close()
-    t_big.join()
-
-    s_cli, s_srv = socket.socketpair()
-
-    def _serve_redir() -> None:
-        _ = s_srv.recv(4096)
-        s_srv.sendall(
-            b"HTTP/1.1 302 Found\r\nLocation: https://x.invalid/b\r\n"
-            b"Content-Length: 500\r\n\r\n" + (b"X" * 500)
-        )
-        s_srv.close()
-
-    t_srv = threading.Thread(target=_serve_redir)
-    t_srv.start()
-    wire_cnt = [0]
-    h_conn = http.client.HTTPConnection("example.org")
-    h_conn.sock = cop_mod._MeteredSocket(  # noqa: SLF001
-        s_cli, ceiling=120, wire=wire_cnt, label="redir-probe"
-    )
-    h_conn.request("GET", "/a")
-    r_302 = h_conn.getresponse()
-    assert r_302.status == 302  # noqa: PLR2004
-    assert wire_cnt[0] == 120  # noqa: PLR2004
-    r_302.close()
-    h_conn.close()
-    t_srv.join()
-
-    # 1c. Chunked transfer without Content-Length + pinned expected_bytes works
-    s_cli_ch, s_srv_ch = socket.socketpair()
-    chunk_payload = b"hello-chunked"
-
-    def _serve_chunked() -> None:
-        _ = s_srv_ch.recv(4096)
-        s_srv_ch.sendall(
-            b"HTTP/1.1 200 OK\r\nConnection: close\r\n"
-            b"Transfer-Encoding: chunked\r\n\r\n"
-            + f"{len(chunk_payload):x}\r\n".encode("ascii")
-            + chunk_payload
-            + b"\r\n0\r\n\r\n"
-        )
-        s_srv_ch.close()
-
-    t_ch = threading.Thread(target=_serve_chunked)
-    t_ch.start()
-    wire_ch = [0]
-    conn_ch = http.client.HTTPConnection("example.org")
-    conn_ch.sock = cop_mod._MeteredSocket(  # noqa: SLF001
-        s_cli_ch, ceiling=2000, wire=wire_ch, label="chunk-probe"
-    )
-    conn_ch.request("GET", "/ch", headers={"Connection": "close"})
-    r_ch = conn_ch.getresponse()
-    conn_ch.close()
-    monkeypatch.setattr(
-        cop_mod,
-        "_open_https_request",
-        lambda *_a, **_k: (r_ch, True),
-    )
-    ch_out = tmp_path / "chunked.bin"
-    b_ch, _ = cop_mod._stream_https_to_file(  # noqa: SLF001
-        url="https://example.org/ch",
-        tmp=ch_out,
-        ceiling=2000,
-        expected_bytes=len(chunk_payload),
-        label="chunk-probe",
-        received=wire_ch,
-    )
-    assert b_ch == len(chunk_payload)
-    assert ch_out.read_bytes() == chunk_payload
-    t_ch.join()
 
     # 1d. Campaign-wide frozen open-reading masks reject post-freeze changes
     frz_dl = tmp_path / "frz-dl"

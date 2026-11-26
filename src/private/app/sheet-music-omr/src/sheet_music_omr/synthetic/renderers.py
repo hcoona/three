@@ -7,14 +7,20 @@ import io
 import json
 import logging
 import math
+import os
 import random
 import re
+import shutil
+import signal
+import subprocess
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field, replace
 from importlib.metadata import version
 from itertools import pairwise
+from pathlib import Path
 from statistics import median
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -36,10 +42,11 @@ from sheet_music_omr.comparison import (
     annotate,
 )
 from sheet_music_omr.harness.musescore import (
-    LOCK_NAME,
     STEP_SECONDS,
     _windows_path_for_wsl,
     has_source_verified_defaults,
+    profile_invocation_fence,
+    verify_rendering_preferences,
 )
 from sheet_music_omr.harness.stops import StopConditionError
 from sheet_music_omr.harness.systems import (
@@ -67,15 +74,13 @@ from sheet_music_omr.synthetic.degrade import estimate_staff_space
 from sheet_music_omr.synthetic.ledgers import (
     RESVG_VERSION,
     VEROVIO_VERSION,
-    run_offline_isolated_subprocess,
-    verify_loopback_only_unshare,
+    WORKER_TIMEOUT_SECONDS,
 )
 from sheet_music_omr.writer import write_document
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
     from fractions import Fraction
-    from pathlib import Path
 
     from sheet_music_omr.harness.musescore import MuseScore
     from sheet_music_omr.synthetic.degrade import Box
@@ -1124,24 +1129,29 @@ def _batch_path(path: Path, binary: Path) -> str:
     return str(path.resolve())
 
 
+SOURCE_VERIFIED_MUSESCORE_BUILDS: frozenset[tuple[str, str]] = frozenset(
+    {
+        (
+            "4.7.7.261109195",
+            "89d9145261eb2bec6aedc208b5234b92c01fe6bc5485fec7e2ce28ec05819f31",
+        ),
+    }
+)
+MUSESCORE_CALIBRATION_CACHE_NAME = ".musescore-calibrated.json"
+MUSESCORE_UNREAPED_NAME = ".musescore-unreaped"
+
+
 def _musescore_job(
     ms: MuseScore,
     directory: Path,
     xml: str,
     style: LayoutStyle,
-    *,
-    max_scratch_bytes: int | None = None,
 ) -> None:
     owned = ms.confinement.check(directory)
-    owned.mkdir(parents=True, exist_ok=False)
-    reservation_file: Path | None = None
-    if max_scratch_bytes is not None:
-        reservation_file = owned / SCRATCH_RESERVATION_FILE
-        with reservation_file.open("x", encoding="utf-8") as handle:
-            handle.write(f'{{"reserved_bytes":{max_scratch_bytes}}}\n')
-    source = ms.confinement.write_text(owned / "input.musicxml", xml)
+    owned.mkdir(parents=True, exist_ok=True)
     mss = ms.confinement.write_text(owned / "style.mss", style.musescore_style)
     exe = ms.executable
+    source = ms.confinement.write_text(owned / "input.musicxml", xml)
     job = [
         {
             "in": _batch_path(source, exe),
@@ -1161,7 +1171,8 @@ def _musescore_job(
         "-r",
         "300",
     ]
-    with ms.confinement.lock(ms.confinement.downloads / LOCK_NAME):
+    with profile_invocation_fence(ms.confinement, ms.settings):
+        verify_rendering_preferences(ms)
         ms.check_settings()
         launched_ok = False
         try:
@@ -1173,8 +1184,9 @@ def _musescore_job(
             else:
                 with contextlib.suppress(OSError, StopConditionError):
                     ms.check_settings()
-    if reservation_file is not None:
-        reservation_file.unlink(missing_ok=True)
+    if code is None:
+        msg = "MuseScore batch job timed out"
+        raise StopConditionError(msg)
     if code != 0:
         msg = f"MuseScore W4 job did not complete successfully ({code})"
         raise RenderRejected(msg)
@@ -1290,6 +1302,60 @@ def calibrate_musescore_pixel_scale(
     return (musescore.version, musescore.executable_sha256)
 
 
+def ensure_musescore_calibrated_with_basis(
+    musescore: MuseScore,
+    scratch_dir: Path,
+    *,
+    cache_path: Path | None = None,
+    count_rasters: Callable[[int], None] | None = None,
+) -> tuple[tuple[str, str], str]:
+    """Return calibrated ``(version, sha256)`` and assurance basis."""
+    identity = (musescore.version, musescore.executable_sha256)
+    if identity in SOURCE_VERIFIED_MUSESCORE_BUILDS:
+        return identity, "source_verified"
+    cached: list[list[str]] = []
+    if cache_path is not None and cache_path.is_file():
+        with contextlib.suppress(OSError, ValueError, TypeError):
+            raw = json.loads(cache_path.read_text(encoding="utf-8"))
+            if isinstance(raw, list):
+                cached = [
+                    [str(row[0]), str(row[1])]
+                    for row in raw
+                    if isinstance(row, list) and len(row) == 2  # noqa: PLR2004
+                ]
+        if [identity[0], identity[1]] in cached:
+            return identity, "cached_calibration"
+    verified = calibrate_musescore_pixel_scale(
+        musescore, scratch_dir, count_rasters=count_rasters
+    )
+    if cache_path is not None:
+        entry = [verified[0], verified[1]]
+        if entry not in cached:
+            cached.append(entry)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cache_path.with_name(f".{cache_path.name}.{uuid4().hex}")
+        tmp.write_text(json.dumps(cached, indent=2) + "\n", encoding="utf-8")
+        tmp.replace(cache_path)
+    return verified, "calibrated_in_run"
+
+
+def ensure_musescore_calibrated(
+    musescore: MuseScore,
+    scratch_dir: Path,
+    *,
+    cache_path: Path | None = None,
+    count_rasters: Callable[[int], None] | None = None,
+) -> tuple[str, str]:
+    """Skip pixel calibration for source-verified or cached 4.x builds."""
+    identity, _ = ensure_musescore_calibrated_with_basis(
+        musescore,
+        scratch_dir,
+        cache_path=cache_path,
+        count_rasters=count_rasters,
+    )
+    return identity
+
+
 def _safe_count_rasters(
     output_dir: Path,
     count_rasters: Callable[[int], None] | None,
@@ -1309,25 +1375,6 @@ def _safe_count_rasters(
     return observed
 
 
-def _invoke_musescore_job(
-    musescore: MuseScore,
-    output_dir: Path,
-    encoded: str,
-    style: LayoutStyle,
-    max_scratch_bytes: int | None,
-) -> None:
-    if max_scratch_bytes is None:
-        _musescore_job(musescore, output_dir, encoded, style)
-    else:
-        _musescore_job(
-            musescore,
-            output_dir,
-            encoded,
-            style,
-            max_scratch_bytes=max_scratch_bytes,
-        )
-
-
 def render_musescore(  # noqa: PLR0913
     x_inj: str,
     style: LayoutStyle,
@@ -1339,7 +1386,6 @@ def render_musescore(  # noqa: PLR0913
     calibrated_identity: tuple[str, str] | None = None,
     max_pages: int = 5_000,
     count_rasters: Callable[[int], None] | None = None,
-    max_scratch_bytes: int | None = None,
 ) -> RenderResult:
     """Render a public sample through the settings-guarded host job driver."""
     engine = "musescore"
@@ -1351,11 +1397,11 @@ def render_musescore(  # noqa: PLR0913
             set(),
             RenderGate("excluded", reason="host_public_only"),
         )
-    if not has_source_verified_defaults(
-        musescore.version
-    ) and calibrated_identity != (
-        musescore.version,
-        musescore.executable_sha256,
+    identity = (musescore.version, musescore.executable_sha256)
+    if (
+        identity not in SOURCE_VERIFIED_MUSESCORE_BUILDS
+        and not has_source_verified_defaults(musescore.version)
+        and calibrated_identity != identity
     ):
         msg = "MuseScore version requires an identity-bound pixel calibration"
         raise StopConditionError(msg)
@@ -1367,9 +1413,7 @@ def render_musescore(  # noqa: PLR0913
         stopped = False
         observed = 0
         try:
-            _invoke_musescore_job(
-                musescore, output_dir, encoded, style, max_scratch_bytes
-            )
+            _musescore_job(musescore, output_dir, encoded, style)
         except StopConditionError:
             stopped = True
             raise
@@ -2163,15 +2207,62 @@ for page in range(1, count + 1):
 """
 
 
-SCRATCH_RESERVATION_FILE = ".w6-scratch-reservation.json"
-
-
 def _rendered_raster_count(directory: Path) -> int:
+    if not directory.exists():
+        return 0
     return sum(
         re.fullmatch(r"score(?:-\d+)?\.png", path.name) is not None
-        for path in directory.glob("score*.png")
+        for path in directory.rglob("score*.png")
         if path.is_file()
     )
+
+
+def _reap_verovio_process(proc: subprocess.Popen[bytes]) -> bool:
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+        killed_group = True
+    except ProcessLookupError:
+        killed_group = True
+    except OSError:
+        killed_group = False
+    try:
+        proc.wait(timeout=5.0)
+    except subprocess.TimeoutExpired, OSError:
+        return False
+    return killed_group
+
+
+def _await_verovio_worker(
+    proc: subprocess.Popen[bytes],
+    work: Path,
+    *,
+    max_pages: int,
+    count_rasters: Callable[[int], None] | None,
+    unreaped: list[bool],
+) -> None:
+    try:
+        proc.communicate(timeout=WORKER_TIMEOUT_SECONDS)
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        reaped = _reap_verovio_process(proc)
+        unreaped[0] = not reaped
+        if count_rasters is not None:
+            count_rasters(_rendered_raster_count(work) if reaped else max_pages)
+        if isinstance(exc, subprocess.TimeoutExpired) or not reaped:
+            msg = "Verovio W4 job timed out or left an unconfirmed worker group"
+            raise StopConditionError(msg) from exc
+        raise
+    except BaseException:
+        reaped = _reap_verovio_process(proc)
+        unreaped[0] = not reaped
+        if count_rasters is not None:
+            count_rasters(_rendered_raster_count(work) if reaped else max_pages)
+        raise
+    if proc.returncode != 0 and not _reap_verovio_process(proc):
+        unreaped[0] = True
+        if count_rasters is not None:
+            count_rasters(max_pages)
+        msg = "Verovio W4 worker failed with unconfirmed process-group cleanup"
+        raise StopConditionError(msg)
 
 
 def _run_verovio(  # noqa: PLR0913
@@ -2182,79 +2273,93 @@ def _run_verovio(  # noqa: PLR0913
     *,
     max_pages: int,
     count_rasters: Callable[[int], None] | None,
-    max_scratch_bytes: int | None = None,
+    max_scratch_bytes: int = 0,
 ) -> tuple[str, tuple[tuple[str, bytes], ...]]:
-    verify_loopback_only_unshare()
     scratch_root = scratch_root.resolve()
     scratch_root.mkdir(parents=True, exist_ok=True)
     python = downloads.resolve() / "w4-synth-venv" / "bin" / "python"
     rendered: list[tuple[str, bytes]] = []
     mei = ""
-    xml_bytes = xml.encode("utf-8")
-    inner_budget = 0
-    if max_scratch_bytes is not None:
-        inner_budget = max_scratch_bytes - 2 * len(xml_bytes) - 1024 * 1024
-        if inner_budget <= 0:
-            msg = "Verovio scratch budget exhausted before subprocess launch"
-            raise StopConditionError(msg)
-    # Stage MusicXML under an opaque name, like page-only detector inputs.
-    staged = scratch_root / f"verovio-input-{uuid4().hex}.musicxml"
-    with staged.open("xb") as handle:
-        handle.write(xml_bytes)
-    reservation_file: Path | None = None
-    if max_scratch_bytes is not None:
-        reservation_file = scratch_root / SCRATCH_RESERVATION_FILE
-        with reservation_file.open("x", encoding="utf-8") as handle:
-            handle.write(f'{{"reserved_bytes":{max_scratch_bytes}}}\n')
-
-    def collect(scratch: Path) -> None:
-        nonlocal mei
-        if reservation_file is not None:
-            reservation_file.unlink(missing_ok=True)
-        rasters = _rendered_raster_count(scratch)
-        if count_rasters is not None:
-            count_rasters(rasters)
-        reexport = scratch / "score.mei"
-        if reexport.is_file() and rasters > 0:
-            with contextlib.suppress(RenderRejected, OSError):
-                pngs = _numbered_pngs(scratch)
-                mei = reexport.read_text(encoding="utf-8")
-                rendered.extend(
-                    (
-                        (scratch / f"score-{page}.svg").read_text(
-                            encoding="utf-8"
-                        ),
-                        png,
-                    )
-                    for page, png in enumerate(pngs, 1)
-                )
-
+    work = Path(tempfile.mkdtemp(prefix="vrv-", dir=scratch_root))
+    unreaped = [False]
     try:
-        result = run_offline_isolated_subprocess(
+        staged = work / "input.musicxml"
+        staged.write_text(xml, encoding="utf-8")
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": str(work),
+            "TMPDIR": str(work),
+            "LANG": "C.UTF-8",
+            "OMP_NUM_THREADS": "1",
+            "HF_HUB_OFFLINE": "1",
+            "TRANSFORMERS_OFFLINE": "1",
+            "PIP_NO_INDEX": "1",
+            "UV_OFFLINE": "1",
+        }
+        proc = subprocess.Popen(  # noqa: S603
             [
                 str(python),
                 "-c",
                 _VEROVIO_WORKER,
                 json.dumps(dict(style.verovio_options)),
-                "{SCRATCH_PNG}",
+                str(staged),
                 str(max_pages),
                 VEROVIO_VERSION,
                 RESVG_VERSION,
-                str(inner_budget),
+                str(max(0, max_scratch_bytes)),
             ],
-            scratch_root=scratch_root,
-            input_page_png=staged,
-            scratch_page_name="input.musicxml",
-            forbidden_paths=(downloads,),
-            on_before_cleanup=collect,
+            cwd=work,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            close_fds=True,
+            start_new_session=True,
         )
+        _await_verovio_worker(
+            proc,
+            work,
+            max_pages=max_pages,
+            count_rasters=count_rasters,
+            unreaped=unreaped,
+        )
+        rasters = _rendered_raster_count(work)
+        if count_rasters is not None:
+            count_rasters(rasters)
+        if proc.returncode == 93:  # noqa: PLR2004
+            msg = "Verovio scratch output exceeded byte budget"
+            raise StopConditionError(msg)
+        reexport = work / "score.mei"
+        if proc.returncode == 0 and reexport.is_file() and rasters > 0:
+            with contextlib.suppress(
+                RenderRejected, OSError, UnicodeDecodeError
+            ):
+                pngs = _numbered_pngs(work)
+                mei_candidate = reexport.read_text(encoding="utf-8")
+                pairs = [
+                    (
+                        (work / f"score-{page}.svg").read_text(
+                            encoding="utf-8"
+                        ),
+                        png,
+                    )
+                    for page, png in enumerate(pngs, 1)
+                ]
+                mei = mei_candidate
+                rendered = pairs
+        returncode = proc.returncode
+        if (returncode or not mei or not rendered) and not (
+            _reap_verovio_process(proc)
+        ):
+            unreaped[0] = True
+            if count_rasters is not None and max_pages > rasters:
+                count_rasters(max_pages - rasters)
+            msg = "Verovio W4 worker incomplete with unconfirmed group cleanup"
+            raise StopConditionError(msg)
     finally:
-        staged.unlink()
-    if result.returncode == 93:  # noqa: PLR2004
-        msg = "Verovio scratch output exceeded pre-dispatch byte bound"
-        raise StopConditionError(msg)
-    if result.returncode or not mei or not rendered:
-        msg = f"Verovio W4 job failed or was incomplete ({result.returncode})"
+        if not unreaped[0]:
+            shutil.rmtree(work, ignore_errors=True)
+    if returncode or not mei or not rendered:
+        msg = f"Verovio W4 job failed or was incomplete ({returncode})"
         raise RenderRejected(msg)
     return mei, tuple(rendered)
 
@@ -2327,7 +2432,7 @@ def stage_verovio_subprocess(  # noqa: PLR0913
     *,
     max_pages: int = 5_000,
     count_rasters: Callable[[int], None] | None = None,
-    max_scratch_bytes: int | None = None,
+    max_scratch_bytes: int = 0,
 ) -> RenderResult | StagedVerovio:
     """Run the isolated Verovio subprocess and return raw SVG/PNG/MEI data."""
     engine = "verovio"
@@ -2426,7 +2531,7 @@ def render_verovio(  # noqa: PLR0913
     *,
     max_pages: int = 5_000,
     count_rasters: Callable[[int], None] | None = None,
-    max_scratch_bytes: int | None = None,
+    max_scratch_bytes: int = 0,
 ) -> RenderResult:
     """Render and admit a sample only with exact SVG and symbolic gates."""
     staged = stage_verovio_subprocess(

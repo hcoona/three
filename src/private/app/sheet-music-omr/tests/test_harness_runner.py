@@ -21,6 +21,7 @@ from tokenizers.models import BPE
 from tokenizers.pre_tokenizers import ByteLevel
 
 from sheet_music_omr.harness import cli, steps
+from sheet_music_omr.harness import downloads as dl_mod
 from sheet_music_omr.harness import run as runner_module
 from sheet_music_omr.harness.cli import Dependencies, main
 from sheet_music_omr.harness.confine import Confinement
@@ -1110,6 +1111,11 @@ def test_write_report_refuses_a_gold_identity_in_public_text(
     with pytest.raises(PrivacyError):
         write_report(roots)
     assert not (roots.run / "report" / "public.md").exists()
+
+
+@pytest.fixture(autouse=True)
+def _allow_w1_fixture_runner(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(dl_mod, "_W1_CAMPAIGN_RETIRED", False)
 
 
 def _preflight(tmp_path: Path, dependencies: Dependencies) -> None:

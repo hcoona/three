@@ -1,11 +1,10 @@
-"""Durable Slice A effect budgets and the sealed TRAIN_DEV read boundary."""
+"""Durable Slice A effect budgets and portable TRAIN_DEV verification."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import os
-import pwd
 import re
 import stat
 import subprocess
@@ -14,7 +13,6 @@ import urllib.parse
 import urllib.request
 import uuid
 from contextlib import contextmanager, suppress
-from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NoReturn, Self
 
@@ -35,6 +33,7 @@ from sheet_music_omr.synthetic.ledgers import (
 from sheet_music_omr.training.asset_locks import (
     EXPECTED_TRAINDEV_PORTABLE_SHA256,
     TRAINDEV_GOLD_IDS,
+    TRAINDEV_PAGE_COUNTS,
     W6_MODEL_METADATA_LOCKS,
     compute_w6_metadata_lock_sha256,
     compute_w6_wheel_lock_sha256,
@@ -43,19 +42,18 @@ from sheet_music_omr.training.asset_locks import (
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sequence
-    from contextlib import AbstractContextManager
 
 W6_DOWNLOAD_LEDGER_NAME = "w6-slice-a-download-ledger.json"
+W6_DOWNLOAD_LOCK_NAME = ".w6-slice-a-downloads.lock"
 W6_DOWNLOAD_CAP_BYTES = 15_000_000_000
 W6_RUN_LEDGER_NAME = "w6-slice-a-run-ledger.jsonl"
 W6_RUN_LOCK_NAME = ".w6-slice-a-run-ledger.lock"
-W6_DISK_LOCK_NAME = "w6-slice-a-disk.lock"
+W6_DISK_LOCK_NAME = ".w6-slice-a-disk.lock"
 W6_DISK_CAP_BYTES = 100_000_000_000
 W6_SINGLE_RUN_PAGE_CAP = 15_000
 W6_CUMULATIVE_PAGE_CAP = 35_000
 W6_PRIVATE_COPISTA_CAP = 10
 W6_WORKER_TIMEOUT_SECONDS = 300.0
-_CAMPAIGN_ANCHOR_PATH: Path | None = None
 PRIOR_CAMPAIGN_LEDGER_SHA256S: dict[str, str] = {
     "download-ledger.json": (
         "b6f071893803a2f2ddea4cf5c454a9b484f5a736d1ba7b30159898c2bf52e47b"
@@ -73,6 +71,20 @@ PRIOR_CAMPAIGN_LEDGER_SHA256S: dict[str, str] = {
         "aef5ab7a5ba47c69a6fab574a83d275c81920f9debef51871e67d521318b8b57"
     ),
 }
+_COMMITTED_PRIOR_LEDGER_SHA256S: dict[str, str] = dict(
+    PRIOR_CAMPAIGN_LEDGER_SHA256S
+)
+PRESERVED_SLICE_A_LEDGER_SHA256S: dict[str, str] = {
+    W6_DOWNLOAD_LEDGER_NAME: (
+        "9a4c84f60f73155a4f5169f367e8a5ebca51cf5c0c2ab0758c6c7b37a6331711"
+    ),
+    W6_RUN_LEDGER_NAME: (
+        "e2120f815812a8ac181fc671cef40af1446f2cc27688aa0244282d2c70dc9004"
+    ),
+}
+ALL_PRESERVED_CAMPAIGN_LEDGER_SHA256S: dict[str, str] = (
+    PRIOR_CAMPAIGN_LEDGER_SHA256S | PRESERVED_SLICE_A_LEDGER_SHA256S
+)
 W6_OFFLINE_ENV = {
     "HF_HUB_OFFLINE": "1",
     "TRANSFORMERS_OFFLINE": "1",
@@ -87,8 +99,8 @@ _META_NAMES = frozenset(
 )
 _WIRE_OVERHEAD = 64 * 1024
 _DIR_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY
-_FILE_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
 _MANIFEST = "traindev-manifest.json"
+_LEGACY_ATTESTATION = "staging-attestation.json"
 _PAGE_NAME = re.compile(r"pages/(gold-\d{2})-p([0-9]{2})\.png")
 _SHA = re.compile(r"[a-f0-9]{64}")
 _PAGE_COUNT = 69
@@ -125,18 +137,58 @@ def _read_json(path: Path) -> dict[str, Any]:
         raise StopConditionError(msg) from exc
 
 
+def _is_retired_production_campaign() -> bool:
+    return PRIOR_CAMPAIGN_LEDGER_SHA256S == _COMMITTED_PRIOR_LEDGER_SHA256S
+
+
+def _verify_single_preserved_ledger(
+    path: Path, name: str, expected: str
+) -> None:
+    raw = _ledger_bytes(path)
+    if (
+        name == "w2-touch-log.jsonl"
+        and expected == copista.PRESERVED_W2_S0_TOUCH_LOG_SHA256
+    ):
+        copista.verify_w2_touch_log_bytes(
+            raw,
+            slice_b_run_ledger_path=path.parent / "w6-slice-b-run-ledger.jsonl",
+        )
+        return
+    if hashlib.sha256(raw).hexdigest() != expected:
+        _stop(f"preserved campaign ledger SHA-256 mismatch: {name}")
+
+
 def verify_prior_campaign_ledgers(downloads_dir: Path) -> dict[str, object]:
     """Require byte-for-byte preservation of retired campaign ledgers."""
     downloads = downloads_dir.absolute()
     check_no_symlink_under(downloads, Path(downloads.anchor))
-    for name, expected in PRIOR_CAMPAIGN_LEDGER_SHA256S.items():
+    required = (
+        ALL_PRESERVED_CAMPAIGN_LEDGER_SHA256S
+        if _is_retired_production_campaign()
+        else PRIOR_CAMPAIGN_LEDGER_SHA256S
+    )
+    for name, expected in required.items():
         path = downloads / name
         check_no_symlink_under(path, downloads)
         if not path.is_file():
             _stop(f"missing prior campaign ledger: {name}")
-        if hashlib.sha256(_ledger_bytes(path)).hexdigest() != expected:
-            _stop(f"prior campaign ledger SHA-256 mismatch: {name}")
-    return dict(PRIOR_CAMPAIGN_LEDGER_SHA256S)
+        _verify_single_preserved_ledger(path, name, expected)
+    return dict(required)
+
+
+def verify_all_preserved_campaign_ledgers(
+    downloads_dir: Path,
+) -> dict[str, str]:
+    """Verify all 7 preserved W1 through W6 Slice A campaign ledgers."""
+    downloads = downloads_dir.absolute()
+    check_no_symlink_under(downloads, Path(downloads.anchor))
+    for name, expected in ALL_PRESERVED_CAMPAIGN_LEDGER_SHA256S.items():
+        path = downloads / name
+        check_no_symlink_under(path, downloads)
+        if not path.is_file():
+            _stop(f"missing preserved campaign ledger: {name}")
+        _verify_single_preserved_ledger(path, name, expected)
+    return dict(ALL_PRESERVED_CAMPAIGN_LEDGER_SHA256S)
 
 
 def _json_bytes(value: object) -> bytes:
@@ -195,54 +247,43 @@ def _validate_https(url: str) -> None:
 def _transfer_locked(
     url: str, dest: Path, size: int, budget: int, wire: list[int]
 ) -> None:
-    # No proxy CONNECT or urllib fallback can bypass the W2 wire meter.
-    opener = urllib.request.build_opener(
-        urllib.request.ProxyHandler({}),
-        copista._MeteredHTTPSHandler(budget, wire, "W6 asset"),  # noqa: SLF001
-        copista._NoRedirectHandler(),  # noqa: SLF001
+    _validate_https(url)
+    if Path(_wheel_name(url)).suffix.lower() in {
+        ".py",
+        ".bin",
+        ".pt",
+        ".pth",
+        ".safetensors",
+        ".ckpt",
+        ".onnx",
+    }:
+        _stop("refusing remote code or weights in Slice A")
+    request = urllib.request.Request(  # noqa: S310
+        url, headers={"User-Agent": "sheet-music-omr-w6/1.0"}
     )
-    for _ in range(6):
-        _validate_https(url)
-        if Path(_wheel_name(url)).suffix.lower() in {
-            ".py",
-            ".bin",
-            ".pt",
-            ".pth",
-            ".safetensors",
-            ".ckpt",
-            ".onnx",
-        }:
-            _stop("refusing remote code or weights in Slice A")
-        request = urllib.request.Request(  # noqa: S310
-            url, headers={"Accept-Encoding": "identity"}
-        )
-        with opener.open(request, timeout=180) as response:
-            if response.status in {301, 302, 303, 307, 308}:
-                location = response.headers.get("Location")
-                if not location:
-                    _stop("Slice A transfer redirect lacks a location")
-                url = urllib.parse.urljoin(url, location)
-                continue
-            if (
-                response.status != HTTPStatus.OK
-                or response.headers.get_all("Content-Length") != [str(size)]
-                or response.headers.get("Transfer-Encoding") is not None
-                or response.headers.get("Content-Encoding", "identity")
-                != "identity"
-            ):
-                _stop("Slice A response is not an exact locked payload")
-            with dest.open("xb") as stream:
-                remaining = size
-                while remaining:
-                    chunk = response.read(min(remaining, 1 << 20))
-                    if not chunk:
-                        _stop("truncated Slice A payload")
-                    stream.write(chunk)
-                    remaining -= len(chunk)
-                stream.flush()
-                os.fsync(stream.fileno())
-            return
-    _stop("too many Slice A redirects")
+    with copista._open_https_request(request, timeout=180) as response:  # noqa: SLF001
+        final_url = getattr(response, "url", url)
+        if isinstance(final_url, str):
+            _validate_https(final_url)
+        cl_hdr = response.headers.get("Content-Length")
+        if cl_hdr is not None and cl_hdr.strip() != str(size):
+            _stop("Slice A response Content-Length differs from lock")
+        with dest.open("xb") as stream:
+            remaining = size
+            while remaining:
+                chunk = response.read(min(remaining, 1 << 20))
+                if not chunk:
+                    _stop("truncated Slice A payload")
+                wire[0] += len(chunk)
+                if wire[0] > budget:
+                    _stop("Slice A payload exceeded transfer budget")
+                stream.write(chunk)
+                remaining -= len(chunk)
+            if response.read(1):
+                wire[0] += 1
+                _stop("Slice A payload exceeded locked size")
+            stream.flush()
+            os.fsync(stream.fileno())
 
 
 def _ledger_bytes(path: Path, *, optional: bool = False) -> bytes:
@@ -277,32 +318,38 @@ def _read_download_ledger(raw: bytes) -> dict[str, Any]:
 
 
 class W6DownloadLedger:
-    """Reserve a bounded response (payload plus wire overhead) before GET."""
+    """Reserve a bounded response before GET in self-contained DOWNLOADS."""
 
-    def __init__(self, downloads_dir: Path) -> None:
+    def __init__(
+        self, downloads_dir: Path, *, allow_init: bool = False
+    ) -> None:
         """Locate the persistent shared download ledger."""
-        _read_campaign_anchor()
         self.downloads_dir = downloads_dir.absolute()
+        check_no_symlink_under(
+            self.downloads_dir, Path(self.downloads_dir.anchor)
+        )
         self.path = self.downloads_dir / W6_DOWNLOAD_LEDGER_NAME
+        self.lock_path = self.downloads_dir / W6_DOWNLOAD_LOCK_NAME
+        self._allow_init = allow_init
 
-    def _write(self, data: dict[str, Any], anchor: dict[str, Any]) -> None:
-        encoded = _json_bytes(data) + b"\n"
-        new_sha = hashlib.sha256(encoded).hexdigest()
-        anchor["pending_download_ledger_bytes"] = len(encoded)
-        anchor["pending_download_ledger_sha256"] = new_sha
-        _write_json(_campaign_anchor_path(), anchor)
-        _write_json(self.path, data)
-        anchor.pop("pending_download_ledger_bytes", None)
-        anchor.pop("pending_download_ledger_sha256", None)
-        anchor["download_ledger_bytes"] = len(encoded)
-        anchor["download_ledger_sha256"] = new_sha
-        _write_json(_campaign_anchor_path(), anchor)
+    def _load_or_init_unlocked(self) -> dict[str, Any]:
+        verify_prior_campaign_ledgers(self.downloads_dir)
+        if not self.path.exists():
+            if not self._allow_init:
+                _stop(f"missing Slice A download ledger: {self.path.name}")
+            data: dict[str, Any] = {
+                "schema": "omr-w6-slice-a-download-ledger-v1",
+                "total_bytes": 0,
+                "entries": [],
+            }
+            _write_json(self.path, data)
+            return data
+        return _read_download_ledger(_ledger_bytes(self.path))
 
     def total_bytes(self) -> int:
         """Return settled bytes plus every outstanding reservation."""
-        with _campaign_lock():
-            _, raw, _ = _bind_campaign_roots(self.downloads_dir)
-            return _integer(_read_download_ledger(raw)["total_bytes"])
+        with _exclusive_file_lock(self.lock_path):
+            return _integer(self._load_or_init_unlocked()["total_bytes"])
 
     def ensure_cached_file(
         self, *, url: str, dest: Path, expected_bytes: int, expected_sha256: str
@@ -319,9 +366,8 @@ class W6DownloadLedger:
         dest = dest.absolute()
         check_no_symlink_under(dest, self.downloads_dir)
         budget = expected_bytes + _WIRE_OVERHEAD
-        with _campaign_lock():
-            anchor, raw, _ = _bind_campaign_roots(self.downloads_dir)
-            data = _read_download_ledger(raw)
+        with _exclusive_file_lock(self.lock_path):
+            data = self._load_or_init_unlocked()
             candidates = [dest]
             if name.endswith(".whl"):
                 candidates.extend(_cache_paths(self.downloads_dir, name))
@@ -331,6 +377,8 @@ class W6DownloadLedger:
                     return path
             if dest.exists():
                 _stop("cached Slice A asset has drifted")
+            if _is_retired_production_campaign():
+                _stop("W6 CPU Slice A download ledger is retired and read-only")
             if data["total_bytes"] + budget > W6_DOWNLOAD_CAP_BYTES:
                 _stop("Slice A 15 GB download cap would be exceeded")
             record = {
@@ -342,10 +390,10 @@ class W6DownloadLedger:
             }
             data["entries"].append(record)
             data["total_bytes"] += budget
-            self._write(data, anchor)
+            _write_json(self.path, data)
             self._receive(url, dest, expected_bytes, expected_sha256, record)
             data["total_bytes"] -= budget - _integer(record["charged_bytes"])
-            self._write(data, anchor)
+            _write_json(self.path, data)
         return dest
 
     @staticmethod
@@ -418,13 +466,13 @@ def setup_w6_slice_a(
     downloads_dir: Path, *, init_campaign: bool = False
 ) -> dict[str, object]:
     """Fetch only locked wheels and metadata; install exact local files."""
+    if _is_retired_production_campaign():
+        _stop("W6 Slice A provisioning (#1766/#1769) is retired")
     downloads = downloads_dir.absolute()
     root = repository_root()
     if root is None or downloads.resolve().is_relative_to(root):
         _stop("W6 provisioning directory must be outside the git worktree")
-    if init_campaign:
-        _init_w6_campaign_anchor(downloads)
-    ledger = W6DownloadLedger(downloads)
+    ledger = W6DownloadLedger(downloads, allow_init=init_campaign)
     ledger.total_bytes()
     wheels = resolve_host_w6_wheels()
     venv = downloads / "w6-train-venv"
@@ -583,245 +631,15 @@ def check_w6_runs_root(
     return runs
 
 
-def _default_campaign_anchor_path() -> Path:
-    return (
-        Path(pwd.getpwuid(os.geteuid()).pw_dir)
-        / ".local"
-        / "state"
-        / "sheet-music-omr"
-        / "w6-slice-a-campaign-anchor.json"
-    )
-
-
-def _campaign_anchor_path() -> Path:
-    return _CAMPAIGN_ANCHOR_PATH or _default_campaign_anchor_path()
-
-
-def _read_campaign_anchor() -> dict[str, Any]:
-    path = _campaign_anchor_path()
-    check_no_symlink_under(path, Path(path.anchor))
-    if not path.is_file():
-        _stop(
-            "missing Slice A campaign anchor (--init-campaign is for first "
-            "use only; recover original state or escalate)"
-        )
-    return _read_json(path)
-
-
-def _campaign_lock() -> AbstractContextManager[None]:
-    path = _campaign_anchor_path()
-    check_no_symlink_under(path, Path(path.anchor))
-    return _exclusive_file_lock(path.with_suffix(".lock"))
-
-
-def _disk_lock() -> AbstractContextManager[None]:
-    path = _campaign_anchor_path()
-    check_no_symlink_under(path, Path(path.anchor))
-    return _exclusive_file_lock(path.with_name(W6_DISK_LOCK_NAME))
-
-
-def _campaign_root_id(path: Path) -> list[int]:
-    try:
-        info = path.stat()
-    except OSError as exc:
-        msg = "missing or unreadable Slice A campaign root"
-        raise StopConditionError(msg) from exc
-    if not stat.S_ISDIR(info.st_mode):
-        _stop("invalid Slice A campaign root")
-    return list(_identity(info))
-
-
-def _matches_root_id(recorded: object, observed: list[int]) -> bool:
-    return (
-        isinstance(recorded, list)
-        and all(type(value) is int for value in recorded)
-        and recorded == observed
-    )
-
-
-def _campaign_roots(downloads: Path, runs: Path) -> dict[str, object]:
-    return {
-        "downloads_path": str(downloads.resolve()),
-        "downloads_root_id": _campaign_root_id(downloads),
-        "runs_path": str(runs),
-        "runs_root_id": _campaign_root_id(runs),
-    }
-
-
-def _check_bound_roots(downloads: Path, anchor: Mapping[str, object]) -> Path:
-    runs = check_w6_runs_root(downloads)
-    if (
-        anchor.get("downloads_path") != str(downloads.resolve())
-        or anchor.get("runs_path") != str(runs)
-        or not _matches_root_id(
-            anchor.get("downloads_root_id"), _campaign_root_id(downloads)
-        )
-        or not _matches_root_id(
-            anchor.get("runs_root_id"), _campaign_root_id(runs)
-        )
-    ):
-        _stop("Slice A campaign is anchored to a different root")
-    return runs
-
-
-def _run_ledger_stamp(raw: bytes) -> dict[str, object]:
-    return {
-        "run_ledger_bytes": len(raw),
-        "run_ledger_prefix_sha256": hashlib.sha256(raw).hexdigest(),
-    }
-
-
-def _campaign_ledger_bytes(
-    downloads: Path,
-    anchor: dict[str, Any],
-    *,
-    require_run: bool = False,
-    allow_recover: bool = True,
-) -> tuple[bytes, bytes]:
-    download_raw = _ledger_bytes(downloads / W6_DOWNLOAD_LEDGER_NAME)
-    observed = (len(download_raw), hashlib.sha256(download_raw).hexdigest())
-    committed = (
-        _integer(anchor.get("download_ledger_bytes"), 1),
-        _digest(anchor.get("download_ledger_sha256")),
-    )
-    pending_sha = anchor.get("pending_download_ledger_sha256")
-    pending = (
-        (
-            _integer(anchor.get("pending_download_ledger_bytes"), 1),
-            _digest(pending_sha),
-        )
-        if allow_recover and pending_sha is not None
-        else None
-    )
-    if observed == pending:
-        anchor.pop("pending_download_ledger_bytes", None)
-        anchor.pop("pending_download_ledger_sha256", None)
-        anchor["download_ledger_bytes"], anchor["download_ledger_sha256"] = (
-            observed
-        )
-        _write_json(_campaign_anchor_path(), anchor)
-    elif observed == committed:
-        if allow_recover and pending is not None:
-            anchor.pop("pending_download_ledger_bytes", None)
-            anchor.pop("pending_download_ledger_sha256", None)
-            _write_json(_campaign_anchor_path(), anchor)
-    else:
-        _stop("Slice A download ledger length or SHA-256 mismatch")
-    run_raw = _ledger_bytes(
-        downloads / W6_RUN_LEDGER_NAME, optional=not require_run
-    )
-    count = _integer(anchor.get("run_ledger_bytes"))
-    if len(run_raw) < count or hashlib.sha256(
-        run_raw[:count]
-    ).hexdigest() != _digest(anchor.get("run_ledger_prefix_sha256")):
-        _stop("Slice A run ledger prefix SHA-256 mismatch")
-    return download_raw, run_raw
-
-
-def _bind_campaign_roots(
-    downloads: Path,
-) -> tuple[dict[str, Any], bytes, bytes]:
-    """Validate the pinned roots and ledger bytes under the campaign lock."""
-    anchor = _read_campaign_anchor()
-    _check_no_unreaped_worker()
-    _check_bound_roots(downloads, anchor)
-    verify_prior_campaign_ledgers(downloads)
-    download_raw, run_raw = _campaign_ledger_bytes(downloads, anchor)
-    return anchor, download_raw, run_raw
-
-
-def _init_w6_campaign_anchor(downloads: Path) -> None:
-    with _campaign_lock():
-        path = _campaign_anchor_path()
-        if path.exists():
-            _bind_campaign_roots(downloads)
-            return
-        verify_prior_campaign_ledgers(downloads)
-        runs = check_w6_runs_root(downloads)
-        _check_w6_disk_cap(runs)
-        run_raw = _ledger_bytes(downloads / W6_RUN_LEDGER_NAME, optional=True)
-        _run_state(run_raw)
-        download_path = downloads / W6_DOWNLOAD_LEDGER_NAME
-        check_no_symlink_under(download_path, downloads)
-        if not download_path.exists():
-            _write_json(
-                download_path,
-                {
-                    "schema": "omr-w6-slice-a-download-ledger-v1",
-                    "total_bytes": 0,
-                    "entries": [],
-                },
-            )
-        download_raw = _ledger_bytes(download_path)
-        _read_download_ledger(download_raw)
-        runs.mkdir(exist_ok=True)
-        _write_json(
-            path,
-            _campaign_roots(downloads, runs)
-            | _run_ledger_stamp(run_raw)
-            | {
-                "download_ledger_bytes": len(download_raw),
-                "download_ledger_sha256": hashlib.sha256(
-                    download_raw
-                ).hexdigest(),
-            },
-        )
-
-
-def migrate_w6_campaign_roots(
-    old_downloads: Path, new_downloads: Path
-) -> dict[str, object]:
-    """Rebind the campaign after preserving its ledgers and retained runs."""
-    old_downloads, new_downloads = (
-        old_downloads.absolute(),
-        new_downloads.absolute(),
-    )
-    with _disk_lock(), _campaign_lock():
-        anchor = _read_campaign_anchor()
-        _check_no_unreaped_worker()
-        old_runs = _check_bound_roots(old_downloads, anchor)
-        new_runs = check_w6_runs_root(new_downloads)
-        verify_prior_campaign_ledgers(new_downloads)
-        old_download_raw, old_run_raw = _campaign_ledger_bytes(
-            old_downloads, anchor
-        )
-        need_run = _integer(anchor.get("run_ledger_bytes")) > 0 or bool(
-            old_run_raw
-        )
-        new_download_raw, run_raw = _campaign_ledger_bytes(
-            new_downloads,
-            anchor,
-            require_run=need_run,
-            allow_recover=False,
-        )
-        if new_download_raw != old_download_raw:
-            _stop("Slice A migration would discard existing download ledger")
-        if not run_raw.startswith(old_run_raw):
-            _stop("Slice A migration would discard existing run ledger bytes")
-        _run_state(run_raw)
-        if old_runs != new_runs and any(old_runs.glob("w6-slice-a-*")):
-            _stop("move all retained Slice A run directories before migration")
-        _check_w6_disk_cap(new_runs)
-        new_runs.mkdir(exist_ok=True)
-        _write_json(
-            _campaign_anchor_path(),
-            anchor
-            | _campaign_roots(new_downloads, new_runs)
-            | _run_ledger_stamp(run_raw),
-        )
-        return {"status": "migrated"}
-
-
 @contextmanager
 def w6_disk_lock(
     downloads_dir: Path, runs_parent: Path | None = None
 ) -> Iterator[Path]:
-    """Serialize disk checks and writes against the pinned runs root."""
+    """Serialize disk checks and writes under self-contained downloads."""
     downloads = downloads_dir.absolute()
-    with _disk_lock():
-        with _campaign_lock():
-            _bind_campaign_roots(downloads)
-            runs = check_w6_runs_root(downloads, runs_parent)
+    runs = check_w6_runs_root(downloads, runs_parent)
+    verify_prior_campaign_ledgers(downloads)
+    with _exclusive_file_lock(downloads / W6_DISK_LOCK_NAME):
         yield runs
 
 
@@ -831,90 +649,13 @@ def check_w6_disk_cap(
     *,
     additional_bytes: int = 0,
 ) -> int:
-    """Check all Slice A run directories, including aborted runs."""
+    """Check all Slice A run directories, deduplicating hardlinked assets."""
     with w6_disk_lock(downloads_dir, runs_parent) as runs:
         return _check_w6_disk_cap(runs, additional_bytes=additional_bytes)
 
 
-W6_SCRATCH_RESERVATION_FILE = ".w6-scratch-reservation.json"
-W6_UNREAPED_WORKER_NAME = ".w6-unreaped-worker.json"
-
-
-def _pending_native_worker_path() -> Path:
-    path = _campaign_anchor_path().with_name(W6_UNREAPED_WORKER_NAME)
-    check_no_symlink_under(path, Path(path.anchor))
-    return path
-
-
-def has_pending_w6_native_worker(reservation_id: str | None = None) -> bool:
-    """Return whether an unconfirmed native-worker fence is present."""
-    marker = _pending_native_worker_path()
-    if reservation_id is None:
-        return marker.exists()
-    try:
-        raw = marker.read_bytes()
-    except FileNotFoundError:
-        return False
-    except OSError:
-        return True
-    try:
-        data = _object(json.loads(raw))
-    except StopConditionError, ValueError:
-        return True
-    return data.get("reservation_id") == reservation_id
-
-
-def _check_no_unreaped_worker() -> None:
-    if has_pending_w6_native_worker():
-        _stop(
-            "unconfirmed W6 native worker exit blocks further campaign launches"
-        )
-
-
-def begin_w6_native_worker(detail: str, *, reservation_id: str = "") -> str:
-    """Publish a populated exclusive token-bound fence atomically pre-launch."""
-    marker = _pending_native_worker_path()
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    token = uuid.uuid4().hex
-    payload = (
-        _json_bytes(
-            {
-                "token": token,
-                "reservation_id": reservation_id,
-                "detail": detail,
-                "utc": _utc_now(),
-            }
-        )
-        + b"\n"
-    )
-    tmp = marker.with_name(f"{marker.name}.{token}.part")
-    check_no_symlink_under(tmp, marker.parent)
-    try:
-        with tmp.open("xb") as stream:
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.link(tmp, marker, follow_symlinks=False)
-    except FileExistsError:
-        _stop(
-            "unconfirmed W6 native worker exit blocks further campaign launches"
-        )
-    finally:
-        tmp.unlink(missing_ok=True)
-    _sync_parent(marker)
-    return token
-
-
-def clear_w6_native_worker(token: str) -> None:
-    """Clear the pending fence only for the exact launch token that set it."""
-    marker = _pending_native_worker_path()
-    if not marker.is_file():
-        _stop("missing W6 native worker fence on exit clearance")
-    data = _read_json(marker)
-    if data.get("token") != token:
-        _stop("W6 native worker fence token mismatch on exit clearance")
-    marker.unlink()
-    _sync_parent(marker)
+def _identity(info: os.stat_result) -> tuple[int, int]:
+    return info.st_dev, info.st_ino
 
 
 def _unique_file_bytes(
@@ -930,40 +671,6 @@ def _unique_file_bytes(
             seen_inodes.add(ident)
             return info.st_size, (info.st_size if is_new else 0)
     return 0, 0
-
-
-def w6_scratch_dir_bytes(
-    directory: Path,
-    *,
-    seen_inodes: set[tuple[int, int]] | None = None,
-) -> int:
-    """Return ``max(reserved_bytes, actual_bytes)`` in a single walk."""
-    if not directory.exists():
-        return 0
-    meta = directory / W6_SCRATCH_RESERVATION_FILE
-    if meta.is_symlink():
-        _stop("invalid Slice A scratch reservation symlink")
-    reserved = 0
-    if meta.is_file():
-        try:
-            payload = json.loads(meta.read_text(encoding="utf-8"))
-            reserved = _integer(payload.get("reserved_bytes"), minimum=1)
-        except OSError, ValueError, AttributeError:
-            _stop("malformed Slice A scratch reservation metadata")
-    actual = 0
-    unique = 0
-    for dirpath, _, filenames in os.walk(directory, followlinks=False):
-        dp = Path(dirpath)
-        for fn in filenames:
-            fp = dp / fn
-            if fp == meta or fp.is_symlink():
-                continue
-            raw_sz, uniq_sz = _unique_file_bytes(fp, seen_inodes)
-            actual += raw_sz
-            unique += uniq_sz
-    if seen_inodes is None:
-        return max(reserved, actual)
-    return unique + max(0, reserved - actual)
 
 
 def _directory_unique_bytes(
@@ -982,40 +689,22 @@ def _directory_unique_bytes(
     return total
 
 
-def _w6_tmp_bytes(
-    tmp: Path, seen_inodes: set[tuple[int, int]] | None = None
-) -> int:
-    if tmp.is_symlink() or not tmp.is_dir():
-        _stop("invalid Slice A scratch directory")
-    total = 0
-    for child in tmp.iterdir():
-        if child.is_symlink():
-            _stop("invalid Slice A scratch job directory")
-        if child.is_dir():
-            total += w6_scratch_dir_bytes(child, seen_inodes=seen_inodes)
-        else:
-            _, uniq_sz = _unique_file_bytes(child, seen_inodes)
-            total += uniq_sz
-    return total
-
-
 def _w6_run_bytes(
     directory: Path, seen_inodes: set[tuple[int, int]] | None = None
 ) -> int:
     total = 0
     for entry in directory.iterdir():
-        if entry.name == "tmp":
-            total += _w6_tmp_bytes(entry, seen_inodes)
-        elif not entry.is_symlink():
-            if entry.is_dir():
-                total += (
-                    directory_bytes(entry)
-                    if seen_inodes is None
-                    else _directory_unique_bytes(entry, seen_inodes)
-                )
-            else:
-                _, uniq_sz = _unique_file_bytes(entry, seen_inodes)
-                total += uniq_sz
+        if entry.is_symlink():
+            continue
+        if entry.is_dir():
+            total += (
+                directory_bytes(entry)
+                if seen_inodes is None
+                else _directory_unique_bytes(entry, seen_inodes)
+            )
+        else:
+            _, uniq_sz = _unique_file_bytes(entry, seen_inodes)
+            total += uniq_sz
     return total
 
 
@@ -1032,12 +721,9 @@ def _check_w6_disk_cap(runs: Path, *, additional_bytes: int = 0) -> int:
     return total
 
 
-def _append_run(
-    downloads: Path,
-    anchor: dict[str, Any],
-    raw: bytes,
-    record: dict[str, object],
-) -> None:
+def _append_run(downloads: Path, record: dict[str, object]) -> None:
+    if _is_retired_production_campaign():
+        _stop("W6 CPU Slice A run ledger is retired and read-only")
     path = downloads / W6_RUN_LEDGER_NAME
     line = _json_bytes(record | {"utc": _utc_now()}) + b"\n"
     with path.open("ab") as stream:
@@ -1045,20 +731,21 @@ def _append_run(
         stream.flush()
         os.fsync(stream.fileno())
     _sync_parent(path)
-    _write_json(_campaign_anchor_path(), anchor | _run_ledger_stamp(raw + line))
 
 
 @contextmanager
 def _locked_run_ledger(
-    downloads: Path,
-) -> Iterator[tuple[dict[str, Any], bytes]]:
-    with _campaign_lock():
-        anchor = _read_campaign_anchor()
-        _check_bound_roots(downloads, anchor)
-        verify_prior_campaign_ledgers(downloads)
-        with _exclusive_file_lock(downloads / W6_RUN_LOCK_NAME):
-            _, raw = _campaign_ledger_bytes(downloads, anchor)
-            yield anchor, raw
+    downloads: Path, *, allow_create: bool = False
+) -> Iterator[bytes]:
+    verify_prior_campaign_ledgers(downloads)
+    if not (downloads / W6_DOWNLOAD_LEDGER_NAME).is_file():
+        _stop(f"missing Slice A download ledger: {W6_DOWNLOAD_LEDGER_NAME}")
+    _read_download_ledger(_ledger_bytes(downloads / W6_DOWNLOAD_LEDGER_NAME))
+    with _exclusive_file_lock(downloads / W6_RUN_LOCK_NAME):
+        raw = _ledger_bytes(
+            downloads / W6_RUN_LEDGER_NAME, optional=allow_create
+        )
+        yield raw
 
 
 def _run_records(raw: bytes) -> Iterator[dict[str, Any]]:
@@ -1101,8 +788,6 @@ def _run_state(
 
 def _start(  # noqa: PLR0913
     downloads: Path,
-    anchor: dict[str, Any],
-    raw: bytes,
     *,
     run_id: str,
     git_commit: str,
@@ -1114,8 +799,6 @@ def _start(  # noqa: PLR0913
     token = uuid.uuid4().hex
     _append_run(
         downloads,
-        anchor,
-        raw,
         {
             "event": "started",
             "reservation_id": token,
@@ -1146,9 +829,8 @@ def reserve_w6_render_run(  # noqa: PLR0913
         _stop("Slice A planned pages outside 1..15,000 per-run bound")
     with (
         w6_disk_lock(downloads, runs_parent) as runs,
-        _locked_run_ledger(downloads) as (anchor, raw),
+        _locked_run_ledger(downloads, allow_create=True) as raw,
     ):
-        _check_no_unreaped_worker()
         _check_w6_disk_cap(runs)
         starts, settlements, _ = _run_state(raw)
         charged = sum(
@@ -1162,8 +844,6 @@ def reserve_w6_render_run(  # noqa: PLR0913
             _stop("Slice A cumulative render page cap would be exceeded")
         return _start(
             downloads,
-            anchor,
-            raw,
             run_id=run_id,
             git_commit=git_commit,
             clean_tree=clean_tree,
@@ -1171,16 +851,6 @@ def reserve_w6_render_run(  # noqa: PLR0913
             kind="render",
             pages=planned_pages,
         )
-
-
-def _validate_anchor(anchor: Mapping[str, object]) -> None:
-    if anchor.get("portable_aggregate_sha256") != (
-        EXPECTED_TRAINDEV_PORTABLE_SHA256
-    ):
-        _stop("missing or drifted portable TRAIN_DEV anchor")
-    _digest(anchor.get("staging_attestation_sha256"))
-    _integer(anchor.get("root_st_dev"))
-    _integer(anchor.get("root_st_ino"), 1)
 
 
 def reserve_w6_copista_invocation_and_read_anchor(
@@ -1191,33 +861,35 @@ def reserve_w6_copista_invocation_and_read_anchor(
     clean_tree: bool,
     command: str,
 ) -> tuple[str, dict[str, object]]:
-    """Atomically pin an external anchor and charge one private invocation."""
+    """Charge one private invocation and return portable TRAIN_DEV metadata."""
     downloads = downloads_dir.absolute()
-    with _locked_run_ledger(downloads) as (campaign, raw):
-        _check_no_unreaped_worker()
+    with _locked_run_ledger(downloads, allow_create=True) as raw:
         starts, _, anchor = _run_state(raw)
-        _validate_anchor(anchor)
+        if anchor and anchor.get("portable_aggregate_sha256") != (
+            EXPECTED_TRAINDEV_PORTABLE_SHA256
+        ):
+            _stop("drifted portable TRAIN_DEV anchor in ledger")
         if sum(row["kind"] == "copista" for row in starts.values()) >= (
             W6_PRIVATE_COPISTA_CAP
         ):
             _stop("Slice A private Copista invocation cap would be exceeded")
         token = _start(
             downloads,
-            campaign,
-            raw,
             run_id=run_id,
             git_commit=git_commit,
             clean_tree=clean_tree,
             command=command,
             kind="copista",
         )
-    return token, anchor
+    return token, {
+        "portable_aggregate_sha256": EXPECTED_TRAINDEV_PORTABLE_SHA256
+    }
 
 
 def verify_completed_w6_render_run(downloads_dir: Path, run_id: str) -> None:
     """Require a settled completed render entry in the Slice A run ledger."""
     downloads = downloads_dir.absolute()
-    with _locked_run_ledger(downloads) as (_, raw):
+    with _locked_run_ledger(downloads) as raw:
         starts, settlements, _ = _run_state(raw)
         if not any(
             row.get("kind") == "render"
@@ -1240,7 +912,7 @@ def settle_w6_run(
     _integer(actual_pages)
     if status not in {"completed", "failed", "aborted"}:
         _stop("invalid Slice A settlement status")
-    with _locked_run_ledger(downloads) as (anchor, raw):
+    with _locked_run_ledger(downloads) as raw:
         starts, settlements, _ = _run_state(raw)
         if reservation_id not in starts or reservation_id in settlements:
             _stop("unknown or already-settled Slice A reservation")
@@ -1248,8 +920,6 @@ def settle_w6_run(
         is_render = row["kind"] == "render"
         _append_run(
             downloads,
-            anchor,
-            raw,
             {
                 "event": "settled",
                 "reservation_id": reservation_id,
@@ -1262,242 +932,182 @@ def settle_w6_run(
             _stop("Slice A run exceeded its render reservation")
 
 
-@contextmanager
-def _walk_directory(
-    parts: Sequence[str],
-    parent_fd: int | None = None,
-) -> Iterator[int]:
-    fd = (
-        os.dup(parent_fd)
-        if parent_fd is not None
-        else os.open("/", os.O_RDONLY | os.O_DIRECTORY)
-    )
-    try:
-        for part in parts:
-            if part in {"", ".", ".."}:
-                _stop("invalid sealed TRAIN_DEV path component")
-            child = os.open(part, _DIR_FLAGS, dir_fd=fd)
-            os.close(fd)
-            fd = child
-            if parent_fd is not None:
-                _check_stat(os.fstat(fd), directory=True)
-        yield fd
-    finally:
-        os.close(fd)
+def _check_worktrees(
+    path: Path,
+    worktree_roots: Sequence[Path],
+) -> None:
+    resolved = path.resolve()
+    for worktree in worktree_roots:
+        wt = worktree.resolve()
+        if resolved.is_relative_to(wt) or wt.is_relative_to(resolved):
+            _stop("TRAIN_DEV root must be outside all git worktrees")
 
 
-def _check_stat(info: os.stat_result, *, directory: bool = False) -> None:
-    check = stat.S_ISDIR if directory else stat.S_ISREG
-    if (
-        not check(info.st_mode)
-        or info.st_uid != os.geteuid()
-        or info.st_mode & 0o777 != (0o500 if directory else 0o400)
-    ):
-        _stop("invalid sealed TRAIN_DEV permissions, owner or file type")
-
-
-def _identity(info: os.stat_result) -> tuple[int, int]:
-    return info.st_dev, info.st_ino
-
-
-def _leaf_stat(info: os.stat_result) -> tuple[int, int, int, int]:
-    return (*_identity(info), info.st_size, info.st_mtime_ns)
-
-
-def _read_fd(fd: int, limit: int) -> tuple[bytes, str]:
-    data = bytearray()
-    hasher = hashlib.sha256()
-    while len(data) < limit:
-        block = os.read(fd, min(1 << 20, limit - len(data)))
-        if not block:
-            _stop("sealed TRAIN_DEV file truncated during read")
-        hasher.update(block)
-        data.extend(block)
-    return bytes(data), hasher.hexdigest()
-
-
-def _attested_leaves(  # noqa: C901
-    data: dict[str, Any],
-) -> dict[str, dict[str, Any]]:
-    rows = data.get("leaves")
-    if not isinstance(rows, list):
-        _stop("invalid TRAIN_DEV attested leaf inventory")
-    leaves = {}
-    pages: dict[str, list[int]] = {gid: [] for gid in TRAINDEV_GOLD_IDS}
-    expected = {_MANIFEST} | {
-        f"gold/{gid}/{kind}.musicxml"
+EXPECTED_TRAINDEV_GOLD_BY_REL: dict[str, str] = (
+    {_MANIFEST: "TRAIN_DEV"}
+    | {
+        f"gold/{gid}/{kind}.musicxml": gid
         for gid in TRAINDEV_GOLD_IDS
         for kind in ("accepted", "draft")
     }
-    portable = []
-    for raw in rows:
-        row = _object(raw)
-        rel = row.get("relpath")
-        if not isinstance(rel, str) or rel in leaves:
-            _stop("invalid or duplicate TRAIN_DEV attested path")
-        gid = row.get("gold_id")
-        if rel not in expected:
-            match = _PAGE_NAME.fullmatch(rel)
-            if not match or match[1] not in pages or gid != match[1]:
+    | {
+        f"pages/{gid}-p{page:02d}.png": gid
+        for gid, count in TRAINDEV_PAGE_COUNTS.items()
+        for page in range(1, count + 1)
+    }
+)
+
+
+_ALLOWED_TRAINDEV_DIRS = frozenset(
+    {"", "pages", "gold"} | {f"gold/{gid}" for gid in TRAINDEV_GOLD_IDS}
+)
+
+
+def _check_traindev_walk_step(
+    root: Path, dp: Path, dirnames: list[str], filenames: list[str]
+) -> None:
+    rel_dir = "" if dp == root else dp.relative_to(root).as_posix()
+    if rel_dir not in _ALLOWED_TRAINDEV_DIRS:
+        _stop("unexpected directory under TRAIN_DEV root")
+    for name in (*dirnames, *filenames):
+        if (dp / name).is_symlink():
+            _stop("symlink forbidden under TRAIN_DEV root")
+    for dname in dirnames:
+        sub_rel = f"{rel_dir}/{dname}" if rel_dir else dname
+        if sub_rel not in _ALLOWED_TRAINDEV_DIRS:
+            _stop("unexpected directory under TRAIN_DEV root")
+
+
+def _discover_traindev_relpaths(root: Path) -> dict[str, str]:
+    """Verify exact 102-leaf TRAIN_DEV inventory before reading payloads."""
+    seen: set[str] = set()
+    for dirpath, dirnames, filenames in os.walk(
+        root,
+        followlinks=False,
+        onerror=lambda exc: _stop(
+            f"unreadable directory under TRAIN_DEV root: {exc}"
+        ),
+    ):
+        dp = Path(dirpath)
+        _check_traindev_walk_step(root, dp, dirnames, filenames)
+        for fn in filenames:
+            fp = dp / fn
+            if not stat.S_ISREG(fp.stat(follow_symlinks=False).st_mode):
+                _stop("non-regular file forbidden under TRAIN_DEV root")
+            rel = fp.relative_to(root).as_posix()
+            if rel == _LEGACY_ATTESTATION:
+                continue
+            if rel not in EXPECTED_TRAINDEV_GOLD_BY_REL:
                 _stop("TRAIN_DEV leaf outside its exact allowlist")
-            pages[match[1]].append(int(match[2]))
-        elif rel != _MANIFEST and gid != rel.split("/")[1]:
-            _stop("TRAIN_DEV leaf Gold identity mismatch")
-        elif rel == _MANIFEST and gid not in {None, "", "TRAIN_DEV"}:
-            _stop("unexpected Gold identity on TRAIN_DEV manifest")
-        sha256 = _digest(row.get("expected_sha256"))
-        for number in ("st_dev", "st_ino", "st_size", "st_mtime_ns"):
-            _integer(row.get(number))
-        leaves[rel] = row
-        portable.append((rel, str(gid or ""), sha256))
+            seen.add(rel)
+    if seen != EXPECTED_TRAINDEV_GOLD_BY_REL.keys():
+        _stop("incomplete TRAIN_DEV leaf inventory")
+    return dict(EXPECTED_TRAINDEV_GOLD_BY_REL)
+
+
+def _verify_traindev_manifest_header(root: Path) -> bytes:
+    raw = (root / _MANIFEST).read_bytes()
+    obj = _object(json.loads(raw))
+    pieces = obj.get("pieces")
     if (
-        not expected <= leaves.keys()
-        or sum(map(len, pages.values())) != _PAGE_COUNT
+        not isinstance(pieces, list)
+        or len(pieces) != len(TRAINDEV_GOLD_IDS)
+        or {_object(p).get("gold_id") for p in pieces} != TRAINDEV_GOLD_IDS
         or any(
-            not indices or sorted(indices) != list(range(1, len(indices) + 1))
-            for indices in pages.values()
+            _object(p).get("split", "TRAIN_DEV") != "TRAIN_DEV" for p in pieces
         )
     ):
-        _stop("incomplete TRAIN_DEV attested leaf inventory")
-    manifest_sha = _digest(data.get("traindev_manifest_sha256"))
-    portable_payload = {
-        "schema": "omr-w6-traindev-portable-v1",
-        "leaves": [
-            {"gold_id": g, "relpath": rel, "expected_sha256": sha}
-            for rel, g, sha in sorted(portable)
-        ],
-        "traindev_manifest_sha256": manifest_sha,
-    }
-    if (
-        leaves[_MANIFEST]["expected_sha256"] != manifest_sha
-        or hashlib.sha256(_json_bytes(portable_payload)).hexdigest()
-        != EXPECTED_TRAINDEV_PORTABLE_SHA256
-    ):
-        _stop("TRAIN_DEV portable attestation digest drift")
-    return leaves
+        _stop("traindev-manifest.json must contain only 16 TRAIN_DEV pieces")
+    return raw
 
 
 class VerifiedTrainDevRoot:
-    """A pinned directory descriptor allowing only attested payload reads."""
+    """Portable SHA-256-verified TRAIN_DEV directory capability."""
 
-    def __init__(self, fd: int, leaves: dict[str, dict[str, Any]]) -> None:
-        """Take ownership of the authenticated directory descriptor."""
-        self._fd = fd
-        self._leaves = leaves
+    def __init__(self, root: Path, digests: dict[str, str]) -> None:
+        """Bind verified root path and 102-leaf expected SHA-256 digests."""
+        self._root = root
+        self._digests = digests
 
     @property
     def page_relpaths(self) -> tuple[str, ...]:
-        """Return the attested pages in deterministic piece/page order."""
-        return tuple(sorted(p for p in self._leaves if _PAGE_NAME.fullmatch(p)))
+        """Return the verified pages in deterministic piece/page order."""
+        return tuple(
+            sorted(p for p in self._digests if _PAGE_NAME.fullmatch(p))
+        )
 
     def read_verified_leaf_bytes(self, relpath: str) -> bytes:
-        """Return bytes only if file metadata and streamed digest both match."""
-        row = self._leaves.get(relpath)
-        if row is None or self._fd < 0:
+        """Return bytes only if relpath is allowlisted and SHA-256 matches."""
+        expected_sha = self._digests.get(relpath)
+        if expected_sha is None:
             _stop("TRAIN_DEV leaf is not available in the attested allowlist")
-        *parents, name = relpath.split("/")
+        target = self._root / relpath
+        check_no_symlink_under(target, self._root)
         try:
-            with _walk_directory(parents, self._fd) as parent:
-                leaf = os.open(name, _FILE_FLAGS, dir_fd=parent)
-                try:
-                    info = os.fstat(leaf)
-                    _check_stat(info)
-                    expected = tuple(
-                        row[k]
-                        for k in ("st_dev", "st_ino", "st_size", "st_mtime_ns")
-                    )
-                    if _leaf_stat(info) != expected:
-                        _stop("sealed TRAIN_DEV leaf changed before read")
-                    data, digest = _read_fd(leaf, info.st_size)
-                    if (
-                        _leaf_stat(os.fstat(leaf)) != expected
-                        or digest != row["expected_sha256"]
-                    ):
-                        _stop("sealed TRAIN_DEV leaf digest drift")
-                    return data
-                finally:
-                    os.close(leaf)
+            data = target.read_bytes()
         except OSError as exc:
-            msg = "cannot securely open TRAIN_DEV leaf"
+            msg = "cannot open verified TRAIN_DEV leaf"
             raise StopConditionError(msg) from exc
+        if hashlib.sha256(data).hexdigest() != expected_sha:
+            _stop("TRAIN_DEV leaf SHA-256 digest drift")
+        return data
 
     def close(self) -> None:
-        """Release the pinned root descriptor."""
-        if self._fd >= 0:
-            os.close(self._fd)
-            self._fd = -1
+        """Compatibility no-op for context-manager callers."""
 
     def __enter__(self) -> Self:
         """Use the verified root as a scoped read capability."""
         return self
 
     def __exit__(self, *_exc: object) -> None:
-        """Release the descriptor at scope exit."""
+        """Exit context cleanly."""
         self.close()
-
-
-def _check_worktrees(
-    path: Path,
-    root_stat: os.stat_result,
-    worktree_roots: Sequence[Path],
-) -> None:
-    # Include identity checks for aliases of worktrees and their ancestors.
-    for worktree in worktree_roots:
-        wt = worktree.resolve()
-        if path.is_relative_to(wt) or wt.is_relative_to(path):
-            _stop("TRAIN_DEV root must be outside all git worktrees")
-        for ancestor in (wt, *wt.parents):
-            if ancestor.exists() and _identity(ancestor.stat()) == (
-                _identity(root_stat)
-            ):
-                _stop("TRAIN_DEV root aliases a git worktree or its ancestor")
-        if wt.is_dir():
-            wt_identity = _identity(wt.stat())
-            for ancestor in path.parents:
-                if _identity(ancestor.stat()) == wt_identity:
-                    _stop("TRAIN_DEV root is inside a git worktree")
 
 
 def open_verified_traindev_root(
     traindev_root: Path,
-    anchor: Mapping[str, object],
-    worktree_roots: Sequence[Path],
+    anchor: Mapping[str, object] | None = None,
+    worktree_roots: Sequence[Path] = (),
 ) -> VerifiedTrainDevRoot:
-    """Authenticate the staging seal before opening any payload leaf.
-
-    The portable seal is canonical compact JSON
-    (``omr-w6-traindev-portable-v1``) containing ``leaves`` objects
-    (``gold_id``, ``relpath``, ``expected_sha256``; ``TRAIN_DEV`` or empty on
-    the manifest) sorted by ``relpath``, alongside ``traindev_manifest_sha256``.
-    The external anchor additionally binds the exact attestation bytes and root
-    inode.
-    """
-    _validate_anchor(anchor)
+    """Verify the 102-leaf portable SHA-256 seal without chmod/inode locks."""
+    if anchor is not None and anchor.get("portable_aggregate_sha256") not in {
+        None,
+        EXPECTED_TRAINDEV_PORTABLE_SHA256,
+    }:
+        _stop("missing or drifted portable TRAIN_DEV anchor")
     path = traindev_root.absolute()
+    check_no_symlink_under(path, Path(path.anchor))
+    if not path.is_dir():
+        _stop("cannot authenticate TRAIN_DEV root")
+    _check_worktrees(path, worktree_roots)
     try:
-        with _walk_directory(path.parts[1:]) as fd:
-            info = os.fstat(fd)
-            _check_stat(info, directory=True)
-            root_id = (anchor["root_st_dev"], anchor["root_st_ino"])
-            if _identity(info) != root_id:
-                _stop("TRAIN_DEV directory does not match external anchor")
-            _check_worktrees(path, info, worktree_roots)
-            attestation = os.open(
-                "staging-attestation.json", _FILE_FLAGS, dir_fd=fd
-            )
-            try:
-                att_stat = os.fstat(attestation)
-                _check_stat(att_stat)
-                data, digest = _read_fd(attestation, att_stat.st_size)
-            finally:
-                os.close(attestation)
-            if digest != anchor["staging_attestation_sha256"]:
-                _stop("TRAIN_DEV staging attestation digest drift")
-            obj = _object(json.loads(data))
-            if (obj.get("root_st_dev"), obj.get("root_st_ino")) != root_id:
-                _stop("TRAIN_DEV staging attestation root identity drift")
-            leaves = _attested_leaves(obj)
-            return VerifiedTrainDevRoot(os.dup(fd), leaves)
+        gold_by_rel = _discover_traindev_relpaths(path)
+        manifest_bytes = _verify_traindev_manifest_header(path)
+        manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
+        digests: dict[str, str] = {_MANIFEST: manifest_sha}
+        for rel in sorted(gold_by_rel):
+            if rel == _MANIFEST:
+                continue
+            with (path / rel).open("rb") as stream:
+                digests[rel] = hashlib.file_digest(stream, "sha256").hexdigest()
+        portable_payload = {
+            "schema": "omr-w6-traindev-portable-v1",
+            "leaves": [
+                {
+                    "gold_id": gold_by_rel[rel],
+                    "relpath": rel,
+                    "expected_sha256": digests[rel],
+                }
+                for rel in sorted(gold_by_rel)
+            ],
+            "traindev_manifest_sha256": manifest_sha,
+        }
+        if (
+            hashlib.sha256(_json_bytes(portable_payload)).hexdigest()
+            != EXPECTED_TRAINDEV_PORTABLE_SHA256
+        ):
+            _stop("TRAIN_DEV portable attestation digest drift")
+        return VerifiedTrainDevRoot(path, digests)
     except (OSError, ValueError) as exc:
         msg = "cannot authenticate TRAIN_DEV root"
         raise StopConditionError(msg) from exc

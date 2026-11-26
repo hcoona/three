@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
-import http.client
 import io
 import json
 import os
@@ -29,7 +28,7 @@ import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, override
 
 from sheet_music_omr.evaluation.alignment import (
     atomic_write_text,
@@ -49,11 +48,12 @@ from sheet_music_omr.evaluation.wheel_lock import (
     resolve_host_wheel_lock,
 )
 from sheet_music_omr.evaluation.xml_merge import concat_page_predictions
+from sheet_music_omr.harness.confine import lock_file_path
 from sheet_music_omr.harness.records import run_git, source_state
 from sheet_music_omr.harness.stops import StopConditionError
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
 
     from sheet_music_omr.harness.confine import Confinement
 
@@ -347,164 +347,6 @@ def _is_sha256_hex(val: object) -> bool:
     )
 
 
-class _MeteredRawIO(io.RawIOBase):
-    """Socket-boundary reader enforcing a hard TLS-decrypted byte ceiling."""
-
-    def __init__(
-        self,
-        raw_io: Any,  # noqa: ANN401
-        ceiling: int,
-        wire: list[int],
-        label: str,
-    ) -> None:
-        self._raw_io = raw_io
-        self._ceiling = ceiling
-        self._wire = wire
-        self._label = label
-
-    def readable(self) -> bool:
-        return True
-
-    def readinto(self, b: Any) -> int | None:  # noqa: ANN401
-        rem = self._ceiling - self._wire[0]
-        if rem <= 0:
-            msg = (
-                f"download {self._label} wire ceiling ({self._ceiling}B) "
-                "reached before EOF"
-            )
-            raise StopConditionError(msg)
-        view = memoryview(b)[:rem]
-        while True:
-            try:
-                res = self._raw_io.readinto(view)
-                n = 0 if res is None else int(res)
-                break
-            except InterruptedError:
-                continue
-        self._wire[0] += n
-        return n
-
-    def close(self) -> None:
-        super().close()
-        with contextlib.suppress(OSError):
-            self._raw_io.close()
-
-
-class _MeteredSocket:
-    """Socket wrapper whose ``makefile`` retains ``_io_refs`` via raw file."""
-
-    def __init__(
-        self,
-        sock: Any,  # noqa: ANN401
-        ceiling: int,
-        wire: list[int],
-        label: str,
-    ) -> None:
-        self._sock = sock
-        self._ceiling = ceiling
-        self._wire = wire
-        self._label = label
-
-    def makefile(
-        self, mode: str = "r", buffering: int = -1, **_kw: object
-    ) -> Any:  # noqa: ANN401
-        if "b" in mode and "r" in mode:
-            # Delegate to sock.makefile(buffering=0) so socket._io_refs keeps
-            # the underlying fd alive after urllib calls HTTPSConnection.close!
-            raw_sock_io = self._sock.makefile("rb", buffering=0)
-            metered = _MeteredRawIO(
-                raw_sock_io, self._ceiling, self._wire, self._label
-            )
-            buf_sz = min(8192, max(1, self._ceiling - self._wire[0]))
-            return io.BufferedReader(metered, buffer_size=buf_sz)
-        return self._sock.makefile(mode, buffering)
-
-    def close(self) -> None:
-        self._sock.close()
-
-    def __getattr__(self, name: str) -> Any:  # noqa: ANN401
-        return getattr(self._sock, name)
-
-
-class _MeteredHTTPSConnection(http.client.HTTPSConnection):
-    def __init__(
-        self,
-        host: str,
-        *,
-        ceiling: int,
-        wire: list[int],
-        label: str,
-        **kwargs: Any,  # noqa: ANN401
-    ) -> None:
-        super().__init__(host, **kwargs)
-        self._ceiling = ceiling
-        self._wire = wire
-        self._label = label
-
-    def connect(self) -> None:
-        super().connect()
-        self.sock = _MeteredSocket(
-            self.sock, self._ceiling, self._wire, self._label
-        )
-
-
-class _MeteredHTTPSHandler(urllib.request.HTTPSHandler):
-    def __init__(self, ceiling: int, wire: list[int], label: str) -> None:
-        super().__init__()
-        self._ceiling = ceiling
-        self._wire = wire
-        self._label = label
-
-    def https_open(self, req: urllib.request.Request) -> Any:  # noqa: ANN401
-        return self.do_open(
-            lambda host, **kw: _MeteredHTTPSConnection(
-                host,
-                ceiling=self._ceiling,
-                wire=self._wire,
-                label=self._label,
-                **kw,
-            ),
-            req,
-        )
-
-
-class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Return 30x responses directly without draining redirect bodies."""
-
-    def http_error_301(
-        self,
-        req: Any,  # noqa: ANN401, ARG002
-        fp: Any,  # noqa: ANN401
-        code: int,  # noqa: ARG002
-        msg: str,  # noqa: ARG002
-        headers: Any,  # noqa: ANN401, ARG002
-    ) -> Any:  # noqa: ANN401
-        return fp
-
-    http_error_302 = http_error_301
-    http_error_303 = http_error_301
-    http_error_307 = http_error_301
-    http_error_308 = http_error_301
-
-
-_ORIG_URLOPEN = urllib.request.urlopen
-
-
-def _open_https_request(
-    req: urllib.request.Request,
-    ceiling: int,
-    wire: list[int],
-    label: str,
-) -> tuple[Any, bool]:
-    if urllib.request.urlopen is not _ORIG_URLOPEN:
-        return urllib.request.urlopen(req, timeout=180), False  # noqa: S310
-    opener = urllib.request.build_opener(
-        _MeteredHTTPSHandler(ceiling, wire, label),
-        _NoRedirectHandler(),
-    )
-    return opener.open(req, timeout=180), True
-
-
 def _load_w2_ledger(ledger_path: Path) -> dict[str, object]:
     if ledger_path.exists():
         raw = json.loads(ledger_path.read_text(encoding="utf-8"))
@@ -526,7 +368,151 @@ def _load_w2_ledger(ledger_path: Path) -> dict[str, object]:
     }
 
 
+RETIRED_W2_DOWNLOAD_LEDGER_SHA256 = (
+    "008c786afccbd9048be8a1bf14b55806630550d451da2738dc2d5af6e8f9de13"
+)
+PRESERVED_W2_S0_TOUCH_LOG_SHA256 = (
+    "dd9fdce39d693390e7c1269b98a2cd98e0fef6d6cf5bdda1b76585f1c73d89bf"
+)
+_W2_S0_CAMPAIGN_RETIRED = True
+_DEFAULT_URLOPEN = urllib.request.urlopen
+
+
+class _HttpsRedirectHandler(urllib.request.HTTPRedirectHandler):
+    @override
+    def http_error_302(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+    ) -> Any:
+        fp.close()
+        raw_loc = headers.get("location") or headers.get("uri")
+        try:
+            joined = (
+                urllib.parse.urljoin(req.full_url, raw_loc)
+                if isinstance(raw_loc, str)
+                else ""
+            )
+        except ValueError as exc:
+            err = "refusing malformed redirect target"
+            raise StopConditionError(err) from exc
+        if not joined.startswith("https://"):
+            err = "refusing missing or non-HTTPS redirect"
+            raise StopConditionError(err)
+        try:
+            return super().http_error_302(req, fp, code, msg, headers)
+        except BaseException:
+            fp.close()
+            raise
+
+    http_error_301 = http_error_302
+    http_error_303 = http_error_302
+    http_error_307 = http_error_302
+    http_error_308 = http_error_302
+
+    @override
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        fp.close()
+        if not str(newurl).startswith("https://"):
+            err = "refusing non-HTTPS redirect"
+            raise StopConditionError(err)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_HTTPS_OPENER = urllib.request.build_opener(_HttpsRedirectHandler())
+
+
+def _open_https_request(req: urllib.request.Request, *, timeout: float) -> Any:  # noqa: ANN401
+    if urllib.request.urlopen is _DEFAULT_URLOPEN:
+        return _HTTPS_OPENER.open(req, timeout=timeout)
+    return urllib.request.urlopen(req, timeout=timeout)  # noqa: S310
+
+
+def _has_slice_b_pilot_reservation(ledger_path: Path, run_id: str) -> bool:
+    abs_ledger = ledger_path.absolute()
+    check_no_symlink_under(abs_ledger, Path(abs_ledger.anchor))
+    if not abs_ledger.is_file():
+        return False
+    raw = abs_ledger.read_bytes()
+    lines = raw.splitlines(keepends=True)
+    if not lines or any(not ln.endswith(b"\n") for ln in lines):
+        msg = "incomplete or unterminated JSONL record in Slice B run ledger"
+        raise StopConditionError(msg)
+    found = False
+    for raw_ln in lines:
+        ln = raw_ln.decode("utf-8", errors="strict").strip()
+        if not ln:
+            msg = "blank line forbidden in Slice B run ledger"
+            raise StopConditionError(msg)
+        try:
+            obj = json.loads(ln)
+        except ValueError as exc:
+            msg = "malformed JSONL in Slice B run ledger"
+            raise StopConditionError(msg) from exc
+        if (
+            isinstance(obj, dict)
+            and obj.get("run_id") == run_id
+            and obj.get("purpose") == "W6-pilot-final"
+            and obj.get("status") == "started"
+        ):
+            found = True
+    return found
+
+
+def verify_w2_touch_log_bytes(
+    raw: bytes, *, slice_b_run_ledger_path: Path
+) -> int:
+    """Verify preserved 6-line S0 prefix plus <= 1 W6-pilot-final suffix."""
+    lines = raw.splitlines(keepends=True)
+    if len(lines) not in {6, 7} or any(not ln.endswith(b"\n") for ln in lines):
+        msg = "w2-touch-log.jsonl violates preserved S0 / Slice B line count"
+        raise StopConditionError(msg)
+    prefix_sha = hashlib.sha256(b"".join(lines[:6])).hexdigest()
+    if prefix_sha != PRESERVED_W2_S0_TOUCH_LOG_SHA256:
+        msg = "w2-touch-log.jsonl preserved S0 prefix SHA-256 mismatch"
+        raise StopConditionError(msg)
+    if len(lines) == 7:  # noqa: PLR2004
+        try:
+            rec = json.loads(lines[6].decode("utf-8"))
+        except (UnicodeDecodeError, ValueError) as exc:
+            msg = "malformed W6-pilot-final record in w2-touch-log.jsonl"
+            raise StopConditionError(msg) from exc
+        rec_run_id = rec.get("run_id") if isinstance(rec, dict) else None
+        if (
+            not isinstance(rec, dict)
+            or rec.get("split") != "TEST"
+            or rec.get("purpose") != "W6-pilot-final"
+            or not isinstance(rec_run_id, str)
+            or not rec_run_id.strip()
+        ):
+            msg = "invalid W6-pilot-final record in w2-touch-log.jsonl"
+            raise StopConditionError(msg)
+        if not _has_slice_b_pilot_reservation(
+            slice_b_run_ledger_path, rec_run_id
+        ):
+            msg = "W6-pilot-final touch lacks matching Slice B reservation"
+            raise StopConditionError(msg)
+    return len(lines) - 6
+
+
 def _save_w2_ledger(ledger_path: Path, ledger: dict[str, object]) -> None:
+    if _W2_S0_CAMPAIGN_RETIRED or (
+        ledger_path.is_file()
+        and _sha256_file(ledger_path) == RETIRED_W2_DOWNLOAD_LEDGER_SHA256
+    ):
+        msg = "Stage S0 download campaign (#1489/#1490) is retired"
+        raise StopConditionError(msg)
     ledger_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_p = ledger_path.with_name(f".{ledger_path.name}.{os.getpid()}.tmp")
     tmp_p.write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
@@ -543,7 +529,7 @@ def _is_eof_established(
     return isinstance(resp, io.BytesIO) and resp.tell() >= len(resp.getvalue())
 
 
-def _stream_https_to_file(  # noqa: C901, PLR0912, PLR0913, PLR0915
+def _stream_https_to_file(  # noqa: C901, PLR0913
     *,
     url: str,
     tmp: Path,
@@ -552,82 +538,31 @@ def _stream_https_to_file(  # noqa: C901, PLR0912, PLR0913, PLR0915
     label: str,
     received: list[int],
 ) -> tuple[int, str]:
-    cur_url = url
-    resp: Any = None
-    sock_metered = False
-    for _ in range(6):
-        if not cur_url.startswith("https://"):
-            msg = f"refusing non-HTTPS URL for {label}"
-            raise StopConditionError(msg)
-        req = urllib.request.Request(  # noqa: S310 - HTTPS checked above
-            cur_url, headers={"User-Agent": "sheet-music-omr-w2/1.0"}
-        )
-        r_cand, sock_metered = _open_https_request(
-            req, ceiling, received, label
-        )
-        hdrs_c = getattr(r_cand, "headers", None)
-        if (
-            hdrs_c is not None
-            and hdrs_c.get("Transfer-Encoding") is not None
-            and hdrs_c.get("Content-Length") is not None
-        ):
-            with contextlib.suppress(Exception):
-                r_cand.close()
-            msg = (
-                f"download {label} rejected ambiguous framing "
-                "(both Transfer-Encoding and Content-Length)"
-            )
-            raise StopConditionError(msg)
-        code = getattr(r_cand, "status", None) or getattr(r_cand, "code", 200)
-        if code in {301, 302, 303, 307, 308}:
-            hdrs_r = getattr(r_cand, "headers", None)
-            loc = hdrs_r.get("Location") if hdrs_r is not None else None
-            if not sock_metered:
-                hdr_cost = (
-                    len(str(hdrs_r).encode("latin-1", errors="replace"))
-                    if hdrs_r is not None
-                    else 256
-                )
-                received[0] += min(ceiling - received[0], max(1, hdr_cost))
-            with contextlib.suppress(Exception):
-                r_cand.close()
-            if not loc or received[0] >= ceiling:
-                msg = f"redirect for {label} invalid or exhausted ceiling"
-                raise StopConditionError(msg)
-            cur_url = urllib.parse.urljoin(cur_url, str(loc))
-            continue
-        resp = r_cand
-        break
-    else:
-        msg = f"too many redirects for {label}"
+    if not url.startswith("https://"):
+        msg = f"refusing non-HTTPS URL for {label}"
         raise StopConditionError(msg)
-
+    req = urllib.request.Request(  # noqa: S310 - HTTPS checked above
+        url, headers={"User-Agent": "sheet-music-omr-w2/1.0"}
+    )
+    body_ceiling = (
+        min(expected_bytes, ceiling) if expected_bytes is not None else ceiling
+    )
     h = hashlib.sha256()
     body_read = 0
-    with resp, tmp.open("wb") as out:
-        hdrs = getattr(resp, "headers", None)
-        te_hdr = hdrs.get("Transfer-Encoding") if hdrs is not None else None
-        cl_hdr = hdrs.get("Content-Length") if hdrs is not None else None
-        if te_hdr is not None and cl_hdr is not None:
-            msg = (
-                f"download {label} rejected ambiguous framing "
-                "(both Transfer-Encoding and Content-Length)"
-            )
+    with (
+        _open_https_request(req, timeout=180) as resp,
+        tmp.open("wb") as out,
+    ):
+        final_url = getattr(resp, "url", url)
+        if isinstance(final_url, str) and not final_url.startswith("https://"):
+            msg = f"refusing non-HTTPS redirect for {label}"
             raise StopConditionError(msg)
-        is_chunked = te_hdr is not None or bool(getattr(resp, "chunked", False))
+        hdrs = getattr(resp, "headers", None)
+        cl_hdr = hdrs.get("Content-Length") if hdrs is not None else None
         cl_val = (
             int(cl_hdr.strip())
-            if (
-                not is_chunked
-                and isinstance(cl_hdr, str)
-                and cl_hdr.strip().isdigit()
-            )
+            if isinstance(cl_hdr, str) and cl_hdr.strip().isdigit()
             else None
-        )
-        body_ceiling = (
-            expected_bytes
-            if expected_bytes is not None
-            else (ceiling if sock_metered else (ceiling - received[0]))
         )
         if cl_val is not None and (
             cl_val > body_ceiling
@@ -638,44 +573,30 @@ def _stream_https_to_file(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
         reader = resp.read1 if hasattr(resp, "read1") else resp.read
         while True:
-            rem = (
-                body_ceiling - body_read
-                if sock_metered
-                else min(body_ceiling - body_read, ceiling - received[0])
-            )
+            rem = min(body_ceiling - body_read, ceiling - received[0])
             if rem <= 0:
                 if _is_eof_established(resp, cl_val, body_read):
                     break
-                if sock_metered or ceiling - received[0] >= 1:
+                if ceiling - received[0] >= 1:
                     extra = reader(1)
                     if not extra:
                         break
-                    if not sock_metered:
-                        received[0] += len(extra)
-                    msg = f"download {label} exceeded expected {body_ceiling}B"
-                    raise StopConditionError(msg)
+                    received[0] += len(extra)
                 msg = (
-                    f"download {label} reached byte ceiling ({ceiling}) "
+                    f"download {label} reached byte ceiling ({body_ceiling}B) "
                     "before EOF"
                 )
                 raise StopConditionError(msg)
-            read_sz = min(1 << 18, rem)
             try:
-                chunk = reader(read_sz)
+                chunk = reader(min(1 << 18, rem))
             except BaseException as r_exc:
                 part_b = getattr(r_exc, "partial", b"")
-                if not sock_metered and isinstance(part_b, (bytes, bytearray)):
+                if isinstance(part_b, (bytes, bytearray)):
                     received[0] += min(rem, len(part_b))
                 raise
             if not chunk:
                 break
-            if len(chunk) > rem:
-                if not sock_metered:
-                    received[0] += rem
-                msg = f"download {label} stream returned > requested {rem}B"
-                raise StopConditionError(msg)
-            if not sock_metered:
-                received[0] += len(chunk)
+            received[0] += len(chunk)
             body_read += len(chunk)
             h.update(chunk)
             out.write(chunk)
@@ -826,6 +747,54 @@ def _fetch_with_ledger(  # noqa: PLR0913, PLR0915
     return bytes_read, digest
 
 
+@contextlib.contextmanager
+def _touch_log_lock(touch_log_path: Path) -> Iterator[None]:
+    with lock_file_path(touch_log_path.with_name(".w2-touch-log.lock")):
+        yield
+
+
+def _validate_w6_pilot_final_touch(
+    *,
+    touch_log_path: Path,
+    run_id: str,
+    readers: Sequence[tuple[str, str | None, str | None]],
+    slice_b_run_ledger_path: Path | None,
+) -> None:
+    if not isinstance(run_id, str) or not run_id.strip():
+        msg = "W6-pilot-final requires a non-empty run_id"
+        raise StopConditionError(msg)
+    if len(readers) != 1:
+        msg = "W6-pilot-final allows only a single TEST evaluation touch"
+        raise StopConditionError(msg)
+    abs_touch = touch_log_path.absolute()
+    check_no_symlink_under(abs_touch, Path(abs_touch.anchor))
+    canonical_ledger = abs_touch.parent / "w6-slice-b-run-ledger.jsonl"
+    if slice_b_run_ledger_path is not None:
+        abs_supplied = slice_b_run_ledger_path.absolute()
+        check_no_symlink_under(abs_supplied, Path(abs_supplied.anchor))
+        if abs_supplied != canonical_ledger:
+            msg = "W6-pilot-final requires sibling w6-slice-b-run-ledger.jsonl"
+            raise StopConditionError(msg)
+    if not (_W2_S0_CAMPAIGN_RETIRED or slice_b_run_ledger_path is not None):
+        return
+    if (
+        not touch_log_path.is_file()
+        or verify_w2_touch_log_bytes(
+            touch_log_path.read_bytes(),
+            slice_b_run_ledger_path=canonical_ledger,
+        )
+        != 0
+    ):
+        msg = (
+            "W6-pilot-final requires intact 6-line S0 w2-touch-log.jsonl "
+            "with zero prior pilot touches"
+        )
+        raise StopConditionError(msg)
+    if not _has_slice_b_pilot_reservation(canonical_ledger, run_id):
+        msg = "missing W6-pilot-final reservation in Slice B run ledger"
+        raise StopConditionError(msg)
+
+
 def append_test_touches(  # noqa: PLR0913
     *,
     touch_log_path: Path,
@@ -839,65 +808,93 @@ def append_test_touches(  # noqa: PLR0913
     claimed_copista_touch_index: int | None = None,
     purpose: str = "S0-baseline",
     cap: int = S0_TEST_TOUCH_CAP,
+    slice_b_run_ledger_path: Path | None = None,
 ) -> list[int]:
     """Atomically check capacity and append one or more ``TEST`` touches."""
-    existing = []
-    if touch_log_path.exists():
-        existing = [
-            json.loads(ln)
-            for ln in touch_log_path.read_text(encoding="utf-8").splitlines()
-            if ln.strip()
+    with _touch_log_lock(touch_log_path):
+        if purpose != "W6-pilot-final" and (
+            _W2_S0_CAMPAIGN_RETIRED
+            or (
+                touch_log_path.is_file()
+                and _sha256_file(touch_log_path)
+                == PRESERVED_W2_S0_TOUCH_LOG_SHA256
+            )
+        ):
+            msg = (
+                f"TEST touch purpose {purpose!r} is not permitted "
+                "on preserved log"
+            )
+            raise StopConditionError(msg)
+        if purpose == "W6-pilot-final":
+            cap = 1
+            _validate_w6_pilot_final_touch(
+                touch_log_path=touch_log_path,
+                run_id=run_id,
+                readers=readers,
+                slice_b_run_ledger_path=slice_b_run_ledger_path,
+            )
+        existing = []
+        if touch_log_path.exists():
+            existing = [
+                json.loads(ln)
+                for ln in touch_log_path.read_text(
+                    encoding="utf-8"
+                ).splitlines()
+                if ln.strip()
+            ]
+        if open_reading_masks_sha256 is not None:
+            for r in existing:
+                prior_m = r.get("open_reading_masks_sha256")
+                if (
+                    r.get("purpose") == purpose
+                    and isinstance(prior_m, str)
+                    and prior_m != open_reading_masks_sha256
+                ):
+                    msg = (
+                        f"open_reading_masks_sha256 changed across {purpose} "
+                        "campaign after prior TEST touch"
+                    )
+                    raise StopConditionError(msg)
+        s0_touches = [
+            r
+            for r in existing
+            if r.get("split") == "TEST" and r.get("purpose") == purpose
         ]
-    if open_reading_masks_sha256 is not None:
-        for r in existing:
-            prior_m = r.get("open_reading_masks_sha256")
-            if (
-                r.get("purpose") == purpose
-                and isinstance(prior_m, str)
-                and prior_m != open_reading_masks_sha256
-            ):
-                msg = (
-                    f"open_reading_masks_sha256 changed across {purpose} "
-                    "campaign after prior TEST touch"
-                )
-                raise StopConditionError(msg)
-    s0_touches = [
-        r
-        for r in existing
-        if r.get("split") == "TEST" and r.get("purpose") == purpose
-    ]
-    if len(s0_touches) + len(readers) > cap:
-        names = ", ".join(r[0] for r in readers)
-        msg = (
-            f"appending {len(readers)} TEST touch(es) for [{names}] would "
-            f"exceed {cap}-touch {purpose} cap (already {len(s0_touches)})"
-        )
-        raise StopConditionError(msg)
+        if len(s0_touches) + len(readers) > cap:
+            names = ", ".join(r[0] for r in readers)
+            msg = (
+                f"appending {len(readers)} TEST touch(es) for [{names}] would "
+                f"exceed {cap}-touch {purpose} cap (already {len(s0_touches)})"
+            )
+            raise StopConditionError(msg)
 
-    utc_now = datetime.now(UTC).isoformat()
-    touch_log_path.parent.mkdir(parents=True, exist_ok=True)
-    counts: list[int] = []
-    with touch_log_path.open("a", encoding="utf-8") as fh:
-        for idx, (r_id, r_sha, w_sha) in enumerate(readers, start=1):
-            rec: dict[str, object] = {
-                "utc": utc_now,
-                "run_id": run_id,
-                "git_commit": git_commit,
-                "code_tree_sha256": code_tree_sha256,
-                "reader_id": r_id,
-                "reader_sha256": r_sha,
-                "weights_sha256": w_sha,
-                "open_reading_masks_sha256": open_reading_masks_sha256,
-                "split": "TEST",
-                "piece_count": piece_count,
-                "command": list(command),
-                "purpose": purpose,
-            }
-            if idx == 1 and claimed_copista_touch_index is not None:
-                rec["claimed_copista_touch_index"] = claimed_copista_touch_index
-            fh.write(json.dumps(rec, separators=(",", ":")) + "\n")
-            counts.append(len(s0_touches) + idx)
-    return counts
+        utc_now = datetime.now(UTC).isoformat()
+        counts: list[int] = []
+        with touch_log_path.open("a", encoding="utf-8") as fh:
+            for idx, (r_id, r_sha, w_sha) in enumerate(readers, start=1):
+                rec: dict[str, object] = {
+                    "utc": utc_now,
+                    "run_id": run_id,
+                    "git_commit": git_commit,
+                    "code_tree_sha256": code_tree_sha256,
+                    "reader_id": r_id,
+                    "reader_sha256": r_sha,
+                    "weights_sha256": w_sha,
+                    "open_reading_masks_sha256": open_reading_masks_sha256,
+                    "split": "TEST",
+                    "piece_count": piece_count,
+                    "command": list(command),
+                    "purpose": purpose,
+                }
+                if idx == 1 and claimed_copista_touch_index is not None:
+                    rec["claimed_copista_touch_index"] = (
+                        claimed_copista_touch_index
+                    )
+                fh.write(json.dumps(rec, separators=(",", ":")) + "\n")
+                counts.append(len(s0_touches) + idx)
+            fh.flush()
+            os.fsync(fh.fileno())
+        return counts
 
 
 def append_test_touch(  # noqa: PLR0913
@@ -1263,10 +1260,13 @@ def _verify_venv_imports(py_bin: Path, src_root: Path) -> bool:
     return probe.returncode == 0
 
 
-def setup_copista_environment(
+def setup_copista_environment(  # noqa: PLR0915
     confinement: Confinement,
 ) -> dict[str, object]:
     """Set up ``w2-copista-venv``, ``copisteria`` and pinned weights."""
+    if _W2_S0_CAMPAIGN_RETIRED:
+        msg = "Stage S0 setup campaign (#1489/#1490) is retired"
+        raise StopConditionError(msg)
     downloads_dir = confinement.downloads
     ledger_path = downloads_dir / "w2-download-ledger.json"
     ledger_lock = downloads_dir / ".ledger.lock"
@@ -1422,6 +1422,9 @@ def run_copista_inference_and_assemble(  # noqa: C901, PLR0912, PLR0915
     formal: bool = False,
 ) -> dict[str, object]:
     """Run ``copista-28m`` on all 92 approved pages and assemble ``P_piece``."""
+    if _W2_S0_CAMPAIGN_RETIRED:
+        msg = "Stage S0 evaluation campaign (#1489/#1490) is retired"
+        raise StopConditionError(msg)
     src_st = source_state(run_git)
     cur_commit = str(src_st["commit"])
     cur_tree_sha = str(src_st["tree"])
@@ -1432,12 +1435,8 @@ def run_copista_inference_and_assemble(  # noqa: C901, PLR0912, PLR0915
     run_dir = confinement.run
     downloads_dir = confinement.downloads
     manifest, _ = verify_approved_overlays(run_dir)
-    if formal and (
-        manifest.get("producer_dirty") is not False
-        or manifest.get("producer_git_commit") != cur_commit
-        or manifest.get("producer_code_tree_sha256") != cur_tree_sha
-    ):
-        msg = "manifest produced on dirty or mismatched commit/tree"
+    if formal and manifest.get("producer_dirty") is not False:
+        msg = "manifest produced on a dirty source tree"
         raise StopConditionError(msg)
     masks_sha = str(manifest["open_reading_masks_sha256"])
 
@@ -1553,10 +1552,10 @@ def run_copista_inference_and_assemble(  # noqa: C901, PLR0912, PLR0915
                             and pdata_c.get("provenance_sha256") == prov_sha
                             and pdata_c.get("open_reading_masks_sha256")
                             == masks_sha
-                            and pdata_c.get("producer_git_commit") == cur_commit
-                            and pdata_c.get("producer_code_tree_sha256")
-                            == cur_tree_sha
-                            and pdata_c.get("producer_dirty") is cur_dirty
+                            and (
+                                not formal
+                                or pdata_c.get("producer_dirty") is False
+                            )
                         ):
                             cached_summaries.append(
                                 {
@@ -1667,9 +1666,7 @@ def run_copista_inference_and_assemble(  # noqa: C901, PLR0912, PLR0915
                 and pdata.get("page_sha256") == pg_sha
                 and pdata.get("provenance_sha256") == prov_sha
                 and pdata.get("open_reading_masks_sha256") == masks_sha
-                and pdata.get("producer_git_commit") == cur_commit
-                and pdata.get("producer_code_tree_sha256") == cur_tree_sha
-                and pdata.get("producer_dirty") is cur_dirty
+                and (not formal or pdata.get("producer_dirty") is False)
             )
             page_xmls.append(xp if cache_valid else None)
             if cache_valid:

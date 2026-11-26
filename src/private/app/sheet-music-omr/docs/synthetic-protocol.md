@@ -122,11 +122,11 @@ flowchart LR
       (`unshare -rn` on Linux/WSL2 verified by probing that only `lo` exists
       with zero external interfaces and spawning with `close_fds=True`,
       aborting immediately before touching private inputs if process-tree
-      network isolation cannot be established; host Windows `MuseScore4.exe`
-      runs on public `permissive` / `nc_sa` synthetic scores under its existing
-      local CLI lock, while optional `private_traindev` re-rendering runs
-      through the offline Linux `Verovio` engine inside `unshare -rn` unless
-      host Windows `MuseScore4.exe` offline execution is separately verified)
+      network isolation cannot be established; public `permissive` / `nc_sa`
+      synthetic score rendering runs offline on host Windows `MuseScore4.exe`
+      under `.musescore.lock` and on `DOWNLOADS/w4-synth-venv` `Verovio` with
+      process-group timeouts without `unshare`, while optional `private_traindev`
+      re-rendering runs inside `unshare -rn`)
       alongside `HF_HUB_OFFLINE=1`,
       `TRANSFORMERS_OFFLINE=1`, `PIP_NO_INDEX=1`, and `UV_OFFLINE=1`. Each
       private-page subprocess runs inside an isolated network and PID namespace
@@ -173,13 +173,15 @@ flowchart LR
           (`x_px = x / 12.0`, `y_px = y / 12.0`, `w_px = sx / 12.0`,
           `h_px = sy / 12.0`), provided `-T` (`--trim-image`) is **never**
           passed (`src/engraving/rendering/score/paint.cpp#L125-L130`).
-    - Isolation and recheck: host upgrades are permitted without version
-      allowlists; every run records exact MuseScore version and executable
-      `SHA-256`, enforces the eight MusicXML preferences and `.musescore.lock`
-      of the [comparison protocol](comparison-protocol.md#tools-and-environment),
-      and runs an automated single-page calibration check before each batch
-      verifying that `element.{x,y,sx,sy} / 12.0` encloses rendered staff ink
-      within `<= 2.0 px` if MuseScore's version series is outside `4.7.6`/`4.7.7`.
+    - Isolation and recheck: host upgrades are permitted without binary-hash or
+      version allowlists; every run records exact MuseScore version and
+      executable `SHA-256` (verifying binary immutability at formal run end),
+      enforces the eight MusicXML preferences and `.musescore.lock` of the
+      [comparison protocol](comparison-protocol.md#tools-and-environment),
+      submits per-score `-j` batch jobs, and runs an
+      automated single-page `.mpos / 12.0 <= 2.0 px` calibration check cached in
+      `DOWNLOADS/.musescore-calibrated.json` for any `4.x` executable build not
+      already covered by source verification (`4.7.7.261109195`).
 - **Isolated `w4-synth-venv` (`Verovio 6.x` secondary W4c renderer + CV/SVG
   stack):**
     - Source findings in upstream `rism-digital/verovio` tag
@@ -237,28 +239,32 @@ flowchart LR
       as an external subprocess on one ephemeral scratch PNG copy cleaned up
       under the Phase-2 parent supervisor's `finally` rule above; repository
       code never imports or vendors any `homr` module.
-- **Mutable-source recheck rule:** whenever **any** resolved executable, wheel,
-  package, checkpoint or corpus identity (version, git commit or `SHA-256`
-  digest — including upgrades, downgrades or same-version rebuilds) differs from
-  the source-verified pins recorded above, `setup-w4-w5` / preflight runs an
-  automated contract and license recheck before admitting the asset:
+- **Mutable-source recheck rule:** whenever any resolved wheel, package,
+  checkpoint or corpus identity (`Verovio`, `resvg`, `copisteria`, `homr`, or
+  staged corpora) differs from the source-verified pins recorded above,
+  `setup-w4-w5` / preflight runs an automated contract and license recheck before
+  admitting the asset (whereas host Windows `MuseScore 4.x` CLI upgrades are
+  governed by the `4.x` version check, eight explicit MusicXML preferences when
+  outside `4.7.6`/`4.7.7`, `.mpos / 12.0 <= 2.0 px` cached pixel calibration,
+  and start/end binary provenance recording without blocking formal runs on a
+  binary-hash allowlist):
     1. verifies the upstream repository/package license file and scope at the
-       resolved commit/version (`GPL-3.0` CLI for MuseScore, `LGPL-3.0-only` for
-       Verovio, `Apache-2.0` for `copisteria`, `AGPL-3.0` CLI-only for `homr`,
-       `CC0-1.0` / `CC-BY-4.0` / `CC BY-NC-SA 4.0` per `rights_variant`);
+       resolved commit/version (`LGPL-3.0-only` for Verovio, `Apache-2.0` for
+       `copisteria`, `AGPL-3.0` CLI-only for `homr`, `CC0-1.0` / `CC-BY-4.0` /
+       `CC BY-NC-SA 4.0` per `rights_variant`);
     2. runs a two-system synthetic repository fixture (including mixed `line`
-       and `pedstar` pedal forms) checking CLI flags, MuseScore `.mpos` `/ 12.0`
-       pixel alignment (`<= 2.0 px`), Verovio MEI
-       export + nested SVG `viewBox`/margin coordinate alignment (`<= 2.0 px`)
-       and `musicdiff` round-trip behavior, and `homr` CLI offline invocation;
+       and `pedstar` pedal forms) checking CLI flags, Verovio MEI export +
+       nested SVG `viewBox`/margin coordinate alignment (`<= 2.0 px`) and
+       `musicdiff` round-trip behavior, and `homr` CLI offline invocation;
     3. stops fail-closed (or requires reverting to a verified digest) if any
        automated contract or license check fails; when automated checks pass on
-       a changed identity, attaches the recorded preflight check output and
-       exact version/digest provenance to the governing W4/W5 protocol or
-       results PR/Issue carrier for **independent `research-evidence-review`
-       disposition** ([`GOV-011`](../../../../../docs/governance/governance-system.md#gov-011-separate-findings-from-disposition)), keeping the changed
-       asset out of formal Stage S3 and W5 runs until accepted (host upgrades
-       are never blocked during ordinary development).
+       a changed wheel, checkpoint or corpus identity, attaches the recorded
+       preflight check output and exact version/digest provenance to the
+       governing W4/W5 protocol or results PR/Issue carrier for **independent
+       `research-evidence-review` disposition**
+       ([`GOV-011`](../../../../../docs/governance/governance-system.md#gov-011-separate-findings-from-disposition)),
+       keeping that changed wheel/checkpoint/corpus pin out of formal Stage S3
+       and W5 runs until accepted.
 
 ## W4a: Symbolic source intake, rights partitioning and TEST exclusion
 

@@ -35,6 +35,25 @@ TRAINDEV_GOLD_IDS: frozenset[str] = frozenset(
     }
 )
 
+TRAINDEV_PAGE_COUNTS: dict[str, int] = {
+    "gold-07": 5,
+    "gold-08": 2,
+    "gold-09": 3,
+    "gold-10": 7,
+    "gold-11": 4,
+    "gold-12": 3,
+    "gold-13": 6,
+    "gold-14": 6,
+    "gold-15": 4,
+    "gold-16": 3,
+    "gold-17": 8,
+    "gold-19": 6,
+    "gold-20": 2,
+    "gold-21": 2,
+    "gold-22": 4,
+    "gold-23": 4,
+}
+
 ALLOWED_WHEEL_LICENSES: frozenset[str] = frozenset(
     {
         "Apache-2.0",

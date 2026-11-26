@@ -29,6 +29,12 @@ _STOP = 2
 _TRAIN_PAGES = 69
 
 
+@pytest.fixture(autouse=True)
+def _allow_w4_w5_fixture_tests(monkeypatch):
+    monkeypatch.setattr(ledgers, "_W4_W5_CAMPAIGN_RETIRED", False)
+    monkeypatch.setattr(cli, "_W4_W5_CAMPAIGN_RETIRED", False)
+
+
 class _Response(io.BytesIO):
     headers = MappingProxyType({})
 
@@ -644,6 +650,11 @@ def test_s3_statistics_load_train_dev_crops_only(
         cli,
         "verify_w3_snapshot_attestation",
         lambda *_args, **_kwargs: {"geometry_sha256": "fixture"},
+    )
+    monkeypatch.setattr(
+        cli,
+        "active_host_settings_path",
+        lambda: cli_paths["downloads"] / "MuseScore4.ini",
     )
     monkeypatch.setattr(
         cli.MuseScore,

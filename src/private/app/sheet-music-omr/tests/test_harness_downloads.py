@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from sheet_music_omr.harness import downloads as dl_mod
 from sheet_music_omr.harness.confine import Confinement, ConfinementError
 from sheet_music_omr.harness.downloads import (
     LIEDER_ZIP,
@@ -34,6 +35,11 @@ FILE = ZenodoFile(
     hashlib.md5(PAYLOAD, usedforsecurity=False).hexdigest(),
 )
 BASIS = "a stated allowance of the owner; an inference, not a measurement"
+
+
+@pytest.fixture(autouse=True)
+def _allow_w1_fixture_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(dl_mod, "_W1_CAMPAIGN_RETIRED", False)
 
 
 @pytest.fixture

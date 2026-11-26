@@ -16,14 +16,16 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from sheet_music_omr.harness.confine import lock_file_path
 from sheet_music_omr.harness.privacy import (
     identity_strings_from_path,
     scrub_paths,
@@ -31,7 +33,13 @@ from sheet_music_omr.harness.privacy import (
 from sheet_music_omr.harness.stops import StopConditionError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator, Mapping, Sequence
+    from collections.abc import (
+        Callable,
+        Generator,
+        Iterator,
+        Mapping,
+        Sequence,
+    )
 
     from sheet_music_omr.harness.confine import Confinement
 
@@ -64,6 +72,9 @@ HASH_LOG = "settings-hashes.jsonl"
 LOCK_NAME = ".musescore.lock"
 """The lock file in the shared download directory serializing conversions."""
 
+UNREAPED_NAME = ".musescore-unreaped"
+"""Marker file written when a timed-out MuseScore exit is unconfirmed."""
+
 PREFERENCES: Mapping[str, tuple[str, str]] = {
     "import/musicXml/importBreaks": ("import breaks", "true"),
     "import/musicXml/importLayout": ("import layout", "true"),
@@ -95,6 +106,9 @@ _SHORT_VERSION = re.compile(
 )
 _WINDOWS_APPDATA = re.compile(r"^[A-Za-z]:[\\/]|^\\\\")
 _WSL_CMD = Path("/mnt/c/Windows/System32/cmd.exe")
+_WSL_POWERSHELL = Path(
+    "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+)
 _WSL_REG = Path("/mnt/c/Windows/System32/reg.exe")
 
 type Launcher = Callable[[Sequence[str], float], tuple[int | None, str]]
@@ -226,6 +240,73 @@ def settings_path(
     raise StopConditionError(message)
 
 
+@lru_cache(maxsize=1)
+def _known_roaming_appdata() -> str | None:
+    """Query Win32 ``FOLDERID_RoamingAppData`` (used by Qt ``QSettings``)."""
+    if sys.platform == "win32":
+        import ctypes  # noqa: PLC0415
+
+        class _Guid(ctypes.Structure):
+            _fields_ = (
+                ("d1", ctypes.c_uint32),
+                ("d2", ctypes.c_uint16),
+                ("d3", ctypes.c_uint16),
+                ("d4", ctypes.c_ubyte * 8),
+            )
+
+        guid = _Guid(
+            0x3EB685DB,
+            0x65F9,
+            0x4CF6,
+            (ctypes.c_ubyte * 8)(
+                0xA0, 0x3A, 0xE3, 0xEF, 0x65, 0x72, 0x9F, 0x3D
+            ),
+        )
+        windll = getattr(ctypes, "windll")  # noqa: B009
+        out = ctypes.c_wchar_p()
+        hr = windll.shell32.SHGetKnownFolderPath(
+            ctypes.byref(guid), 0, None, ctypes.byref(out)
+        )
+        try:
+            return out.value if hr == 0 and out.value else None
+        finally:
+            if out.value:
+                windll.ole32.CoTaskMemFree(out)
+    if _WSL_POWERSHELL.is_file():
+        try:
+            completed = subprocess.run(  # noqa: S603
+                [
+                    str(_WSL_POWERSHELL),
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    (
+                        "[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
+                        "[Environment]::GetFolderPath('ApplicationData')"
+                    ),
+                ],
+                cwd="/mnt/c",
+                capture_output=True,
+                check=True,
+                timeout=15.0,
+            )
+            decoded = completed.stdout.decode("utf-8").strip()
+        except OSError, subprocess.SubprocessError, UnicodeDecodeError:
+            return None
+        if decoded and "\ufffd" not in decoded:
+            return decoded
+    return None
+
+
+def active_host_settings_path() -> Path:
+    """Resolve the active Windows Known Folder INI path used by Qt."""
+    known = _known_roaming_appdata()
+    if known is not None:
+        return _resolve_appdata_settings(known, require_existing_dir=True)
+    msg = "cannot resolve Windows Known Folder RoamingAppData for MuseScore"
+    raise StopConditionError(msg)
+
+
 def sha256_file(path: Path) -> str:
     """Return the lowercase hexadecimal SHA-256 of a file."""
     digest = hashlib.sha256()
@@ -304,9 +385,44 @@ def preference_values(
     }
 
 
+class MuseScoreUnreapedError(StopConditionError):
+    """Raised when a timed-out MuseScore process did not exit after SIGKILL."""
+
+
 def is_supported_version(version: str | None) -> bool:
     """Return whether ``version`` names a MuseScore Studio 4 release."""
     return version is not None and bool(_VERSION_4.fullmatch(version.strip()))
+
+
+def verify_rendering_preferences(musescore: MuseScore) -> None:
+    """Require MuseScore 4.x and all eight expected MusicXML preferences."""
+    if not is_supported_version(musescore.version):
+        msg = f"unsupported MuseScore version {musescore.version!r}"
+        raise StopConditionError(msg)
+    unverified = not has_source_verified_defaults(musescore.version)
+    snapshots: list[Mapping[str, Mapping[str, str]]] = [
+        musescore.baseline_preferences
+    ]
+    if musescore.settings.is_file() or unverified:
+        snapshots.append(musescore.preferences())
+    for snap in snapshots:
+        if unverified and any(
+            snap.get(key, {}).get("source") != "file" for key in PREFERENCES
+        ):
+            msg = (
+                f"MuseScore {musescore.version} requires all eight MusicXML "
+                "preferences set explicitly in MuseScore4.ini"
+            )
+            raise StopConditionError(msg)
+        effective = preference_values(snap)
+        for key, (_, expected) in PREFERENCES.items():
+            if effective.get(key, "").lower() != expected.lower():
+                msg = (
+                    f"MuseScore preference {key} must be {expected!r} "
+                    f"(importInferTextType=false required), got "
+                    f"{effective.get(key)!r}"
+                )
+                raise StopConditionError(msg)
 
 
 def _parse_reg_query(output: str, display_name: str) -> str | None:
@@ -425,6 +541,21 @@ def wsl_translate_command(
     return items
 
 
+def _terminate_musescore_process(
+    process: subprocess.Popen[bytes], *, is_wsl_exe: bool
+) -> None:
+    try:
+        with suppress(OSError):
+            process.kill()
+        process.wait(timeout=5.0)
+    except BaseException as reap_exc:
+        msg = "MuseScore process exit could not be confirmed after SIGKILL"
+        raise MuseScoreUnreapedError(msg) from reap_exc
+    if is_wsl_exe:
+        msg = "WSL MuseScore interruption cannot confirm native Windows exit"
+        raise MuseScoreUnreapedError(msg)
+
+
 def run_command(
     command: Sequence[str], timeout: float
 ) -> tuple[int | None, str]:
@@ -435,19 +566,108 @@ def run_command(
         standard output and error.
     """
     translated = wsl_translate_command(command)
-    with subprocess.Popen(  # noqa: S603 - a fixed executable and arguments
-        translated,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        stdin=subprocess.DEVNULL,
-    ) as process:
+    is_wsl_exe = sys.platform != "win32" and translated[0].lower().endswith(
+        ".exe"
+    )
+    process: subprocess.Popen[bytes] | None = None
+    try:
+        process = subprocess.Popen(  # noqa: S603 - a fixed executable and arguments
+            translated,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+        )
+        output, _ = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        assert process is not None  # noqa: S101
+        _terminate_musescore_process(process, is_wsl_exe=is_wsl_exe)
+        if process.stdout is not None:
+            process.stdout.close()
+        return None, ""
+    except BaseException as exc:
+        if process is not None:
+            _terminate_musescore_process(process, is_wsl_exe=is_wsl_exe)
+            if process.stdout is not None:
+                process.stdout.close()
+        elif is_wsl_exe and not isinstance(exc, OSError):
+            msg = (
+                "WSL MuseScore interruption cannot confirm native Windows exit"
+            )
+            raise MuseScoreUnreapedError(msg) from exc
+        raise
+    if is_wsl_exe and process.returncode is not None and process.returncode < 0:
+        msg = "WSL MuseScore signaled exit cannot confirm native Windows exit"
+        raise MuseScoreUnreapedError(msg)
+    return process.returncode, output.decode("utf-8", errors="replace")
+
+
+def executable_cli_version(
+    executable: Path | None, launcher: Launcher = run_command
+) -> str | None:
+    """Query ``--version`` directly from the resolved MuseScore executable."""
+    raw_exe = default_executable() if executable is None else executable
+    if not raw_exe.is_file():
+        message = f"MuseScore is not installed at {raw_exe}"
+        raise StopConditionError(message)
+    return cli_version(raw_exe.resolve(), launcher)
+
+
+@contextmanager
+def _host_profile_lock(settings: Path | None) -> Iterator[Path | None]:
+    if settings is None:
+        yield None
+        return
+    resolved = settings.resolve(strict=False)
+    norm = str(resolved)
+    if sys.platform != "win32" and resolved.is_relative_to("/tmp"):  # noqa: S108
+        lock_file = resolved.with_name(f".{resolved.name}.lock")
+        marker = resolved.with_name(f".{resolved.name}.unreaped")
+    else:
+        if sys.platform == "win32" or norm.startswith("/mnt/"):
+            norm = norm.lower()
+        key = hashlib.sha256(norm.encode()).hexdigest()[:16]
+        lock_root = (
+            Path("/tmp")  # noqa: S108
+            if sys.platform != "win32"
+            else Path(os.environ.get("PROGRAMDATA", tempfile.gettempdir()))
+        )
+        base = lock_root / f"omr-musescore-{key}"
+        lock_file = Path(f"{base}.lock")
+        marker = Path(f"{base}.unreaped")
+    with lock_file_path(lock_file):
+        yield marker
+
+
+@contextmanager
+def profile_invocation_fence(
+    confinement: Confinement, settings: Path | None
+) -> Iterator[None]:
+    """Serialize shared-profile MuseScore calls and fence unconfirmed exits."""
+    lock_path = confinement.downloads / LOCK_NAME
+    unreaped = confinement.downloads / UNREAPED_NAME
+    with ExitStack() as stack:
+        host_marker = stack.enter_context(_host_profile_lock(settings))
+        stack.enter_context(confinement.lock(lock_path))
+        if unreaped.exists() or (
+            host_marker is not None and host_marker.exists()
+        ):
+            msg = "unconfirmed MuseScore process blocks shared-profile reuse"
+            raise StopConditionError(msg)
+        confinement.write_text(unreaped, "in_flight\n")
+        if host_marker is not None:
+            host_marker.write_text("in_flight\n", encoding="utf-8")
         try:
-            output, _ = process.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            output, _ = process.communicate()
-            return None, output.decode("utf-8", errors="replace")
-        return process.returncode, output.decode("utf-8", errors="replace")
+            yield
+        except MuseScoreUnreapedError:
+            raise
+        except BaseException:
+            unreaped.unlink(missing_ok=True)
+            if host_marker is not None:
+                host_marker.unlink(missing_ok=True)
+            raise
+        unreaped.unlink(missing_ok=True)
+        if host_marker is not None:
+            host_marker.unlink(missing_ok=True)
 
 
 def cli_version(
@@ -554,13 +774,14 @@ def _resolve_executable_version(
     launcher: Launcher,
 ) -> tuple[Path, str]:
     default_exe = default_executable()
-    is_override = (
-        executable is not None and executable.resolve() != default_exe.resolve()
-    )
-    resolved = default_exe if executable is None else executable
-    if not resolved.is_file():
-        message = f"MuseScore is not installed at {resolved}"
+    raw_exe = default_exe if executable is None else executable
+    if not raw_exe.is_file():
+        message = f"MuseScore is not installed at {raw_exe}"
         raise StopConditionError(message)
+    resolved = raw_exe.resolve()
+    is_override = executable is not None and (
+        not default_exe.exists() or resolved != default_exe.resolve()
+    )
     if version_lookup is not registry_version:
         version = version_lookup()
     elif is_override:
@@ -602,12 +823,13 @@ class MuseScore:
     private: tuple[str, ...] = field(default=())
 
     @classmethod
-    def open(
+    def open(  # noqa: PLR0913
         cls,
         confinement: Confinement,
         *,
         executable: Path | None = None,
         settings: Path | None = None,
+        allow_missing_settings: bool = False,
         version_lookup: Callable[[], str | None] = registry_version,
         launcher: Launcher = run_command,
     ) -> MuseScore:
@@ -624,13 +846,19 @@ class MuseScore:
                 not exist, or any of the eight MusicXML preferences differs
                 from the run's baseline.
         """
-        executable, version = _resolve_executable_version(
-            executable, version_lookup, launcher
-        )
-        executable_sha256 = sha256_file(executable)
+        explicit_settings = settings is not None
         if settings is None:
             settings = settings_path()
-        elif not settings.is_file():
+        with profile_invocation_fence(confinement, settings):
+            executable, version = _resolve_executable_version(
+                executable, version_lookup, launcher
+            )
+        executable_sha256 = sha256_file(executable)
+        if (
+            explicit_settings
+            and not settings.is_file()
+            and not allow_missing_settings
+        ):
             message = f"MuseScore settings file does not exist at {settings}"
             raise StopConditionError(message)
         copy = confinement.run / SETTINGS_COPY
@@ -697,21 +925,21 @@ class MuseScore:
         return read_preferences(text, version=self.version)
 
     def check_settings(self) -> str | None:
-        """Verify the eight MusicXML preferences match the run's baseline.
-
-        Returns:
-            The current settings file SHA-256, or ``None`` when absent.
-
-        Raises:
-            StopConditionError: If any of the eight MusicXML preferences
-                differs from the run's baseline.
-        """
+        """Verify the eight MusicXML preferences match the run's baseline."""
         current = (
             sha256_file(self.settings) if self.settings.is_file() else None
         )
-        if preference_values(self.preferences()) != preference_values(
-            self.baseline_preferences
-        ):
+        current_prefs = self.preferences()
+        unverified_source_drift = not has_source_verified_defaults(
+            self.version
+        ) and {
+            k: v.get("source")
+            for k, v in current_prefs.items()
+            if k in self.baseline_preferences
+        } != {k: v.get("source") for k, v in self.baseline_preferences.items()}
+        if unverified_source_drift or preference_values(
+            current_prefs
+        ) != preference_values(self.baseline_preferences):
             message = (
                 "the MuseScore MusicXML preferences changed from the run's "
                 "recorded settings"
@@ -775,8 +1003,7 @@ class MuseScore:
             message = "a MuseScore output path already exists"
             raise StopConditionError(message)
         target.parent.mkdir(parents=True, exist_ok=True)
-        lock_path = self.confinement.downloads / LOCK_NAME
-        with self.confinement.lock(lock_path):
+        with profile_invocation_fence(self.confinement, self.settings):
             started = time.time()
             exit_code, log = self.launcher(
                 [str(self.executable), "-o", str(target), str(source)],
