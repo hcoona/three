@@ -82,6 +82,12 @@ its mutation unknown, even when the final observation shows the version.
 | Firefox AMO      | JWT issuer and secret (Environment secrets); one HS256 token per request                              | In the publisher: add-on `versions/v<version>/` (`unreviewed` in review, `public` published); add-on 404 is a conflict                                         | API v5 listed upload, upload validation polling, then version creation with the sources zip; re-observes the version                         |
 | Edge Add-ons     | API v1.1 `Authorization: ApiKey` and `X-ClientID` (Environment secrets)                               | None: the API has no read endpoint, so state is `Unobserved` before submission                                                                                 | Package upload and submission, polling each operation; a succeeded submission is received, a failed one a conflict                           |
 
+Chrome Web Store requires a readable version in every channel of each reported
+revision to establish absence. Browser store write requests do not follow
+redirects. If AMO loses the version creation response, the publisher records
+the ambiguous write and performs a bounded version lookup without resending the
+create request.
+
 Under [WD-REL-008](../requirements.md#release-delivery), Edge's first submission
 may proceed with an `Unobserved` prestate; this does not establish absence or
 exact state. Without a read endpoint, a live Edge request cannot tell whether

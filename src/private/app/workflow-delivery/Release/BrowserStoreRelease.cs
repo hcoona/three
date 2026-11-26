@@ -183,7 +183,7 @@ internal static class BrowserStoreRelease
         return new(new(subject, business, [], reasons), state, attempted, publication);
     }
 
-    private static bool ManifestVersion(string version)
+    internal static bool ManifestVersion(string version)
     {
         string[] parts = version.Split('.');
         return parts.Length is >= 1 and <= 4 && parts.All(part => part.Length is >= 1 and

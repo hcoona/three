@@ -312,6 +312,26 @@ public sealed class GitMaterializationTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task ReuseRejectsMovedHeadEvenWhenCheckoutIsClean()
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        await repo.SetAsync("content.txt", "committed");
+        string commit = await repo.CommitAsync();
+        await repo.GitAsync("reset", "--hard", commit);
+        GitMaterialization bound = await GitMaterialization.BindAsync(repo.Directory, commit,
+            context.CancellationToken);
+        string successor = await repo.CommitAsync(commit);
+        await repo.GitAsync("reset", "--hard", successor);
+        Assert.AreEqual("", await repo.GitAsync("status", "--porcelain"));
+
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            GitMaterialization.ReuseOrBindAsync(bound, repo.Directory, commit,
+                context.CancellationToken));
+
+        Assert.Contains("checkout HEAD is not the requested revision", failure.Message);
+    }
+
+    [TestMethod]
     [DataRow("0123456789abcdef0123456789abcdef01234567", true)]
     [DataRow("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", true)]
     [DataRow("0123456789ABCDEF0123456789ABCDEF01234567", false)]

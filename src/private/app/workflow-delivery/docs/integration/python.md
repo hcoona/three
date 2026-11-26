@@ -385,9 +385,11 @@ Execute each original selected target with
 `uv run --no-project --python <prepared-environment> python -m pytest`, retaining
 the supported native configuration/options. Set `UV_PROJECT_ENVIRONMENT` only
 for preparation and remove it from product execution so nested project-native
-UV calls do not retarget the prepared environment. Product preparation and
-execution retain ordinary Python import behavior; query-only `PYTHONSAFEPATH`
-is removed at that boundary while native query isolation remains unchanged.
+UV calls do not retarget the prepared environment. The pytest sync and run use
+the caller's explicit prepared environment without inheriting ambient runner
+variables. Product preparation and execution retain ordinary Python import
+behavior; query-only `PYTHONSAFEPATH` is removed at that boundary while native
+query isolation remains unchanged.
 One invocation per target supplies its distinct required outcome while sharing
 preparation. A preparation failure, timeout or cancellation leaves every affected
 required target unsatisfied; it cannot produce an empty successful result. Each

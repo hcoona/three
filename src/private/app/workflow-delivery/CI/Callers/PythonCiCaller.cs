@@ -77,11 +77,17 @@ internal static class PythonCiCaller
     }
 
     // The Azure credential-provider tests are the only target with a native adapter need.
-    internal static bool AzureBundle(CiPlan plan) => plan.Checks
+    internal static bool AzureBundle(CiPlan plan) => SelectedPytestTargets(plan)
+        .Contains("src/private/app/azureauth-credprovider/python/tests");
+
+    internal static bool RequiresPowerShell(CiPlan plan) => AzureBundle(plan) ||
+        SelectedPytestTargets(plan).Any(path =>
+            path is "tests/eng" or "tests/eng/test_svgedit_renovate.py");
+
+    private static IEnumerable<string> SelectedPytestTargets(CiPlan plan) => plan.Checks
         .Where(item => item.Work.Key.Check == "python/pytest-v1")
         .Select(item => item.Work.Dimensions.TryGetValue("testPath", out string? path) ? path :
-            throw new InvalidDataException("Selected pytest check has no target."))
-        .Contains("src/private/app/azureauth-credprovider/python/tests");
+            throw new InvalidDataException("Selected pytest check has no target."));
 
     internal static async Task<CiOutcome> ExecuteAsync(string directory, string? pwsh,
         CancellationToken token,
@@ -105,9 +111,9 @@ internal static class PythonCiCaller
             throw new InvalidDataException("Prepared Python candidate differs from execution.");
         var environment = new Dictionary<string, string?>(candidate.Environment,
             StringComparer.Ordinal);
+        if (RequiresPowerShell(plan)) Prepend(environment, pwsh);
         if (AzureBundle(plan))
         {
-            Prepend(environment, pwsh);
             foreach (string name in new[] { "DOTNET_ROOT", "DOTNET_ROOT_X64", "DOTNET_ROOT_ARM64" })
                 if (Environment.GetEnvironmentVariable(name) is { } value) environment[name] =
                     value;

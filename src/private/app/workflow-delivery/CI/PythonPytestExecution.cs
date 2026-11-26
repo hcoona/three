@@ -95,7 +95,8 @@ internal static class PythonPytestExecution
             IReadOnlyDictionary<string, string?>? commandEnvironment = null)
         {
             var command = new NativeCommand(request.Uv, checkout, arguments,
-                request.DeadlineSeconds, commandEnvironment ?? environment);
+                request.DeadlineSeconds, commandEnvironment ?? environment,
+                InheritEnvironment: false);
             NativeCommandResult result;
             if (token.IsCancellationRequested)
                 result = new(NativeTermination.Cancelled, null, "", "", 0,

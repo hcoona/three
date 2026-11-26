@@ -13,7 +13,7 @@ internal sealed record GithubReleaseObservationResult(ReleaseObservation Observa
 // storage; the application reads the tag's commit, the release's channel and every served
 // asset, and compares each with the qualified original byte for byte.
 internal sealed class GithubReleaseDestination(HttpClient client, string credential,
-    TimeProvider? clock = null)
+    TimeProvider? clock = null, HttpClient? writeClient = null)
 {
     internal const string Repository = GithubApi.Repository;
     internal const string Check = "release-identity";
@@ -175,7 +175,7 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
                 ? UploadHost : GithubApi.Host);
             GithubApi.ConfigureJsonWrite(request, credential);
             request.Content = content;
-            using HttpResponseMessage response = await client.SendAsync(request,
+            using HttpResponseMessage response = await (writeClient ?? client).SendAsync(request,
                 HttpCompletionOption.ResponseHeadersRead, deadline.Token);
             byte[] body = await RegistryBody.LimitedAsync(await response.Content
                 .ReadAsStreamAsync(deadline.Token), response.Content.Headers.ContentLength,

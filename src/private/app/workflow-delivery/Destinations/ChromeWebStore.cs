@@ -11,10 +11,10 @@ namespace WorkflowDelivery.Destinations;
 internal sealed class ChromeWebStore(HttpClient client, ReleaseSubject subject,
     BrowserStoreTarget target, string version, string token,
     Func<TimeSpan, CancellationToken, Task>? delay = null, TimeProvider? time = null,
-    int attempts = 30) : IBrowserStore
+    int attempts = 30, HttpClient? writeClient = null) : IBrowserStore
 {
     internal static readonly Uri Origin = new("https://chromewebstore.googleapis.com/");
-    private readonly StoreHttp http = new(client, [], delay, time);
+    private readonly StoreHttp http = new(client, [], delay, time, writeClient);
 
     private string Item => $"publishers/{Uri.EscapeDataString(target.Publisher!)}/items/" +
         Uri.EscapeDataString(target.Item);
@@ -87,22 +87,34 @@ internal sealed class ChromeWebStore(HttpClient client, ReleaseSubject subject,
         if (status.TryGetProperty("takenDown", out JsonElement down) &&
             down.ValueKind == JsonValueKind.True)
             return (StoreState.Conflict, "Chrome Web Store item is taken down.");
+        const string unreadable = "Chrome Web Store revision lacks readable distribution channels.";
         StoreState? exact = null;
+        string? conflict = null;
         foreach (string field in new[] { "submittedItemRevisionStatus",
                      "publishedItemRevisionStatus" })
         {
             if (!status.TryGetProperty(field, out JsonElement revision) ||
-                revision.ValueKind != JsonValueKind.Object)
+                revision.ValueKind == JsonValueKind.Null)
                 continue;
+            if (revision.ValueKind != JsonValueKind.Object ||
+                !revision.TryGetProperty("distributionChannels", out JsonElement channels) ||
+                channels.ValueKind != JsonValueKind.Array || channels.GetArrayLength() == 0)
+                return (StoreState.Unknown, unreadable);
+
+            bool later = false, matches = false;
+            foreach (JsonElement channel in channels.EnumerateArray())
+            {
+                string? value = StoreHttp.Text(channel, "crxVersion");
+                if (value is null || !BrowserStoreRelease.ManifestVersion(value))
+                    return (StoreState.Unknown, unreadable);
+                later |= Compare(value, version) > 0;
+                matches |= value == version;
+            }
+
             string? state = StoreHttp.Text(revision, "state");
-            string[] versions = revision.TryGetProperty("distributionChannels",
-                    out JsonElement channels) && channels.ValueKind == JsonValueKind.Array
-                ? channels.EnumerateArray().Select(channel =>
-                    StoreHttp.Text(channel, "crxVersion")).OfType<string>().ToArray()
-                : [];
-            if (versions.Any(value => Compare(value, version) > 0))
-                return (StoreState.Conflict, "Chrome Web Store holds a later version.");
-            if (versions.Contains(version))
+            if (later)
+                conflict ??= "Chrome Web Store holds a later version.";
+            else if (matches)
                 exact ??= state switch
                 {
                     "PENDING_REVIEW" => StoreState.InReview,
@@ -113,9 +125,9 @@ internal sealed class ChromeWebStore(HttpClient client, ReleaseSubject subject,
                 };
             else if (field == "submittedItemRevisionStatus" &&
                      state is "PENDING_REVIEW" or "STAGED")
-                return (StoreState.Conflict,
-                    "Chrome Web Store holds another submitted revision.");
+                conflict ??= "Chrome Web Store holds another submitted revision.";
         }
+        if (conflict is not null) return (StoreState.Conflict, conflict);
         return exact switch
         {
             null => (StoreState.Absent, ""),

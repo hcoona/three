@@ -10,9 +10,9 @@ internal static class RegistryHttpClient
 {
     internal const int MaxRedirects = 5;
 
-    internal static HttpClientHandler CreateHandler() => new()
+    internal static HttpClientHandler CreateHandler(bool allowAutoRedirect = true) => new()
     {
-        AllowAutoRedirect = true,
+        AllowAutoRedirect = allowAutoRedirect,
         MaxAutomaticRedirections = MaxRedirects,
         UseCookies = false,
         UseProxy = false,
@@ -21,5 +21,8 @@ internal static class RegistryHttpClient
     };
 
     internal static HttpClient Create() => new(CreateHandler())
+    { Timeout = Timeout.InfiniteTimeSpan };
+
+    internal static HttpClient CreateNoRedirect() => new(CreateHandler(allowAutoRedirect: false))
     { Timeout = Timeout.InfiniteTimeSpan };
 }
