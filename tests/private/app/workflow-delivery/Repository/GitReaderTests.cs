@@ -193,6 +193,23 @@ public sealed class GitReaderTests(TestContext context)
                 cancellation.Token));
     }
 
+    [TestMethod]
+    public async Task FixtureMaterializesPathsExceedingLegacyWindowsMaxPath()
+    {
+        using var repo = await GitFixture.CreateAsync(context.CancellationToken);
+        string deep = string.Join('/', Enumerable.Repeat("segment-exceeding-legacy-max-path", 8)) +
+            "/deep.csproj";
+        await repo.SetAsync(deep, "<Project />");
+        string commit = await repo.CommitAsync();
+        await repo.GitAsync("reset", "--hard", commit);
+
+        GitMaterialization bound = await GitMaterialization.BindAsync(repo.Directory, commit,
+            context.CancellationToken);
+        Assert.IsGreaterThan(260, Path.Combine(repo.Directory, deep).Length);
+        Assert.AreEqual("<Project />", await bound.ReadOptionalTextAsync(deep,
+            context.CancellationToken));
+    }
+
     private static string[] Paths(GitRevision revision) =>
         revision.Entries.Select(entry => entry.Path).ToArray();
 
@@ -202,9 +219,10 @@ public sealed class GitReaderTests(TestContext context)
     // follow a GitAsync call (usually reset --hard or checkout) or an explicit FlushAsync.
     internal sealed class GitFixture(bool legacyNbgvCleanup, CancellationToken token) : IDisposable
     {
-        private readonly string temporary = Path.Combine(Path.GetTempPath(),
-            "workflow git facts " + Guid.NewGuid().ToString("N"));
-        internal string Directory => Path.Combine(temporary, "repository");
+        private static int nextTemplateId;
+        private readonly string temporary =
+            System.IO.Directory.CreateTempSubdirectory("gf ").FullName;
+        internal string Directory => Path.Combine(temporary, "r");
 
         internal static async Task<GitFixture> CreateAsync(CancellationToken token,
             string format = "sha1", bool legacyNbgvCleanup = false)
@@ -237,8 +255,8 @@ public sealed class GitReaderTests(TestContext context)
 
         // One initialized repository per object format serves the whole test process. Its
         // hooks path is a per-process empty directory that outlives every fixture.
-        private static readonly string TemplateRoot = Path.Combine(Path.GetTempPath(),
-            "workflow git template " + Guid.NewGuid().ToString("N"));
+        private static readonly string TemplateRoot =
+            System.IO.Directory.CreateTempSubdirectory("gt-").FullName;
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string,
             Lazy<Task<string>>> Templates = new(StringComparer.Ordinal);
 
@@ -255,16 +273,17 @@ public sealed class GitReaderTests(TestContext context)
             {
                 // Each attempt owns its directory, so a retry after a failure starts clean.
                 string attempt = Path.Combine(TemplateRoot,
-                    format + "-" + Guid.NewGuid().ToString("N"));
-                string empty = Path.Combine(attempt, "template");
+                    format + "-" + Interlocked.Increment(ref nextTemplateId));
+                string empty = Path.Combine(attempt, "t");
                 System.IO.Directory.CreateDirectory(empty);
                 // One template config replaces per-key launches; Git copies it during init.
                 string hooks = empty.Replace('\\', '/');
                 await File.WriteAllTextAsync(Path.Combine(empty, "config"),
                     "[user]\n\tname = Workflow fixture\n\temail = fixture@example.invalid\n" +
                     "[commit]\n\tgpgSign = false\n[tag]\n\tgpgSign = false\n[gc]\n\tauto = 0\n" +
-                    "[core]\n\thooksPath = \"" + hooks + "\"\n\tprotectNTFS = false\n");
-                string repository = Path.Combine(attempt, "repository");
+                    "[core]\n\thooksPath = \"" + hooks + "\"\n\tprotectNTFS = false\n" +
+                    "\tlongpaths = true\n");
+                string repository = Path.Combine(attempt, "r");
                 System.IO.Directory.CreateDirectory(repository);
                 // The template is shared, so its creation is not bound to one test's token.
                 await NativeProcess.RunAsync("git", repository, ["init", "--quiet",

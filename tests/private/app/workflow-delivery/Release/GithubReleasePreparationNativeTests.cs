@@ -29,7 +29,8 @@ public sealed class GithubReleasePreparationNativeTests(TestContext context)
             string checkout = Path.Combine(root, "c");
             string scratch = Directory.CreateDirectory(Path.Combine(root, "s")).FullName;
             string revision = (await Git(source, "rev-parse", "HEAD")).Trim();
-            await Git(source, "clone", "--shared", "--no-checkout", "--", source, checkout);
+            await Git(source, "clone", "-c", "core.longpaths=true", "--shared", "--no-checkout",
+                "--", source, checkout);
             await Git(checkout, "checkout", "--detach", revision);
             var subject = new ReleaseSubject(revision, "refs/heads/development",
                 GithubReleaseUnits.ImageOcclusionEditor, GithubReleaseUnits.Declaration, "buddy",

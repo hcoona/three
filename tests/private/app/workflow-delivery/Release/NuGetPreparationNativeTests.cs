@@ -363,7 +363,8 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             string revision = (await RunAsync(new("git", source, ["rev-parse", "HEAD"], 30))).Stdout
                 .Trim();
             await RunAsync(new("git", source,
-                ["clone", "--shared", "--no-checkout", "--", source, checkout], 120));
+                ["clone", "-c", "core.longpaths=true", "--shared", "--no-checkout", "--",
+                    source, checkout], 120));
             await RunAsync(new("git", checkout, ["checkout", "--detach", revision], 120,
                 new Dictionary<string, string?> { ["GIT_LFS_SKIP_SMUDGE"] = "1" }));
             string smoke = Path.Combine(checkout, Product, "Smoke.cs");

@@ -293,7 +293,8 @@ public sealed class DotNetPackageNativeTests(TestContext context)
             {
                 GitRevision revision = await new GitReader(source).ReadAsync("HEAD", token);
                 await NativeProcess.RunAsync("git", source,
-                    ["clone", "--shared", "--no-checkout", "--", source, checkout], token);
+                    ["clone", "-c", "core.longpaths=true", "--shared", "--no-checkout", "--",
+                        source, checkout], token);
                 // Keep source history, but materialize only the product's .NET and NBGV inputs.
                 await NativeProcess.RunAsync("git", checkout, ["read-tree", "--empty"], token);
                 string sourceRevision = revision.Commit;
