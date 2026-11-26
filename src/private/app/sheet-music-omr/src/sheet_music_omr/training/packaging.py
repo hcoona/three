@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import contextlib
 import errno
 import hashlib
@@ -30,7 +29,7 @@ from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field, replace
 from itertools import batched, islice, zip_longest
 from pathlib import Path
-from typing import TYPE_CHECKING, Never, cast
+from typing import TYPE_CHECKING, cast
 from weakref import WeakSet
 
 import numpy as np
@@ -46,8 +45,7 @@ from sheet_music_omr.evaluation.alignment import (
 )
 from sheet_music_omr.harness.downloads import sha256_file
 from sheet_music_omr.harness.musescore import (
-    _windows_path_for_wsl,
-    preference_values,
+    verify_rendering_preferences,
     wsl_translate_command,
 )
 from sheet_music_omr.harness.records import repository_root, source_state
@@ -55,12 +53,12 @@ from sheet_music_omr.harness.stops import StopConditionError
 from sheet_music_omr.parser import parse_document
 from sheet_music_omr.synthetic import degrade, injector, intake, renderers
 from sheet_music_omr.synthetic.ledgers import (
-    ACCEPTED_MUSESCORE_IDENTITIES,
     RESVG_VERSION,
     RESVG_WHEEL_SHA256,
     VEROVIO_VERSION,
     VEROVIO_WHEEL_SHA256,
     WORKER_SCRATCH_HEADROOM_BYTES,
+    directory_bytes,
     verify_w4_w5_live_assets,
 )
 from sheet_music_omr.timeline import build_timeline
@@ -70,16 +68,12 @@ from sheet_music_omr.training.ledgers import (
     W6_OFFLINE_ENV,
     W6_WORKER_TIMEOUT_SECONDS,
     _check_w6_disk_cap,
-    begin_w6_native_worker,
     check_w6_runs_root,
-    clear_w6_native_worker,
-    has_pending_w6_native_worker,
     reserve_w6_render_run,
     settle_w6_run,
     verify_completed_w6_render_run,
     verify_w6_training_assets,
     w6_disk_lock,
-    w6_scratch_dir_bytes,
 )
 from sheet_music_omr.writer import _state_lines, write_carry_state
 
@@ -1743,7 +1737,7 @@ def _retained_scratch_bytes(scratch: Path, peak_bytes: int) -> int:
     if not any(scratch.iterdir()):
         shutil.rmtree(scratch)
         return peak_bytes
-    return max(peak_bytes, w6_scratch_dir_bytes(scratch))
+    return max(peak_bytes, directory_bytes(scratch))
 
 
 def _execute_prepared_variant(  # noqa: PLR0913
@@ -1755,8 +1749,6 @@ def _execute_prepared_variant(  # noqa: PLR0913
     calibrated_identity: tuple[str, str] | None,
     musescore_lock: threading.Lock,
     max_pages: int,
-    max_scratch_bytes: int | None = None,
-    reservation_id: str | None = None,
 ) -> _RenderOutcome:
     local_pages = 0
     peak_scratch_bytes = 0
@@ -1767,7 +1759,7 @@ def _execute_prepared_variant(  # noqa: PLR0913
         local_pages += count
         if scratch.exists():
             peak_scratch_bytes = max(
-                peak_scratch_bytes, w6_scratch_dir_bytes(scratch)
+                peak_scratch_bytes, directory_bytes(scratch)
             )
 
     ledger = renderers.RenderGateLedger(
@@ -1783,7 +1775,7 @@ def _execute_prepared_variant(  # noqa: PLR0913
     try:
         if prepared.engine == "musescore":
             if musescore is not None:
-                _verify_musescore_output_bound_preconditions(musescore)
+                verify_rendering_preferences(musescore)
             with musescore_lock:
                 result = renderers.render_musescore(
                     prepared.xml,
@@ -1795,7 +1787,6 @@ def _execute_prepared_variant(  # noqa: PLR0913
                     max_pages=max_pages,
                     count_rasters=add_pages,
                     calibrated_identity=calibrated_identity,
-                    max_scratch_bytes=max_scratch_bytes,
                 )
         else:
             result = renderers.render_verovio(
@@ -1806,17 +1797,10 @@ def _execute_prepared_variant(  # noqa: PLR0913
                 ledger,
                 max_pages=max_pages,
                 count_rasters=add_pages,
-                max_scratch_bytes=max_scratch_bytes,
-            )
-        if prepared.engine == "musescore" and has_pending_w6_native_worker(
-            reservation_id
-        ):
-            _fail_unconfirmed_musescore(
-                "pending W6 native-worker fence prevents scratch cleanup"
             )
         scratch_bytes = max(
             peak_scratch_bytes,
-            w6_scratch_dir_bytes(scratch) if scratch.exists() else 0,
+            directory_bytes(scratch) if scratch.exists() else 0,
         )
         if scratch.exists():
             shutil.rmtree(scratch)
@@ -1836,7 +1820,6 @@ def _stage_verovio_parent_job(
     run: Path,
     downloads: Path,
     max_pages: int,
-    max_scratch_bytes: int,
 ) -> tuple[
     _VariantPlan,
     renderers.RenderResult | renderers.StagedVerovio | Exception,
@@ -1852,7 +1835,7 @@ def _stage_verovio_parent_job(
         local_pages += count
         if scratch.exists():
             peak_scratch_bytes = max(
-                peak_scratch_bytes, w6_scratch_dir_bytes(scratch)
+                peak_scratch_bytes, directory_bytes(scratch)
             )
 
     ledger = renderers.RenderGateLedger(
@@ -1870,11 +1853,10 @@ def _stage_verovio_parent_job(
             ledger,
             max_pages=max_pages,
             count_rasters=add_pages,
-            max_scratch_bytes=max_scratch_bytes,
         )
         scratch_bytes = max(
             peak_scratch_bytes,
-            w6_scratch_dir_bytes(scratch) if scratch.exists() else 0,
+            directory_bytes(scratch) if scratch.exists() else 0,
         )
         if scratch.exists():
             shutil.rmtree(scratch)
@@ -1960,79 +1942,10 @@ def _prepackage_variants_parallel(
 _MAX_MUSESCORE_REPEATS = 10
 
 
-def _verify_musescore_output_bound_preconditions(musescore: MuseScore) -> None:
-    """Require substantiated 4.7.6/4.7.7 binary and disabled jump inference."""
-    if (
-        musescore.version,
-        musescore.executable_sha256,
-    ) not in ACCEPTED_MUSESCORE_IDENTITIES:
-        msg = "MuseScore identity needs accepted mutable-source recheck"
-        raise StopConditionError(msg)
-    prefs = preference_values(musescore.baseline_preferences)
-    if prefs.get("import/musicXml/importInferTextType", "").lower() != "false":
-        msg = "W6 MuseScore output bound requires importInferTextType=false"
-        raise StopConditionError(msg)
-
-
-def _musescore_worst_case_bytes(measures: int, xml: str) -> int:
-    """Return proven upper bound for one US-Letter 300-DPI MuseScore batch job.
-
-    1. Canvas (renderers.py:137-138): US Letter 8.5x11.0 in at -r 300 DPI ->
-       2550x3300 32-bit RGBA = 33,663,300 filtered scanline bytes -> RFC-1951
-       uncompressed stored-block PNG format ceiling < 35 MB < 64 MiB/page.
-    2. Pagination (createMultiMeasureRests=0, single 2-staff piano part):
-       MuseScore never subdivides one <measure> element across systems and
-       places >= 1 system/page, so pages <= max(measures, <measure> count) + 1.
-    3. Sidecars (musescore positionswriter.cpp repeatList(expandRepeats=true)):
-       rejecting > 10 <repeat tags bounds playback passes to <= 2**R; each
-       segment (<element> < 256 B) and unrolled playback chord (<event> < 256 B)
-       plus un-unrolled MusicXML re-export fits within the formula below.
-    """
-    repeat_tags = xml.count("<repeat")
-    if repeat_tags > _MAX_MUSESCORE_REPEATS:
-        msg = "MuseScore job exceeds bounded repeat-expansion limit"
-        raise StopConditionError(msg)
-    measure_elems = max(measures, xml.count("<measure"))
-    max_job_pages = measure_elems + 1
-    segments = (
-        xml.count("<note")
-        + xml.count("<backup")
-        + xml.count("<forward")
-        + measure_elems
-        + 16
-    )
-    passes = 1 << repeat_tags
-    png_ceiling = WORKER_SCRATCH_HEADROOM_BYTES * max_job_pages
-    sidecar_ceiling = 512 * segments * (1 + passes) + 8 * 1024 * 1024
-    xml_ceiling = (
-        16 * len(xml.encode("utf-8")) + 4096 * segments + 8 * 1024 * 1024
-    )
-    return png_ceiling + sidecar_ceiling + xml_ceiling
-
-
-def _verovio_worst_case_bytes(plan: _PreparedVariant) -> int:
-    """Return hard-enforced scratch ceiling for one Verovio subprocess job."""
-    est_pages = max(
-        1,
-        math.ceil(len(plan.style.layout.starts) / plan.style.systems_per_page),
-    )
-    return (
-        WORKER_SCRATCH_HEADROOM_BYTES * est_pages
-        + 16 * len(plan.xml.encode("utf-8"))
-        + 16 * 1024 * 1024
-    )
-
-
 def _item_max_pages(item: _PreparedVariant) -> int:
     if item.engine == "musescore":
         return max(item.measures, item.xml.count("<measure")) + 1
     return item.measures
-
-
-def _item_worst_case_bytes(item: _PreparedVariant) -> int:
-    if item.engine == "musescore":
-        return _musescore_worst_case_bytes(item.measures, item.xml)
-    return _verovio_worst_case_bytes(item)
 
 
 def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
@@ -2048,12 +1961,12 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
     musescore_page_cap: int | None = None,
     musescore_supplement: bool = False,
     precomputed_plans: Sequence[_VariantPlan] | None = None,
-    reservation_id: str = "",
+    initial_musescore_pages: int = 0,
 ) -> Iterator[RenderedVariant]:
     workers = _int(verovio_workers, 1)
     if musescore_page_cap is not None:
         musescore_page_cap = _int(musescore_page_cap, 0)
-    musescore_pages = 0
+    musescore_pages = initial_musescore_pages
     musescore_lock = threading.Lock()
     batch: list[_PreparedVariant] = []
     reserved_measures = 0
@@ -2184,9 +2097,7 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
         is_musescore: bool,
     ) -> list[_RenderOutcome]:
         if process_pool is not None and not is_musescore:
-            # Run unshare Verovio subprocesses on parent threads under the disk
-            # lock owner so every renderer is reaped before lock release, then
-            # run pure-Python SVG/MEI verification in forkserver workers.
+
             def stage_one(
                 item: _PreparedVariant,
             ) -> tuple[
@@ -2200,7 +2111,6 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     run=run,
                     downloads=downloads,
                     max_pages=min(item.measures, max_pages),
-                    max_scratch_bytes=_verovio_worst_case_bytes(item),
                 )
 
             staged_rows = (
@@ -2263,8 +2173,6 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 calibrated_identity=calibrated_identity,
                 musescore_lock=musescore_lock,
                 max_pages=min(_item_max_pages(item), max_pages),
-                max_scratch_bytes=_item_worst_case_bytes(item),
-                reservation_id=reservation_id or None,
             )
 
         if thread_pool is not None and len(items) > 1:
@@ -2273,18 +2181,7 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
         else:
             outcomes = [execute(item) for item in items]
         meter.add(sum(outcome.pages for outcome in outcomes))
-        fence_owned = has_pending_w6_native_worker(reservation_id or None)
-        meter.uncounted_worker = fence_owned or any(
-            isinstance(outcome.result, _UnconfirmedWorkerExitError)
-            for outcome in outcomes
-        )
-        if fence_owned and not any(
-            isinstance(outcome.result, _WorkerError | Exception)
-            for outcome in outcomes
-        ):
-            _fail_unconfirmed_musescore(
-                "W6 native-worker fence remained set after dispatch"
-            )
+        meter.uncounted_worker = False
         return outcomes
 
     def flush_batch() -> list[RenderedVariant]:  # noqa: C901
@@ -2298,7 +2195,7 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
         reserved_measures = 0
         first = items[0]
         is_musescore = first.engine == "musescore"
-        required_scratch = sum(_item_worst_case_bytes(it) for it in items)
+        required_scratch = WORKER_SCRATCH_HEADROOM_BYTES * len(items)
         scratch_disk = meter.check_scratch(required_scratch)
         reserved_scratch_bytes = 0
         pending_ms_measures = 0
@@ -2306,7 +2203,6 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
         max_pages = max(
             1, remaining // (WORKER_SCRATCH_HEADROOM_BYTES * len(items))
         )
-        # If dispatch or collection fails, settlement charges the reservation.
         meter.uncounted_worker = True
         outcomes = dispatch(items, max_pages, is_musescore=is_musescore)
         scratch_disk.check_headroom(
@@ -2426,7 +2322,7 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     yield from flush_batch()
                     continue
                 discard_preparation(idx)
-                item_scratch = _item_worst_case_bytes(item)
+                item_scratch = WORKER_SCRATCH_HEADROOM_BYTES
                 meter.check_scratch(reserved_scratch_bytes + item_scratch)
                 batch.append(item)
                 reserved_measures += item_pages
@@ -2452,377 +2348,11 @@ def _render_variants(  # noqa: C901, PLR0912, PLR0913, PLR0915
             thread_pool.shutdown(wait=True)
 
 
-class _UnconfirmedWorkerExitError(StopConditionError):
-    """Raised when a timed-out native worker's exit could not be confirmed."""
-
-
-_WSL_POWERSHELL = Path(
-    "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
-)
-_WSL_NATIVE_LAUNCH_SCRIPT = r"""
-$ErrorActionPreference = "Stop"
-Add-Type -TypeDefinition @"
-using System;
-using System.ComponentModel;
-using System.IO;
-using System.Runtime.InteropServices;
-using System.Text;
-using Microsoft.Win32.SafeHandles;
-
-public static class W6JobRunner {
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    struct STARTUPINFO {
-        public int cb;
-        public string lpReserved, lpDesktop, lpTitle;
-        public int dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars;
-        public int dwFillAttribute, dwFlags;
-        public short wShowWindow, cbReserved2;
-        public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
-    }
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    struct STARTUPINFOEX {
-        public STARTUPINFO StartupInfo;
-        public IntPtr lpAttributeList;
-    }
-    [StructLayout(LayoutKind.Sequential)]
-    struct PROCESS_INFORMATION {
-        public IntPtr hProcess, hThread;
-        public int dwProcessId, dwThreadId;
-    }
-    [StructLayout(LayoutKind.Sequential)]
-    struct SECURITY_ATTRIBUTES {
-        public int nLength;
-        public IntPtr lpSecurityDescriptor;
-        public bool bInheritHandle;
-    }
-    [StructLayout(LayoutKind.Sequential)]
-    struct JOBOBJECT_BASIC_LIMIT_INFORMATION {
-        public long PerProcessUserTimeLimit, PerJobUserTimeLimit;
-        public uint LimitFlags;
-        public UIntPtr MinimumWorkingSetSize, MaximumWorkingSetSize;
-        public uint ActiveProcessLimit;
-        public UIntPtr Affinity;
-        public uint PriorityClass, SchedulingClass;
-    }
-    [StructLayout(LayoutKind.Sequential)]
-    struct IO_COUNTERS {
-        public ulong ROp, WOp, OOp, RBytes, WBytes, OBytes;
-    }
-    [StructLayout(LayoutKind.Sequential)]
-    struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
-        public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
-        public IO_COUNTERS IoInfo;
-        public UIntPtr ProcMem, JobMem, PeakProcMem, PeakJobMem;
-    }
-    [StructLayout(LayoutKind.Sequential)]
-    struct JOBOBJECT_BASIC_ACCOUNTING_INFORMATION {
-        public long TotalUser, TotalKernel, PeriodUser, PeriodKernel;
-        public uint PageFaults, TotalProcesses, ActiveProcesses, Terminated;
-    }
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    static extern IntPtr CreateJobObjectW(IntPtr a, string n);
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool SetInformationJobObject(
-        IntPtr h, int t, ref JOBOBJECT_EXTENDED_LIMIT_INFORMATION i, int cb);
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool QueryInformationJobObject(
-        IntPtr h, int t, out JOBOBJECT_BASIC_ACCOUNTING_INFORMATION i,
-        int cb, IntPtr r);
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool TerminateJobObject(IntPtr hJob, uint code);
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool InitializeProcThreadAttributeList(
-        IntPtr list, int count, int flags, ref IntPtr size);
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool UpdateProcThreadAttribute(
-        IntPtr list, uint flags, IntPtr attr, ref IntPtr val, IntPtr cb,
-        IntPtr prev, IntPtr retSz);
-    [DllImport("kernel32.dll")]
-    static extern void DeleteProcThreadAttributeList(IntPtr list);
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool CreatePipe(
-        out SafeFileHandle r, out SafeFileHandle w,
-        ref SECURITY_ATTRIBUTES sa, int sz);
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool SetHandleInformation(SafeFileHandle h, int m, int f);
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    static extern SafeFileHandle CreateFileW(
-        string fn, uint acc, uint share, ref SECURITY_ATTRIBUTES sa,
-        uint disp, uint flg, IntPtr tpl);
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    static extern bool CreateProcessW(
-        string app, StringBuilder cmd, IntPtr pa, IntPtr ta,
-        bool inheritHandles, uint flg, IntPtr env, string cwd,
-        ref STARTUPINFOEX si, out PROCESS_INFORMATION pi);
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern uint WaitForSingleObject(IntPtr h, uint ms);
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool GetExitCodeProcess(IntPtr h, out uint code);
-    [DllImport("kernel32.dll", SetLastError = true)]
-    static extern bool CloseHandle(IntPtr h);
-
-    static void Check(bool ok) {
-        if (!ok) throw new Win32Exception(Marshal.GetLastWin32Error());
-    }
-
-    static uint ActiveCount(IntPtr hJob) {
-        JOBOBJECT_BASIC_ACCOUNTING_INFORMATION a;
-        int sz = Marshal.SizeOf(typeof(JOBOBJECT_BASIC_ACCOUNTING_INFORMATION));
-        Check(QueryInformationJobObject(hJob, 1, out a, sz, IntPtr.Zero));
-        return a.ActiveProcesses;
-    }
-
-    public static object[] Run(string exe, string cmdLine, uint timeoutMs) {
-        IntPtr hJob = CreateJobObjectW(IntPtr.Zero, null);
-        Check(hJob != IntPtr.Zero);
-        try {
-            var ext = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION();
-            ext.BasicLimitInformation.LimitFlags = 0x00002000;
-            int extSz = Marshal.SizeOf(
-                typeof(JOBOBJECT_EXTENDED_LIMIT_INFORMATION));
-            Check(SetInformationJobObject(hJob, 9, ref ext, extSz));
-            IntPtr attrSz = IntPtr.Zero;
-            InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref attrSz);
-            IntPtr attrBuf = Marshal.AllocHGlobal(attrSz);
-            try {
-                Check(InitializeProcThreadAttributeList(
-                    attrBuf, 1, 0, ref attrSz));
-                try {
-                    Check(UpdateProcThreadAttribute(
-                        attrBuf, 0, (IntPtr)0x0002000D, ref hJob,
-                        (IntPtr)IntPtr.Size, IntPtr.Zero, IntPtr.Zero));
-                    var sa = new SECURITY_ATTRIBUTES {
-                        nLength = Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES)),
-                        bInheritHandle = true
-                    };
-                    SafeFileHandle hRead, hWrite;
-                    Check(CreatePipe(out hRead, out hWrite, ref sa, 0));
-                    SetHandleInformation(hRead, 1, 0);
-                    using (var nul = CreateFileW(
-                        "NUL", 0x80000000u, 3u, ref sa, 3u, 0u, IntPtr.Zero)) {
-                        if (nul.IsInvalid) {
-                            hWrite.Dispose();
-                            hRead.Dispose();
-                            Check(false);
-                        }
-                        var si = new STARTUPINFOEX();
-                        si.StartupInfo.cb = Marshal.SizeOf(
-                            typeof(STARTUPINFOEX));
-                        si.StartupInfo.dwFlags = 0x00000100;
-                        si.StartupInfo.hStdInput = nul.DangerousGetHandle();
-                        si.StartupInfo.hStdOutput = hWrite.DangerousGetHandle();
-                        si.StartupInfo.hStdError = hWrite.DangerousGetHandle();
-                        si.lpAttributeList = attrBuf;
-                        PROCESS_INFORMATION pi;
-                        var sb = new StringBuilder(cmdLine);
-                        if (!CreateProcessW(
-                            exe, sb, IntPtr.Zero, IntPtr.Zero, true,
-                            0x08080000u, IntPtr.Zero, null, ref si, out pi)) {
-                            hWrite.Dispose();
-                            hRead.Dispose();
-                            Check(false);
-                        }
-                        hWrite.Dispose();
-                        try {
-                            var ms = new MemoryStream();
-                            var reader = System.Threading.Tasks.Task.Run(() => {
-                                using (var fs = new FileStream(
-                                    hRead, FileAccess.Read)) {
-                                    fs.CopyTo(ms);
-                                }
-                            });
-                            uint wait = WaitForSingleObject(
-                                pi.hProcess, timeoutMs);
-                            bool timedOut = (wait != 0);
-                            Check(TerminateJobObject(hJob, 1));
-                            var sw = System.Diagnostics.Stopwatch.StartNew();
-                            while (ActiveCount(hJob) > 0) {
-                                if (sw.ElapsedMilliseconds > 5000)
-                                    throw new TimeoutException("Active > 0");
-                                System.Threading.Thread.Sleep(25);
-                            }
-                            reader.Wait(2000);
-                            uint code = 1;
-                            if (!timedOut)
-                                Check(GetExitCodeProcess(
-                                    pi.hProcess, out code));
-                            return new object[] {
-                                timedOut ? "timed_out_reaped" : "exited",
-                                (int)code,
-                                Convert.ToBase64String(ms.ToArray())
-                            };
-                        } finally {
-                            CloseHandle(pi.hThread);
-                            CloseHandle(pi.hProcess);
-                        }
-                    }
-                } finally {
-                    DeleteProcThreadAttributeList(attrBuf);
-                }
-            } finally {
-                Marshal.FreeHGlobal(attrBuf);
-            }
-        } finally {
-            CloseHandle(hJob);
-        }
-    }
-}
-"@
-$cfg = [Console]::In.ReadToEnd() | ConvertFrom-Json
-$res = [W6JobRunner]::Run(
-    [string]$cfg.exe, [string]$cfg.cmdline, [uint32]$cfg.timeout_ms)
-$envObj = @{ state = $res[0]; exit_code = $res[1]; output_b64 = $res[2] }
-$envObj | ConvertTo-Json -Compress
-"""
-
-
-def _fail_unconfirmed_musescore(
-    detail: str, cause: Exception | None = None
-) -> Never:
-    if cause is not None:
-        raise _UnconfirmedWorkerExitError(detail) from cause
-    raise _UnconfirmedWorkerExitError(detail)
-
-
-def _parse_wsl_job_envelope(raw: bytes) -> tuple[str, int, str]:
-    lines = [
-        ln
-        for ln in raw.decode("utf-8", errors="strict").splitlines()
-        if ln.strip()
-    ]
-    if not lines:
-        msg = "empty WSL JobObject supervisor response"
-        raise ValueError(msg)
-    obj = json.loads(lines[-1])
-    if not isinstance(obj, dict):
-        msg = "non-object WSL JobObject supervisor response"
-        raise TypeError(msg)
-    state = obj.get("state")
-    code = obj.get("exit_code")
-    out_b64 = obj.get("output_b64")
-    if (
-        state not in {"exited", "timed_out_reaped"}
-        or type(code) is not int
-        or not isinstance(out_b64, str)
-    ):
-        msg = "malformed WSL JobObject supervisor envelope"
-        raise ValueError(msg)
-    output = base64.b64decode(out_b64.encode("ascii"), validate=True).decode(
-        "utf-8", errors="replace"
-    )
-    return state, code, output
-
-
-def _run_wsl_native_musescore(
-    command: Sequence[str],
-    limit_sec: float,
-    *,
-    track_campaign_fence: bool,
-    reservation_id: str = "",
-) -> tuple[int | None, str]:
-    if not _WSL_POWERSHELL.is_file():
-        msg = (
-            "WSL MuseScore execution requires host powershell.exe JobObject "
-            "guard"
-        )
-        raise StopConditionError(msg)
-    win_exe = _windows_path_for_wsl(Path(command[0]))
-    win_cmd = [win_exe, *command[1:]]
-    encoded = base64.b64encode(
-        _WSL_NATIVE_LAUNCH_SCRIPT.encode("utf-16-le")
-    ).decode("ascii")
-    payload = json.dumps(
-        {
-            "exe": win_exe,
-            "cmdline": subprocess.list2cmdline(win_cmd),
-            "timeout_ms": max(1, round(limit_sec * 1000)),
-        }
-    ).encode("utf-8")
-    token = (
-        begin_w6_native_worker(
-            "wsl-musescore-job", reservation_id=reservation_id
-        )
-        if track_campaign_fence
-        else None
-    )
-    try:
-        proc = subprocess.Popen(  # noqa: S603
-            [
-                str(_WSL_POWERSHELL),
-                "-NoProfile",
-                "-NonInteractive",
-                "-EncodedCommand",
-                encoded,
-            ],
-            cwd="/mnt/c" if Path("/mnt/c").is_dir() else None,
-            env=os.environ | W6_OFFLINE_ENV,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            close_fds=True,
-        )
-    except OSError as exc:
-        if token is not None:
-            clear_w6_native_worker(token)
-        msg = "failed to start WSL JobObject supervisor"
-        raise StopConditionError(msg) from exc
-    try:
-        out, _ = proc.communicate(input=payload, timeout=limit_sec + 15.0)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        with contextlib.suppress(OSError):
-            proc.kill()
-        with contextlib.suppress(OSError, subprocess.TimeoutExpired):
-            proc.communicate(timeout=2.0)
-        if proc.stdout is not None:
-            with contextlib.suppress(OSError):
-                proc.stdout.close()
-        _fail_unconfirmed_musescore(
-            "MuseScore batch worker failed without confirmed native exit",
-            exc,
-        )
-    if proc.returncode != 0:
-        _fail_unconfirmed_musescore(
-            "WSL JobObject supervisor failed without exit confirmation "
-            f"({proc.returncode})"
-        )
-    try:
-        state, code, decoded = _parse_wsl_job_envelope(out)
-    except (UnicodeDecodeError, TypeError, ValueError) as exc:
-        _fail_unconfirmed_musescore(
-            "WSL JobObject supervisor returned invalid exit confirmation",
-            exc,
-        )
-    if token is not None:
-        clear_w6_native_worker(token)
-    if state == "timed_out_reaped":
-        msg = "MuseScore batch worker timed out"
-        raise StopConditionError(msg)
-    return code, decoded
-
-
 def _offline_musescore(
     command: Sequence[str],
     timeout: float,
-    *,
-    downloads: Path | None = None,
-    reservation_id: str = "",
 ) -> tuple[int | None, str]:
     limit_sec = min(timeout, W6_WORKER_TIMEOUT_SECONDS)
-    track = downloads is not None
-    if sys.platform != "win32" and command[0].lower().endswith(".exe"):
-        return _run_wsl_native_musescore(
-            command,
-            limit_sec,
-            track_campaign_fence=track,
-            reservation_id=reservation_id,
-        )
-    token = (
-        begin_w6_native_worker(
-            "posix-musescore-job", reservation_id=reservation_id
-        )
-        if track
-        else None
-    )
     try:
         process = subprocess.Popen(  # noqa: S603
             wsl_translate_command(command),
@@ -2833,8 +2363,6 @@ def _offline_musescore(
             close_fds=True,
         )
     except OSError as exc:
-        if token is not None:
-            clear_w6_native_worker(token)
         msg = "failed to launch MuseScore worker"
         raise StopConditionError(msg) from exc
     try:
@@ -2842,41 +2370,40 @@ def _offline_musescore(
     except (OSError, subprocess.TimeoutExpired) as exc:
         with contextlib.suppress(OSError):
             process.kill()
-        try:
+        with contextlib.suppress(OSError, subprocess.TimeoutExpired):
             process.communicate(timeout=5.0)
-        except (OSError, subprocess.TimeoutExpired) as reap_exc:
-            if process.stdout is not None:
-                with contextlib.suppress(OSError):
-                    process.stdout.close()
-            _fail_unconfirmed_musescore(
-                "MuseScore batch worker failed without confirmed exit",
-                reap_exc,
-            )
-        if token is not None:
-            clear_w6_native_worker(token)
         msg = "MuseScore batch worker timed out"
         raise StopConditionError(msg) from exc
-    if token is not None:
-        clear_w6_native_worker(token)
     return process.returncode, out.decode("utf-8", errors="replace")
 
 
-def _make_offline_musescore(
-    downloads: Path,
+def _calibrate_w6_musescore(
+    musescore: MuseScore,
     *,
-    reservation_id: str = "",
-) -> Callable[[Sequence[str], float], tuple[int | None, str]]:
-    def launch(
-        command: Sequence[str], timeout: float
-    ) -> tuple[int | None, str]:
-        return _offline_musescore(
-            command,
-            timeout,
-            downloads=downloads,
-            reservation_id=reservation_id,
-        )
+    run: Path,
+    downloads: Path,
+    meter: _PageMeter,
+) -> tuple[tuple[str, str], int]:
+    cal_dir = run / "tmp" / f"musescore-cal-{uuid.uuid4().hex}"
+    offline_ms = replace(musescore, launcher=_offline_musescore)
+    counted = 0
 
-    return launch
+    def record_cal_pages(pages: int) -> None:
+        nonlocal counted
+        counted = pages
+
+    try:
+        identity = renderers.ensure_musescore_calibrated(
+            offline_ms,
+            cal_dir,
+            cache_path=downloads / renderers.MUSESCORE_CALIBRATION_CACHE_NAME,
+            count_rasters=record_cal_pages,
+        )
+        meter.add(counted)
+    finally:
+        if cal_dir.exists():
+            shutil.rmtree(cal_dir, ignore_errors=True)
+    return identity, counted
 
 
 def _write_packaging_report(run: Path, downloads: Path, result: Row) -> None:
@@ -2888,7 +2415,7 @@ def _write_packaging_report(run: Path, downloads: Path, result: Row) -> None:
         atomic_write_text(path, report)
 
 
-def run_expanded_w4a_and_package(  # noqa: PLR0913, PLR0915
+def run_expanded_w4a_and_package(  # noqa: C901, PLR0913, PLR0915
     downloads_dir: Path,
     run_dir: Path,
     *,
@@ -2958,8 +2485,13 @@ def run_expanded_w4a_and_package(  # noqa: PLR0913, PLR0915
         if sha256_file(musescore.executable) != musescore.executable_sha256:
             msg = "host MuseScore binary drifted before W6 rendering"
             raise StopConditionError(msg)
+        cal_pages = 0
         if musescore_page_cap != 0:
-            _verify_musescore_output_bound_preconditions(musescore)
+            verify_rendering_preferences(musescore)
+            if calibrated_identity is None:
+                calibrated_identity, cal_pages = _calibrate_w6_musescore(
+                    musescore, run=run, downloads=downloads, meter=meter
+                )
         environment |= {
             "git": state,
             "offline_env": W6_OFFLINE_ENV,
@@ -2992,7 +2524,6 @@ def run_expanded_w4a_and_package(  # noqa: PLR0913, PLR0915
         train, val, split = split_admitted_sources_by_composer(
             rows, min_val_works=min_val_works
         )
-        # Alternate splits so train cannot exhaust the shared page budget.
         ordered = [
             row for pair in zip(train, val, strict=False) for row in pair
         ]
@@ -3009,18 +2540,13 @@ def run_expanded_w4a_and_package(  # noqa: PLR0913, PLR0915
                 ordered,
                 run=run,
                 downloads=downloads,
-                musescore=replace(
-                    musescore,
-                    launcher=_make_offline_musescore(
-                        downloads, reservation_id=reserve
-                    ),
-                ),
+                musescore=replace(musescore, launcher=_offline_musescore),
                 meter=meter,
                 calibrated_identity=calibrated_identity,
                 targets={_TRAIN: target_train_crops, _VAL: target_val_crops},
                 verovio_workers=verovio_workers,
                 musescore_page_cap=musescore_page_cap,
-                reservation_id=reserve,
+                initial_musescore_pages=cal_pages,
             ),
             run,
             downloads_dir=downloads,
@@ -3059,7 +2585,7 @@ def run_expanded_w4a_and_package(  # noqa: PLR0913, PLR0915
             reserve,
             status=status,
             actual_pages=max(planned_pages, meter.actual)
-            if (meter.uncounted_worker or has_pending_w6_native_worker(reserve))
+            if meter.uncounted_worker
             else meter.actual,
         )
 
@@ -3571,7 +3097,11 @@ def run_musescore_supplement_and_package(  # noqa: PLR0913
         if sha256_file(musescore.executable) != musescore.executable_sha256:
             msg = "host MuseScore binary drifted before W6 rendering"
             raise StopConditionError(msg)
-        _verify_musescore_output_bound_preconditions(musescore)
+        verify_rendering_preferences(musescore)
+        if calibrated_identity is None:
+            calibrated_identity, _ = _calibrate_w6_musescore(
+                musescore, run=run, downloads=downloads, meter=meter
+            )
         with w6_disk_lock(downloads, run.parent) as runs:
             gate = MetadataOnlyTestExclusion(test_exclusion, test_status)
             (
@@ -3624,12 +3154,7 @@ def run_musescore_supplement_and_package(  # noqa: PLR0913
                 rows,
                 run=run,
                 downloads=downloads,
-                musescore=replace(
-                    musescore,
-                    launcher=_make_offline_musescore(
-                        downloads, reservation_id=reserve
-                    ),
-                ),
+                musescore=replace(musescore, launcher=_offline_musescore),
                 meter=meter,
                 calibrated_identity=calibrated_identity,
                 targets={
@@ -3640,7 +3165,6 @@ def run_musescore_supplement_and_package(  # noqa: PLR0913
                 musescore_page_cap=None,
                 musescore_supplement=True,
                 precomputed_plans=ordered_plans,
-                reservation_id=reserve,
             ),
             run,
             downloads_dir=downloads,
@@ -3678,6 +3202,6 @@ def run_musescore_supplement_and_package(  # noqa: PLR0913
             reserve,
             status=status,
             actual_pages=max(planned_pages, meter.actual)
-            if (meter.uncounted_worker or has_pending_w6_native_worker(reserve))
+            if meter.uncounted_worker
             else meter.actual,
         )

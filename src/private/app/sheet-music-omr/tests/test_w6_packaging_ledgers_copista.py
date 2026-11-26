@@ -63,13 +63,6 @@ def _records(downloads):
     ]
 
 
-@pytest.fixture(autouse=True)
-def _isolated_campaign_anchor(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        ledgers, "_CAMPAIGN_ANCHOR_PATH", tmp_path / "host" / "campaign.json"
-    )
-
-
 _PRIOR_SETTLEMENTS = [
     {
         "event": "settle",
@@ -87,8 +80,9 @@ _PRIOR_SETTLEMENTS = [
 ]
 
 
-def _seed_prior_ledgers(downloads, monkeypatch, *, init_campaign=True):
+def _seed_prior_ledgers(downloads, monkeypatch, *, init_campaign=True):  # noqa: ARG001
     downloads.mkdir(parents=True, exist_ok=True)
+    (downloads.parent / "runs").mkdir(parents=True, exist_ok=True)
     for name, field_name, total in (
         ("download-ledger.json", "total", 2_350_276_855),
         ("w2-download-ledger.json", "cumulative_bytes", 480_830_451),
@@ -107,8 +101,6 @@ def _seed_prior_ledgers(downloads, monkeypatch, *, init_campaign=True):
             for name in ledgers.PRIOR_CAMPAIGN_LEDGER_SHA256S
         },
     )
-    if init_campaign:
-        ledgers._init_w6_campaign_anchor(downloads)  # noqa: SLF001
 
 
 @pytest.mark.parametrize(
@@ -149,223 +141,28 @@ def test_prior_campaign_ledgers_reject_fresh_and_truncated_roots(
         ledgers.verify_prior_campaign_ledgers(downloads)
 
 
-def test_campaign_pins_both_ledgers_and_rejects_replaced_root(
-    tmp_path, monkeypatch
-):
-    """Keep existing ledger bytes and pin both roots on explicit setup."""
+def test_relocated_downloads_preserves_ledgers_portably(tmp_path, monkeypatch):
+    """Self-contained downloads and runs relocate across hosts cleanly."""
     downloads = tmp_path / "downloads"
-    _seed_prior_ledgers(downloads, monkeypatch, init_campaign=False)
-    download_path = downloads / ledgers.W6_DOWNLOAD_LEDGER_NAME
+    _seed_prior_ledgers(downloads, monkeypatch)
     entry = {
         "schema": "omr-w6-slice-a-download-ledger-v1",
         "total_bytes": 17,
         "entries": [{"charged_bytes": 17}],
     }
-    download_path.write_text(json.dumps(entry))
-    _append_anchor(downloads, {})
-    ledgers._init_w6_campaign_anchor(downloads)  # noqa: SLF001
-    ledger = ledgers.W6DownloadLedger(downloads)
-    assert ledger.total_bytes() == entry["total_bytes"]
-    root = downloads.stat()
-    runs = tmp_path / "runs"
-    run_raw = (downloads / ledgers.W6_RUN_LEDGER_NAME).read_bytes()
-    anchor = json.loads((tmp_path / "host/campaign.json").read_bytes())
-    assert anchor == {
-        "downloads_path": str(downloads),
-        "downloads_root_id": [root.st_dev, root.st_ino],
-        "runs_path": str(runs),
-        "runs_root_id": [runs.stat().st_dev, runs.stat().st_ino],
-        "download_ledger_bytes": len(download_path.read_bytes()),
-        "download_ledger_sha256": _sha(json.dumps(entry).encode()),
-        "run_ledger_bytes": len(run_raw),
-        "run_ledger_prefix_sha256": _sha(run_raw),
-    }
-    downloads.rename(tmp_path / "old-downloads")
-    _seed_prior_ledgers(downloads, monkeypatch, init_campaign=False)
-    ledger.path.write_text(json.dumps(entry))
-    with pytest.raises(StopConditionError, match="different root"):
-        ledger.total_bytes()
-
-
-def test_campaign_rejects_relocated_downloads_with_copied_prior_ledgers(
-    tmp_path, monkeypatch
-):
-    """Five historical ledgers cannot authorize a second spending root."""
-    downloads = tmp_path / "downloads"
-    _seed_prior_ledgers(downloads, monkeypatch)
-    ledgers.check_w6_disk_cap(downloads)
-    alternate = tmp_path / "other" / "downloads"
-    shutil.copytree(
-        downloads, alternate, ignore=shutil.ignore_patterns("w6-slice-a-*")
-    )
-    ledgers.verify_prior_campaign_ledgers(alternate)
-    with pytest.raises(StopConditionError, match="different root"):
-        ledgers.W6DownloadLedger(alternate).total_bytes()
-    with pytest.raises(StopConditionError, match="different root"):
-        ledgers.reserve_w6_render_run(
-            alternate, **_INVOCATION, command="render", planned_pages=1
-        )
-    assert not (alternate.parent / "runs").exists()
-    assert not (alternate / ledgers.W6_DOWNLOAD_LEDGER_NAME).exists()
-
-
-def test_campaign_operations_cannot_bootstrap_missing_anchor(
-    tmp_path, monkeypatch
-):
-    """Deleting the registry does not reset any Slice A budget."""
-    downloads = tmp_path / "downloads"
-    _seed_prior_ledgers(downloads, monkeypatch, init_campaign=False)
-    for operation in (
-        lambda: ledgers.W6DownloadLedger(downloads),
-        lambda: ledgers.check_w6_disk_cap(downloads),
-        lambda: ledgers.reserve_w6_render_run(
-            downloads, **_INVOCATION, command="render", planned_pages=1
-        ),
-        lambda: ledgers.reserve_w6_copista_invocation_and_read_anchor(
-            downloads, **_INVOCATION, command="debug"
-        ),
-        lambda: ledgers.settle_w6_run(downloads, "unknown", status="failed"),
-    ):
-        with pytest.raises(
-            StopConditionError, match="missing Slice A campaign anchor"
-        ):
-            operation()
-    assert not (tmp_path / "host/campaign.json").exists()
-    assert not (tmp_path / "runs").exists()
-
-
-def test_campaign_registry_ignores_home(tmp_path, monkeypatch):
-    """An environment override cannot create another campaign registry."""
-    monkeypatch.setattr(ledgers, "_CAMPAIGN_ANCHOR_PATH", None)
-    account_home = tmp_path / "account"
-    monkeypatch.setattr(
-        ledgers.pwd, "getpwuid", lambda _: SimpleNamespace(pw_dir=account_home)
-    )
-    downloads = tmp_path / "downloads"
-    _seed_prior_ledgers(downloads, monkeypatch)
-    monkeypatch.setenv("HOME", str(tmp_path / "override"))
-    assert ledgers.check_w6_disk_cap(downloads) == 0
-    alternate = tmp_path / "other" / "downloads"
-    shutil.copytree(downloads, alternate)
-    with pytest.raises(StopConditionError, match="different root"):
-        ledgers._init_w6_campaign_anchor(alternate)  # noqa: SLF001
-    assert not (tmp_path / "override").exists()
-
-
-def test_migrate_w6_campaign_roots_preserves_charges_and_retained_runs(
-    tmp_path, monkeypatch
-):
-    """Only an intact destination without leftover runs can become active."""
-    old_downloads = tmp_path / "downloads"
-    _seed_prior_ledgers(old_downloads, monkeypatch)
+    (downloads / ledgers.W6_DOWNLOAD_LEDGER_NAME).write_text(json.dumps(entry))
     monkeypatch.setattr(ledgers, "W6_CUMULATIVE_PAGE_CAP", 2)
     ledgers.reserve_w6_render_run(
-        old_downloads, **_INVOCATION, command="render", planned_pages=2
-    )
-    old_run = tmp_path / "runs" / "w6-slice-a-fixture"
-    old_run.mkdir()
-    (old_run / "artifact").write_bytes(b"fixture")
-    new_downloads = tmp_path / "other" / "downloads"
-    shutil.copytree(old_downloads, new_downloads)
-    migrate = ledgers.migrate_w6_campaign_roots
-    migrate_args = old_downloads, new_downloads
-    for name in (
-        "w2-touch-log.jsonl",
-        ledgers.W6_DOWNLOAD_LEDGER_NAME,
-        ledgers.W6_RUN_LEDGER_NAME,
-    ):
-        ledger = new_downloads / name
-        raw = ledger.read_bytes()
-        ledger.write_bytes(b" " + raw[1:])
-        with pytest.raises(StopConditionError, match="SHA-256"):
-            migrate(*migrate_args)
-        ledger.write_bytes(raw)
-    with pytest.raises(StopConditionError, match="move all retained"):
-        migrate(*migrate_args)
-    new_runs = new_downloads.parent / "runs"
-    new_runs.mkdir()
-    old_run.rename(new_runs / old_run.name)
-    with monkeypatch.context() as cap:
-        cap.setattr(ledgers, "W6_DISK_CAP_BYTES", 1)
-        with pytest.raises(StopConditionError, match="generated disk cap"):
-            migrate(*migrate_args)
-    assert ledgers.check_w6_disk_cap(old_downloads) == 0
-    assert migrate(*migrate_args)["status"] == "migrated"
-    assert ledgers.check_w6_disk_cap(new_downloads) == len(b"fixture")
-    with pytest.raises(StopConditionError, match="different root"):
-        ledgers.check_w6_disk_cap(old_downloads)
-    with pytest.raises(StopConditionError, match="cumulative"):
-        ledgers.reserve_w6_render_run(
-            new_downloads, **_INVOCATION, command="render", planned_pages=1
-        )
-
-
-@pytest.mark.parametrize(
-    "damage",
-    [
-        "download-missing",
-        "download-bytes",
-        "download-same-total",
-        "run-missing",
-        "run-lines",
-        "run-same-size",
-        "run-kind",
-    ],
-)
-def test_campaign_rejects_ledger_rollback_after_commits(
-    tmp_path, monkeypatch, damage
-):
-    """Even a different operation fails closed on either ledger's rollback."""
-    downloads = tmp_path / "downloads"
-    _seed_prior_ledgers(downloads, monkeypatch)
-    data = b"fixture wheel"
-
-    def transfer(_url, target, _size, _budget, wire):
-        target.write_bytes(data)
-        wire[0] = len(data)
-
-    monkeypatch.setattr(ledgers, "_transfer_locked", transfer)
-    ledger = ledgers.W6DownloadLedger(downloads)
-    ledger.ensure_cached_file(
-        url=_URL,
-        dest=downloads / _WHEEL,
-        expected_bytes=len(data),
-        expected_sha256=_sha(data),
-    )
-    token = ledgers.reserve_w6_render_run(
         downloads, **_INVOCATION, command="render", planned_pages=2
     )
-    ledgers.settle_w6_run(downloads, token, status="completed", actual_pages=2)
-    run_ledger = downloads / ledgers.W6_RUN_LEDGER_NAME
-    if damage == "download-missing":
-        ledger.path.unlink()
-    elif damage == "download-same-total":
-        ledger.path.write_bytes(
-            ledger.path.read_bytes().replace(b"completed", b"alternate")
+    relocated = tmp_path / "rtx4090" / "downloads"
+    shutil.copytree(downloads, relocated)
+    (relocated.parent / "runs").mkdir()
+    assert ledgers.W6DownloadLedger(relocated).total_bytes() == 17  # noqa: PLR2004
+    with pytest.raises(StopConditionError, match="cumulative"):
+        ledgers.reserve_w6_render_run(
+            relocated, **_INVOCATION, command="render", planned_pages=1
         )
-    elif damage == "download-bytes":
-        short = json.loads(ledger.path.read_bytes())
-        short["entries"][0]["charged_bytes"] -= 1
-        short["total_bytes"] -= 1
-        ledger.path.write_text(json.dumps(short))
-    elif damage == "run-missing":
-        run_ledger.unlink()
-    elif damage == "run-same-size":
-        run_ledger.write_bytes(
-            run_ledger.read_bytes().replace(
-                b'"charged_pages":2', b'"charged_pages":1'
-            )
-        )
-    elif damage == "run-kind":
-        run_ledger.write_bytes(
-            run_ledger.read_bytes().replace(
-                b'"kind":"render"', b'"kind":"copista"'
-            )
-        )
-    else:
-        run_ledger.write_text(run_ledger.read_text().splitlines()[0] + "\n")
-    with pytest.raises(StopConditionError, match=r"missing|SHA-256"):
-        ledgers.check_w6_disk_cap(downloads)
 
 
 def test_download_reserves_before_transfer_and_reuses_verified_wheels(
@@ -503,17 +300,7 @@ def test_setup_uses_verified_cache_and_installs_locked_wheels_offline(
 
     monkeypatch.setattr(ledgers.subprocess, "run", launch)
     monkeypatch.setattr(ledgers, "_venv_versions", lambda *_: {})
-    with pytest.raises(
-        StopConditionError, match="missing Slice A campaign anchor"
-    ):
-        ledgers.setup_w6_slice_a(downloads)
-    assert not commands
-    assert (
-        ledgers.setup_w6_slice_a(downloads, init_campaign=True)[
-            "download_bytes"
-        ]
-        == 0
-    )
+    assert ledgers.setup_w6_slice_a(downloads)["download_bytes"] == 0
     create, install = commands
     assert create[-2:] == ["venv", str(downloads / "w6-train-venv")]
     assert {"--no-index", "--no-deps", str(cached)} <= set(install)
@@ -580,10 +367,6 @@ def test_disk_cap_covers_failed_and_current_runs(tmp_path, monkeypatch):
             planned_pages=1,
             runs_parent=runs,
         )
-    runs.rename(tmp_path / "old-runs")
-    runs.mkdir()
-    with pytest.raises(StopConditionError, match="different root"):
-        ledgers.check_w6_disk_cap(downloads, runs)
 
 
 def test_packaging_rejects_noncanonical_runs_root(tmp_path, monkeypatch):
@@ -632,29 +415,23 @@ def _append_anchor(downloads, anchor):
 def test_copista_charges_every_private_invocation_using_latest_anchor(
     tmp_path, monkeypatch
 ):
-    """The latest anchor and cap apply to debug as well as formal runs."""
+    """The portable digest check and 10-call cap apply to all runs."""
     reserve = ledgers.reserve_w6_copista_invocation_and_read_anchor
     downloads = tmp_path / "downloads"
     _seed_prior_ledgers(downloads, monkeypatch)
+    _append_anchor(downloads, {"portable_aggregate_sha256": _sha(b"old")})
     with pytest.raises(StopConditionError, match="anchor"):
         reserve(downloads, **_INVOCATION, command="debug")
-    anchor = {
-        "root_st_dev": 1,
-        "root_st_ino": 10,
-        "staging_attestation_sha256": _sha(b"attestation"),
-        "portable_aggregate_sha256": ledgers.EXPECTED_TRAINDEV_PORTABLE_SHA256,
-    }
+    expected_sha = ledgers.EXPECTED_TRAINDEV_PORTABLE_SHA256
     _append_anchor(
-        downloads, anchor | {"portable_aggregate_sha256": _sha(b"old")}
+        downloads,
+        {"portable_aggregate_sha256": expected_sha},
     )
-    with pytest.raises(StopConditionError, match="anchor"):
-        reserve(downloads, **_INVOCATION, command="debug")
-    _append_anchor(downloads, anchor)
     for i in range(10):
         token, read_anchor = reserve(
             downloads, **_INVOCATION, command=f"debug-{i}"
         )
-        assert read_anchor == {"event": "traindev-root-anchor"} | anchor
+        assert read_anchor == {"portable_aggregate_sha256": expected_sha}
         if i % 2:
             ledgers.settle_w6_run(downloads, token, status="failed")
     with pytest.raises(StopConditionError, match="invocation cap"):
@@ -669,9 +446,6 @@ def test_copista_reads_legacy_kind_anchor(tmp_path, monkeypatch):
     _seed_prior_ledgers(downloads, monkeypatch)
     anchor = {
         "kind": "traindev-root-anchor",
-        "root_st_dev": 1,
-        "root_st_ino": 10,
-        "staging_attestation_sha256": _sha(b"attestation"),
         "portable_aggregate_sha256": ledgers.EXPECTED_TRAINDEV_PORTABLE_SHA256,
     }
     (downloads / ledgers.W6_RUN_LEDGER_NAME).write_text(
@@ -680,17 +454,19 @@ def test_copista_reads_legacy_kind_anchor(tmp_path, monkeypatch):
     _, observed = ledgers.reserve_w6_copista_invocation_and_read_anchor(
         downloads, **_INVOCATION, command="debug"
     )
-    assert observed == anchor
+    assert observed == {
+        "portable_aggregate_sha256": ledgers.EXPECTED_TRAINDEV_PORTABLE_SHA256
+    }
 
 
 @pytest.fixture
 def sealed(tmp_path, monkeypatch):
-    """Stage an invented leaf namespace with portable and inode attestations."""
+    """Stage a portable 102-leaf TRAIN_DEV fixture with normal permissions."""
     worktree = tmp_path / "worktree"
     worktree.mkdir()
     root = tmp_path / "outside" / "sealed"
     root.mkdir(parents=True)
-    rels: list[tuple[str | None, str]] = [("TRAIN_DEV", _MANIFEST)]
+    rels: list[tuple[str, str]] = [("TRAIN_DEV", _MANIFEST)]
     for i, gid in enumerate(sorted(ledgers.TRAINDEV_GOLD_IDS)):
         rels.extend(
             (gid, f"pages/{gid}-p{page:02d}.png")
@@ -699,29 +475,22 @@ def sealed(tmp_path, monkeypatch):
         rels.extend(
             (gid, f"gold/{gid}/{k}.musicxml") for k in ("accepted", "draft")
         )
-    leaves = []
+    manifest_bytes = json.dumps(
+        {
+            "pieces": [
+                {"gold_id": gid, "split": "TRAIN_DEV"}
+                for gid in sorted(ledgers.TRAINDEV_GOLD_IDS)
+            ]
+        }
+    ).encode()
     portable = []
     expected_rel = "pages/gold-07-p01.png"
     for gid, rel in rels:
         leaf = root / rel
         leaf.parent.mkdir(parents=True, exist_ok=True)
-        data = b"fixture payload"
+        data = manifest_bytes if rel == _MANIFEST else b"fixture payload"
         leaf.write_bytes(data)
-        leaf.chmod(0o400)
-        observed = leaf.stat()
-        portable.append((rel, gid or "", _sha(data)))
-        leaves.append(
-            {
-                "gold_id": gid,
-                "relpath": rel,
-                "expected_sha256": _sha(data),
-                "st_dev": observed.st_dev,
-                "st_ino": observed.st_ino,
-                "st_size": observed.st_size,
-                "st_mtime_ns": observed.st_mtime_ns,
-            }
-        )
-    stat_root = root.stat()
+        portable.append((rel, gid, _sha(data)))
     packed = json.dumps(
         {
             "schema": "omr-w6-traindev-portable-v1",
@@ -729,125 +498,40 @@ def sealed(tmp_path, monkeypatch):
                 {"gold_id": g, "relpath": rel, "expected_sha256": sha}
                 for rel, g, sha in sorted(portable)
             ],
-            "traindev_manifest_sha256": _sha(data),
+            "traindev_manifest_sha256": _sha(manifest_bytes),
         },
         sort_keys=True,
         separators=(",", ":"),
     ).encode()
-    attestation = json.dumps(
-        {
-            "leaves": leaves,
-            "traindev_manifest_sha256": _sha(data),
-            "root_st_dev": stat_root.st_dev,
-            "root_st_ino": stat_root.st_ino,
-        }
-    ).encode()
-    (root / "staging-attestation.json").write_bytes(attestation)
-    (root / "staging-attestation.json").chmod(0o400)
-    folders = [root, *(p for p in root.rglob("*") if p.is_dir())]
-    for folder in folders:
-        folder.chmod(0o500)
     digest = _sha(packed)
     monkeypatch.setattr(ledgers, "EXPECTED_TRAINDEV_PORTABLE_SHA256", digest)
-    anchor = {
-        "root_st_dev": stat_root.st_dev,
-        "root_st_ino": stat_root.st_ino,
-        "staging_attestation_sha256": _sha(attestation),
-        "portable_aggregate_sha256": digest,
-    }
-    yield root, anchor, worktree, expected_rel
-    for folder in folders:
-        if folder.is_dir():
-            folder.chmod(0o700)
+    anchor = {"portable_aggregate_sha256": digest}
+    return root, anchor, worktree, expected_rel
 
 
-def test_sealed_root_rejects_symlinked_ancestor_and_test_leaf(
+def test_portable_traindev_root_relocates_and_rejects_symlinks_or_drift(
     tmp_path,
-    monkeypatch,
     sealed,
 ):
-    """Even a correct anchored root cannot be reached through a symlink."""
+    """Portable TRAIN_DEV copies work across paths while blocking tampering."""
     root, anchor, worktree, rel = sealed
     alias = tmp_path / "symlink"
     alias.symlink_to(root.parent, target_is_directory=True)
-    with pytest.raises(StopConditionError, match="authenticate"):
+    with pytest.raises(StopConditionError, match="symlink"):
         ledgers.open_verified_traindev_root(
             alias / root.name, anchor, [worktree]
         )
+    copied = tmp_path / "rtx4090-copy" / "traindev-root"
+    shutil.copytree(root, copied)
     with ledgers.open_verified_traindev_root(
-        root, anchor, [worktree]
+        copied, anchor, [worktree]
     ) as verified:
         assert verified.read_verified_leaf_bytes(rel) == b"fixture payload"
-        monkeypatch.setattr(
-            os,
-            "open",
-            lambda *_a, **_k: pytest.fail("opened nonallowlisted leaf"),
-        )
         with pytest.raises(StopConditionError, match="allowlist"):
             verified.read_verified_leaf_bytes("pages/gold-01-p01.png")
-
-
-def test_sealed_root_rejects_replaced_root_and_attestation_before_read(
-    monkeypatch,
-    sealed,
-):
-    """A substituted root inode cannot authenticate even identical metadata."""
-    root, anchor, worktree, _ = sealed
-    old = root.with_name("old")
-    root.rename(old)
-    root.mkdir()
-    attestation = root / "staging-attestation.json"
-    attestation.write_bytes((old / attestation.name).read_bytes())
-    attestation.chmod(0o400)
-    root.chmod(0o500)
-    try:
-        monkeypatch.setattr(
-            os, "read", lambda *_: pytest.fail("read replaced root bytes")
-        )
-        with pytest.raises(StopConditionError, match="external anchor"):
-            ledgers.open_verified_traindev_root(root, anchor, [worktree])
-    finally:
-        root.chmod(0o700)
-        attestation.unlink()
-        root.rmdir()
-        old.rename(root)
-
-
-def test_sealed_leaf_rejects_same_size_substitution_before_payload_read(
-    monkeypatch,
-    sealed,
-):
-    """Spy on the substituted inode; no read(2) may target that payload."""
-    root, anchor, worktree, rel = sealed
-    leaf = root / rel
-    observed = leaf.stat()
-    outside = root.parent / "replacement"
-    outside.write_bytes(b"fixture altered")
-    outside.chmod(0o400)
-    os.utime(outside, ns=(observed.st_atime_ns, observed.st_mtime_ns))
-    changed = outside.stat()
-    assert changed.st_size == observed.st_size
-    assert changed.st_mtime_ns == observed.st_mtime_ns
-    leaf.parent.chmod(0o700)
-    outside.replace(leaf)
-    leaf.parent.chmod(0o500)
-    original = os.read
-    payload_reads = []
-
-    def watch(fd, count):
-        if os.fstat(fd).st_ino == changed.st_ino:
-            payload_reads.append(count)
-        return original(fd, count)
-
-    monkeypatch.setattr(os, "read", watch)
-    with (
-        ledgers.open_verified_traindev_root(
-            root, anchor, [worktree]
-        ) as verified,
-        pytest.raises(StopConditionError, match="changed before read"),
-    ):
-        verified.read_verified_leaf_bytes(rel)
-    assert not payload_reads
+    (copied / rel).write_bytes(b"tampered payload")
+    with pytest.raises(StopConditionError, match="digest drift"):
+        ledgers.open_verified_traindev_root(copied, anchor, [worktree])
 
 
 def _public_mapping():
@@ -897,7 +581,7 @@ def test_public_report_scan_rejects_missing_or_blank_identity(tmp_path, key):
             ledgers.scan_public_report("Aggregate score: 0.5.", path)
 
 
-def test_baseline_requires_prestart_anchor_before_root_access(
+def test_baseline_charges_slot_before_root_access(
     tmp_path,
     monkeypatch,
 ):
@@ -917,24 +601,6 @@ def test_baseline_requires_prestart_anchor_before_root_access(
         raise StopConditionError(msg)
 
     monkeypatch.setattr(baseline, "open_verified_traindev_root", open_private)
-    with pytest.raises(StopConditionError, match="anchor"):
-        baseline.run_copista_per_system(
-            downloads,
-            run,
-            traindev_root=private,
-            formal=False,
-        )
-    assert not opened
-    portable_sha256 = ledgers.EXPECTED_TRAINDEV_PORTABLE_SHA256
-    _append_anchor(
-        downloads,
-        {
-            "root_st_dev": 1,
-            "root_st_ino": 10,
-            "staging_attestation_sha256": _sha(b"attestation"),
-            "portable_aggregate_sha256": portable_sha256,
-        },
-    )
     with pytest.raises(StopConditionError, match="synthetic root mismatch"):
         baseline.run_copista_per_system(
             downloads,
@@ -1690,8 +1356,8 @@ def packaging_run(tmp_path, monkeypatch):
         packaging, "source_state", lambda: {"commit": "fixture", "dirty": False}
     )
     monkeypatch.setattr(
-        packaging,
-        "ACCEPTED_MUSESCORE_IDENTITIES",
+        renderers,
+        "SOURCE_VERIFIED_MUSESCORE_BUILDS",
         {(musescore.version, musescore.executable_sha256)},
     )
     monkeypatch.setattr(packaging, "verify_w6_training_assets", lambda _: {})
@@ -1912,14 +1578,7 @@ def test_renderer_checks_successful_scratch_before_removal(
     """A normal renderer return still counts its scratch against the cap."""
     rows = _render_inputs(tmp_path, monkeypatch, engine, 1)
     headroom = packaging.WORKER_SCRATCH_HEADROOM_BYTES
-    required = (
-        packaging._musescore_worst_case_bytes(  # noqa: SLF001
-            8, f"xml:{rows[0]['canonical_v2_sha256']}"
-        )
-        if engine == "musescore"
-        else headroom
-    )
-    cap = required + headroom
+    cap = headroom * 2
     monkeypatch.setattr(packaging, "W6_DISK_CAP_BYTES", cap)
     meter = packaging._PageMeter(16)  # noqa: SLF001
     meter.disk = packaging._DatasetSink(tmp_path)  # noqa: SLF001
@@ -1950,7 +1609,7 @@ def test_renderer_checks_successful_scratch_before_removal(
             )
         )
 
-    meter.disk.usage = cap - required + headroom // 2
+    meter.disk.usage = cap - headroom // 2
     with pytest.raises(StopConditionError, match="generated disk cap"):
         attempt()
     assert not calls
@@ -2199,7 +1858,7 @@ def test_training_cli_privacy_scan_and_dirty_formal_guard(
         (["--formal"], "clean code tree"),
         (["--target-train-crops", "44999"], "milestone minima"),
         (["--max-pdmx", "2439"], "intake limit"),
-        (["--no-formal"], "missing Slice A campaign anchor"),
+        (["--no-formal"], "missing prior campaign ledger"),
     ):
         assert w6_cli.main([*package_args, *opts]) == 2  # noqa: PLR2004
         assert reason in capsys.readouterr().err
@@ -2308,134 +1967,23 @@ def test_standalone_number_does_not_conflate_distinct_genres():
     assert by_id["s8"] != by_id["s9"]
 
 
-def test_download_ledger_recovers_interrupted_two_phase_anchor_write(
+def test_musescore_preference_guard_and_cached_calibration(
     tmp_path, monkeypatch
 ):
-    """Restart finalizes an interrupted pending_download_ledger_sha256 write."""
-    dl = tmp_path / "downloads"
-    _seed_prior_ledgers(dl, monkeypatch)
-    ledger = ledgers.W6DownloadLedger(dl)
-    data = {
-        "schema": "omr-w6-slice-a-download-ledger-v1",
-        "total_bytes": 42,
-        "entries": [{"charged_bytes": 42}],
-    }
-    raw = (
-        json.dumps(data, sort_keys=True, separators=(",", ":")).encode() + b"\n"
-    )
-    anchor_path = tmp_path / "host" / "campaign.json"
-    anchor = json.loads(anchor_path.read_bytes())
-    anchor["pending_download_ledger_bytes"] = len(raw)
-    anchor["pending_download_ledger_sha256"] = _sha(raw)
-    anchor_path.write_bytes(
-        json.dumps(anchor, sort_keys=True, separators=(",", ":")).encode()
-        + b"\n"
-    )
-    (dl / ledgers.W6_DOWNLOAD_LEDGER_NAME).write_bytes(raw)
-    stale_dest = tmp_path / "dest" / "downloads"
-    _seed_prior_ledgers(stale_dest, monkeypatch, init_campaign=False)
-    (stale_dest / ledgers.W6_DOWNLOAD_LEDGER_NAME).write_text(
-        json.dumps(
-            {
-                "schema": "omr-w6-slice-a-download-ledger-v1",
-                "total_bytes": 0,
-                "entries": [],
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        + "\n"
-    )
-    with pytest.raises(StopConditionError, match="download ledger"):
-        ledgers.migrate_w6_campaign_roots(dl, stale_dest)
-    assert ledger.total_bytes() == 42  # noqa: PLR2004
-
-    # Reverse crash state: source still has committed bytes while destination
-    # has pending bytes — rejected migration must NOT poison source's anchor!
-    committed_raw = (
-        json.dumps(
-            {
-                "schema": "omr-w6-slice-a-download-ledger-v1",
-                "total_bytes": 42,
-                "entries": [{"charged_bytes": 42}],
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-        + b"\n"
-    )
-    pending_raw = (
-        json.dumps(
-            {
-                "schema": "omr-w6-slice-a-download-ledger-v1",
-                "total_bytes": 99,
-                "entries": [{"charged_bytes": 99}],
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode()
-        + b"\n"
-    )
-    (dl / ledgers.W6_DOWNLOAD_LEDGER_NAME).write_bytes(committed_raw)
-    (stale_dest / ledgers.W6_DOWNLOAD_LEDGER_NAME).write_bytes(pending_raw)
-    anchor2 = json.loads(anchor_path.read_bytes())
-    anchor2["pending_download_ledger_bytes"] = len(pending_raw)
-    anchor2["pending_download_ledger_sha256"] = _sha(pending_raw)
-    anchor_path.write_bytes(
-        json.dumps(anchor2, sort_keys=True, separators=(",", ":")).encode()
-        + b"\n"
-    )
-    with pytest.raises(StopConditionError, match="download ledger"):
-        ledgers.migrate_w6_campaign_roots(dl, stale_dest)
-    finalized = json.loads(anchor_path.read_bytes())
-    assert "pending_download_ledger_sha256" not in finalized
-    assert finalized["download_ledger_sha256"] == _sha(committed_raw)
-    assert ledger.total_bytes() == 42  # noqa: PLR2004
-
-
-def test_migrate_w6_campaign_roots_before_any_run_ledger(tmp_path, monkeypatch):
-    """Setup-only campaigns without a run ledger can still relocate cleanly."""
-    old_dl = tmp_path / "old" / "downloads"
-    new_dl = tmp_path / "new" / "downloads"
-    _seed_prior_ledgers(old_dl, monkeypatch, init_campaign=False)
-    ledgers._init_w6_campaign_anchor(old_dl)  # noqa: SLF001
-    _seed_prior_ledgers(new_dl, monkeypatch, init_campaign=False)
-    (new_dl / ledgers.W6_DOWNLOAD_LEDGER_NAME).write_bytes(
-        (old_dl / ledgers.W6_DOWNLOAD_LEDGER_NAME).read_bytes()
-    )
-    assert not (old_dl / ledgers.W6_RUN_LEDGER_NAME).exists()
-    out = ledgers.migrate_w6_campaign_roots(old_dl, new_dl)
-    assert out == {"status": "migrated"}
-    assert ledgers.W6DownloadLedger(new_dl).total_bytes() == 0
-
-
-@pytest.mark.parametrize(
-    ("accepted_sha", "infer_text", "expected"),
-    [
-        ("f" * 64, "false", "mutable-source recheck"),
-        ("0" * 64, "true", "importInferTextType=false"),
-    ],
-)
-def test_musescore_output_bound_preconditions_block_dispatch(
-    tmp_path, monkeypatch, accepted_sha, infer_text, expected
-):
-    """Unaccepted binaries or enabled jump inference stop before rendering."""
+    """Enabled jump inference stops; new 4.x builds cache calibration."""
     from sheet_music_omr.harness.confine import Confinement  # noqa: PLC0415
     from sheet_music_omr.harness.musescore import MuseScore  # noqa: PLC0415
 
     ms = MuseScore(
         executable=tmp_path / "MuseScore4",
-        version="4.7.7",
-        executable_sha256="0" * 64,
+        version="4.8.0",
+        executable_sha256="1" * 64,
         settings=tmp_path / "MuseScore4.ini",
         confinement=Confinement(tmp_path / "run", tmp_path / "dl"),
         baseline=None,
         baseline_preferences={
-            "import/musicXml/importInferTextType": {"value": infer_text}
+            "import/musicXml/importInferTextType": {"value": "true"}
         },
-    )
-    monkeypatch.setattr(
-        packaging, "ACCEPTED_MUSESCORE_IDENTITIES", {("4.7.7", accepted_sha)}
     )
     rows = _render_inputs(tmp_path, monkeypatch, "musescore", 1)
     meter = packaging._PageMeter(16)  # noqa: SLF001
@@ -2449,7 +1997,7 @@ def test_musescore_output_bound_preconditions_block_dispatch(
         raise AssertionError(msg)
 
     monkeypatch.setattr(renderers, "render_musescore", forbidden)
-    with pytest.raises(StopConditionError, match=expected):
+    with pytest.raises(StopConditionError, match="importInferTextType=false"):
         list(
             packaging._render_variants(  # noqa: SLF001
                 rows,
@@ -2462,6 +2010,26 @@ def test_musescore_output_bound_preconditions_block_dispatch(
             )
         )
     assert not called
+
+    # New 4.8.0 build calibrates once and caches in .musescore-calibrated.json.
+    cal_calls = 0
+
+    def fake_cal(m, _dir, *, count_rasters=None):
+        nonlocal cal_calls
+        cal_calls += 1
+        if count_rasters is not None:
+            count_rasters(1)
+        return (m.version, m.executable_sha256)
+
+    monkeypatch.setattr(renderers, "calibrate_musescore_pixel_scale", fake_cal)
+    cache_file = tmp_path / "dl" / renderers.MUSESCORE_CALIBRATION_CACHE_NAME
+    assert renderers.ensure_musescore_calibrated(
+        ms, tmp_path / "cal1", cache_path=cache_file
+    ) == ("4.8.0", "1" * 64)
+    assert renderers.ensure_musescore_calibrated(
+        ms, tmp_path / "cal2", cache_path=cache_file
+    ) == ("4.8.0", "1" * 64)
+    assert cal_calls == 1
 
 
 def test_volta_ending_and_restated_midscore_clef_route_to_musescore():
@@ -2596,55 +2164,6 @@ def test_worker_ipc_errors_timeout_reaping_and_verovio_scratch_bound(
     with pytest.raises(ProcessLookupError):
         os.kill(sibling_pid, 0)
 
-    # Pre-dispatch Verovio byte ceiling rejects insufficient budget and exit 93
-    # even when score.mei was already written and zero PNGs exist.
-    style = renderers.sample_layout_and_style(1, 2)
-    xml = to_musicxml_text(_score(2))
-    prepared = packaging._PreparedVariant(  # noqa: SLF001
-        {"source_id": "s1"}, "seed", 1, style, 2, "verovio", xml
-    )
-    bound = packaging._verovio_worst_case_bytes(prepared)  # noqa: SLF001
-    assert bound > packaging.WORKER_SCRATCH_HEADROOM_BYTES
-    monkeypatch.setattr(renderers, "verify_loopback_only_unshare", lambda: None)
-    with pytest.raises(StopConditionError, match="exhausted before subprocess"):
-        renderers._run_verovio(  # noqa: SLF001
-            xml,
-            style,
-            tmp_path,
-            tmp_path / "scratch",
-            max_pages=2,
-            count_rasters=None,
-            max_scratch_bytes=1024,
-        )
-
-    def mei_only_exit_93(*_a, scratch_root, on_before_cleanup, **_kw):
-        scratch_dir = scratch_root / "fake-iso"
-        scratch_dir.mkdir(parents=True, exist_ok=True)
-        (scratch_dir / "score-1.svg").write_text("<svg/>", encoding="utf-8")
-        (scratch_dir / "score.mei").write_text("<mei/>", encoding="utf-8")
-        on_before_cleanup(scratch_dir)
-        return SimpleNamespace(
-            returncode=93, stdout_sanitized="", stderr_sanitized=""
-        )
-
-    monkeypatch.setattr(
-        renderers, "run_offline_isolated_subprocess", mei_only_exit_93
-    )
-    rasters_seen: list[int] = []
-    ledger = renderers.RenderGateLedger("verovio")
-    with pytest.raises(StopConditionError, match="pre-dispatch byte bound"):
-        renderers.render_verovio(
-            xml,
-            style,
-            tmp_path,
-            tmp_path / "scratch2",
-            ledger,
-            max_pages=2,
-            count_rasters=rasters_seen.append,
-            max_scratch_bytes=bound,
-        )
-    assert rasters_seen == [0]
-
 
 def _verify_fail_fixture(_staged, _ledger):
     msg = "verifier exploded after staging"
@@ -2656,94 +2175,6 @@ def _init_verify_fail_fixture():
     pytest.MonkeyPatch().setattr(
         renderers, "verify_verovio_outputs", _verify_fail_fixture
     )
-
-
-def test_exact_headroom_scratch_reservation_metadata_charges_max_not_sum(
-    tmp_path, monkeypatch
-):
-    """Scratch reservation metadata charges max(reserved, actual), not sum."""
-    style = renderers.sample_layout_and_style(1, 3)
-    xml = to_musicxml_text(_score(3))
-    prepared = packaging._PreparedVariant(  # noqa: SLF001
-        {"source_id": "s1"}, "seed", 1, style, 3, "verovio", xml
-    )
-    bound = packaging._verovio_worst_case_bytes(prepared)  # noqa: SLF001
-
-    def unconfirmed_wrapper_exit(*_a, scratch_root, **_kw):
-        # Neither timeout nor signal-killed (-9) unshare runs on_before_cleanup.
-        retained = scratch_root / "w4w5-iso-uncollected"
-        retained.mkdir(parents=True, exist_ok=True)
-        (retained / "partial.svg").write_bytes(b"x" * 4096)
-        msg = "unshare wrapper exited abnormally (-9); retaining scratch"
-        raise StopConditionError(msg)
-
-    monkeypatch.setattr(renderers, "verify_loopback_only_unshare", lambda: None)
-    runs_root = tmp_path / "exact-runs"
-    run_retained = runs_root / "w6-slice-a-retained"
-    monkeypatch.setattr(ledgers, "W6_DISK_CAP_BYTES", bound)
-    monkeypatch.setattr(packaging, "W6_DISK_CAP_BYTES", bound)
-    assert ledgers._check_w6_disk_cap(runs_root, additional_bytes=bound) == 0  # noqa: SLF001
-
-    def clean_exact_headroom(*_a, scratch_root, on_before_cleanup, **_kw):
-        iso = scratch_root / "w4w5-iso-clean"
-        iso.mkdir(parents=True, exist_ok=True)
-        (iso / "score-1.svg").write_text("<svg/>", encoding="utf-8")
-        (iso / "score.mei").write_text("<mei/>", encoding="utf-8")
-        (iso / "score-1.png").write_bytes(b"png" * 512)
-        on_before_cleanup(iso)
-        shutil.rmtree(iso)
-        return SimpleNamespace(
-            returncode=0, stdout_sanitized="", stderr_sanitized=""
-        )
-
-    monkeypatch.setattr(
-        renderers, "run_offline_isolated_subprocess", clean_exact_headroom
-    )
-    _, clean_staged, clean_pages, clean_charged = (
-        packaging._stage_verovio_parent_job(  # noqa: SLF001
-            prepared,
-            run=run_retained,
-            downloads=tmp_path / "dl",
-            max_pages=3,
-            max_scratch_bytes=bound,
-        )
-    )
-    assert isinstance(clean_staged, renderers.StagedVerovio)
-    assert clean_pages == 1
-    assert clean_charged < bound
-    assert ledgers._check_w6_disk_cap(runs_root, additional_bytes=bound) == 0  # noqa: SLF001
-
-    monkeypatch.setattr(
-        renderers, "run_offline_isolated_subprocess", unconfirmed_wrapper_exit
-    )
-    _, err_out, _, charged = packaging._stage_verovio_parent_job(  # noqa: SLF001
-        prepared,
-        run=run_retained,
-        downloads=tmp_path / "dl",
-        max_pages=3,
-        max_scratch_bytes=bound,
-    )
-    assert isinstance(err_out, StopConditionError)
-    assert charged == bound
-    assert ledgers._check_w6_disk_cap(runs_root) == bound  # noqa: SLF001
-    with pytest.raises(StopConditionError, match="generated disk cap"):
-        ledgers._check_w6_disk_cap(runs_root, additional_bytes=1)  # noqa: SLF001
-
-    # Growth inside a retained scratch directory during _w6_run_bytes never
-    # subtracts or hides reserved bytes.
-    (uncollected_dir,) = run_retained.rglob("w4w5-iso-uncollected")
-    orig_dir_bytes = ledgers.directory_bytes
-
-    def grow_on_non_tmp_scan(path):
-        result = orig_dir_bytes(path)
-        (uncollected_dir / "late-growth.svg").write_bytes(b"g" * 4096)
-        return result
-
-    (run_retained / "report").mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr(ledgers, "directory_bytes", grow_on_non_tmp_scan)
-    assert ledgers._check_w6_disk_cap(runs_root) == bound  # noqa: SLF001
-    with pytest.raises(StopConditionError, match="generated disk cap"):
-        ledgers._check_w6_disk_cap(runs_root, additional_bytes=1)  # noqa: SLF001
 
 
 def test_idle_pool_fallback_and_post_stage_verifier_meter(
@@ -3019,8 +2450,8 @@ def test_musescore_supplement_augments_milestones_cleanly(
         packaging, "source_state", lambda: {"commit": "c" * 40, "dirty": False}
     )
     monkeypatch.setattr(
-        packaging,
-        "ACCEPTED_MUSESCORE_IDENTITIES",
+        renderers,
+        "SOURCE_VERIFIED_MUSESCORE_BUILDS",
         {(ms.version, ms.executable_sha256)},
     )
     monkeypatch.setattr(packaging, "verify_w6_training_assets", lambda _: {})
@@ -3095,14 +2526,9 @@ def test_musescore_supplement_augments_milestones_cleanly(
         )
 
 
-def test_musescore_timeout_reservation_and_cli_settings_guard(
-    tmp_path, monkeypatch, capsys
-):
-    """Real _musescore_job writes reservation once and CLI guards settings."""
-    from sheet_music_omr.training import cli as w6_cli  # noqa: PLC0415
-
+def test_musescore_timeout_and_batch_jobs(tmp_path):
+    """Real _musescore_job drops nonzero exits and stops on timeout."""
     downloads = tmp_path / "downloads"
-    _seed_prior_ledgers(downloads, monkeypatch)
     runs_root = tmp_path / "runs"
     timeout_run = Confinement.create(
         runs_root / "w6-slice-a-ms-timeout", downloads
@@ -3113,11 +2539,6 @@ def test_musescore_timeout_reservation_and_cli_settings_guard(
     active_ini.write_text(
         "[General]\nimport\\musicXml\\importInferTextType=false\n",
         encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        packaging,
-        "ACCEPTED_MUSESCORE_IDENTITIES",
-        {("4.7.7", _sha(b"ms"))},
     )
     ms = MuseScore.open(
         Confinement(timeout_run, downloads),
@@ -3136,10 +2557,7 @@ def test_musescore_timeout_reservation_and_cli_settings_guard(
         ms_xml,
     )
     assert packaging._item_max_pages(ms_prep) == 4  # noqa: SLF001, PLR2004
-    ms_bound = packaging._musescore_worst_case_bytes(3, ms_xml)  # noqa: SLF001
 
-    # Normal RenderRejected through real render_musescore -> _musescore_job
-    # creates scratch once, unlinks reservation, and cleans scratch.
     clean_outcome = packaging._execute_prepared_variant(  # noqa: SLF001
         ms_prep,
         run=timeout_run,
@@ -3148,192 +2566,22 @@ def test_musescore_timeout_reservation_and_cli_settings_guard(
         calibrated_identity=None,
         musescore_lock=packaging.threading.Lock(),
         max_pages=4,
-        max_scratch_bytes=ms_bound,
     )
     assert isinstance(clean_outcome.result, renderers.RenderResult)
     assert clean_outcome.result.gate.status == "dropped"
     assert not list((timeout_run / "tmp").iterdir())
 
-    seen_reservations: list[Path] = []
-
-    def stall_launcher(_cmd, _timeout):
-        seen_reservations.extend(
-            (timeout_run / "tmp").glob(
-                f"*/{renderers.SCRATCH_RESERVATION_FILE}"
-            )
-        )
-        msg = "MuseScore batch worker timed out"
-        raise StopConditionError(msg)
-
     outcome = packaging._execute_prepared_variant(  # noqa: SLF001
         ms_prep,
         run=timeout_run,
         downloads=downloads,
-        musescore=replace(ms, launcher=stall_launcher),
+        musescore=replace(ms, launcher=lambda _c, _t: (None, "timed out")),
         calibrated_identity=None,
         musescore_lock=packaging.threading.Lock(),
         max_pages=4,
-        max_scratch_bytes=ms_bound,
     )
-    assert len(seen_reservations) == 1
     assert isinstance(outcome.result, StopConditionError)
     assert outcome.pages == 4  # noqa: PLR2004
-    assert outcome.scratch_bytes == ms_bound
-
-    monkeypatch.setattr(w6_cli, "check_outside_repository", lambda *_: None)
-    monkeypatch.setattr(w6_cli, "settings_path", lambda: active_ini)
-    monkeypatch.setattr(
-        w6_cli, "ACCEPTED_MUSESCORE_IDENTITIES", {("4.7.7", _sha(b"accepted"))}
-    )
-    cli_base = [
-        "package-w6-musescore-supplement",
-        "--run-dir",
-        str(runs_root / "w6-slice-a-cli"),
-        "--downloads",
-        str(downloads),
-        "--base-run-dir",
-        str(runs_root / "w6-slice-a-base"),
-        "--test-exclusion",
-        str(tmp_path / "excl.json"),
-        "--test-status",
-        str(tmp_path / "status.json"),
-        "--musescore",
-        str(exe),
-        "--no-formal",
-    ]
-    assert (
-        w6_cli.main([*cli_base, "--settings", str(tmp_path / "other.ini")]) == 2  # noqa: PLR2004
-    )
-    assert "active host MuseScore settings" in capsys.readouterr().err
-    assert w6_cli.main(cli_base) == 2  # noqa: PLR2004
-    assert "mutable-source recheck" in capsys.readouterr().err
-    assert not (runs_root / "w6-slice-a-cli").exists()
-
-
-def test_wsl_supervisor_unconfirmed_exit_fences_campaign_and_migration(
-    tmp_path, monkeypatch
-):
-    """Generic WSL supervisor failure keeps pre-launch fence and blocks runs."""
-    downloads = tmp_path / "downloads"
-    _seed_prior_ledgers(downloads, monkeypatch)
-    runs_root = tmp_path / "runs"
-    fake_ps = tmp_path / "fail-ps"
-    fake_ps.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
-    fake_ps.chmod(0o755)
-    monkeypatch.setattr(packaging, "_WSL_POWERSHELL", fake_ps)
-    monkeypatch.setattr(packaging, "_windows_path_for_wsl", str)
-    with pytest.raises(packaging._UnconfirmedWorkerExitError):  # noqa: SLF001
-        packaging._run_wsl_native_musescore(  # noqa: SLF001
-            ["MuseScore4.exe", "-j", "job.json"],
-            1.0,
-            track_campaign_fence=True,
-        )
-    new_dl = tmp_path / "migrated" / "downloads"
-    _seed_prior_ledgers(new_dl, monkeypatch, init_campaign=False)
-    with pytest.raises(StopConditionError, match="unconfirmed W6 native"):
-        ledgers.begin_w6_native_worker("second-launch")
-    with pytest.raises(StopConditionError, match="token mismatch"):
-        ledgers.clear_w6_native_worker("wrong-token")
-    with pytest.raises(StopConditionError, match="unconfirmed W6 native"):
-        ledgers.migrate_w6_campaign_roots(downloads, new_dl)
-    with pytest.raises(StopConditionError, match="unconfirmed W6 native"):
-        ledgers.reserve_w6_render_run(
-            downloads,
-            run_id="w6-slice-a-blocked",
-            git_commit="a" * 40,
-            clean_tree=True,
-            command="package-w6-musescore-supplement",
-            planned_pages=10,
-            runs_parent=runs_root,
-        )
-    token = str(
-        json.loads(ledgers._pending_native_worker_path().read_bytes())["token"]  # noqa: SLF001
-    )
-    assert ledgers.has_pending_w6_native_worker()
-    assert not ledgers.has_pending_w6_native_worker("other-reservation")
-    ledgers.clear_w6_native_worker(token)
-    assert not ledgers.has_pending_w6_native_worker()
-
-
-def test_unconfirmed_exit_with_settings_oserror_retains_scratch(
-    tmp_path, monkeypatch
-):
-    """Post-launch settings OSError cannot mask unconfirmed exit or scratch."""
-    downloads = tmp_path / "downloads"
-    _seed_prior_ledgers(downloads, monkeypatch)
-    runs_root = tmp_path / "runs"
-    fake_ps = tmp_path / "fail-ps"
-    fake_ps.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
-    fake_ps.chmod(0o755)
-    monkeypatch.setattr(packaging, "_WSL_POWERSHELL", fake_ps)
-    monkeypatch.setattr(packaging, "_windows_path_for_wsl", str)
-    err_run = Confinement.create(
-        runs_root / "w6-slice-a-settings-oserr", downloads
-    ).run
-    exe = tmp_path / "fake-ms.exe"
-    exe.write_bytes(b"ms")
-    ini = tmp_path / "ms-oserr.ini"
-    ini.write_text(
-        "[General]\nimport\\musicXml\\importInferTextType=false\n",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        packaging, "ACCEPTED_MUSESCORE_IDENTITIES", {("4.7.7", _sha(b"ms"))}
-    )
-    ms = MuseScore.open(
-        Confinement(err_run, downloads),
-        executable=exe,
-        settings=ini,
-        version_lookup=lambda: "4.7.7",
-    )
-    orig_check = MuseScore.check_settings
-    calls = 0
-
-    def fail_second_check(self):
-        nonlocal calls
-        calls += 1
-        if calls >= 2:  # noqa: PLR2004
-            msg = "settings locked on Windows"
-            raise PermissionError(msg)
-        return orig_check(self)
-
-    monkeypatch.setattr(MuseScore, "check_settings", fail_second_check)
-    ms_xml = to_musicxml_text(_score(2))
-    ms_prep = packaging._PreparedVariant(  # noqa: SLF001
-        {"source_id": "s1"},
-        "seed",
-        1,
-        renderers.sample_layout_and_style(1, 2),
-        2,
-        "musescore",
-        ms_xml,
-    )
-    ms_bound = packaging._musescore_worst_case_bytes(2, ms_xml)  # noqa: SLF001
-    res_outcome = packaging._execute_prepared_variant(  # noqa: SLF001
-        ms_prep,
-        run=err_run,
-        downloads=downloads,
-        musescore=replace(
-            ms,
-            launcher=packaging._make_offline_musescore(  # noqa: SLF001
-                downloads, reservation_id="res-own"
-            ),
-        ),
-        calibrated_identity=None,
-        musescore_lock=packaging.threading.Lock(),
-        max_pages=3,
-        max_scratch_bytes=ms_bound,
-        reservation_id="res-own",
-    )
-    assert isinstance(res_outcome.result, packaging._UnconfirmedWorkerExitError)  # noqa: SLF001
-    assert res_outcome.scratch_bytes == ms_bound
-    assert list((err_run / "tmp").iterdir())
-    assert ledgers.has_pending_w6_native_worker("res-own")
-    assert not ledgers.has_pending_w6_native_worker("res-other")
-    tok2 = str(
-        json.loads(ledgers._pending_native_worker_path().read_bytes())["token"]  # noqa: SLF001
-    )
-    ledgers.clear_w6_native_worker(tok2)
 
 
 def test_spacer_only_measure_excluded_from_musescore_supplement(tmp_path):

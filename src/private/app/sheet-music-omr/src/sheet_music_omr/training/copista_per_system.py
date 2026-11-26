@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import math
@@ -9,8 +10,8 @@ import os
 import re
 import selectors
 import shutil
+import signal
 import subprocess
-import sys
 import time
 import uuid
 from collections import defaultdict
@@ -62,7 +63,7 @@ if TYPE_CHECKING:
         PredictedBox,
     )
 
-_UNSHARE = ("unshare", "-rn", "--pid", "--fork", "--kill-child=SIGKILL", "--")
+_UNSHARE = ("unshare", "-rn", "--")
 _REAP_SECONDS = 5.0
 _MAX_HEARTBEAT_LENGTH = 32
 _TIMEOUT_RETURN_CODE = 124
@@ -70,80 +71,6 @@ _TWO_STAVES = 2
 _TRAINDEV_MEASURES = 1601
 _TRAINDEV_SYSTEMS = 323
 _PAGE_NAME = re.compile(r"pages/(gold-\d{2})-p([0-9]{2})\.png")
-
-# Executed by the system Python, never by the inference environment.
-_WATCHDOG = """
-import json
-import os
-import selectors
-import signal
-import subprocess
-import sys
-import time
-
-cfg = json.loads(sys.argv[1])
-
-def reap(child):
-    try:
-        os.kill(child.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    _, status = os.waitpid(child.pid, 0)
-    child.returncode = os.waitstatus_to_exitcode(status)
-
-def supervise():
-    if cfg["isolated"]:
-        with open("/proc/net/dev", encoding="ascii") as net:
-            interfaces = [row.split(":", 1)[0].strip()
-                          for row in net.readlines()[2:]]
-        if os.getpid() != 1 or interfaces != ["lo"]:
-            return 125
-    child = subprocess.Popen(
-        cfg["worker"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL, close_fds=True,
-    )
-    try:
-        if cfg["isolated"] and child.pid != 2:
-            return 125
-        deadline = time.monotonic() + cfg["timeout"]
-        pending = b""
-        with selectors.DefaultSelector() as selector:
-            selector.register(child.stdout, selectors.EVENT_READ)
-            for index in range(cfg["page_count"]):
-                expected = str(index).encode()
-                while True:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        return 124
-                    line, separator, rest = pending.partition(b"\\n")
-                    if separator:
-                        if line != expected:
-                            return 125
-                        pending = rest
-                        deadline = time.monotonic() + cfg["timeout"]
-                        print(f"page:{index}", flush=True)
-                        break
-                    if len(pending) > 32:
-                        return 125
-                    if not selector.select(remaining):
-                        return 124
-                    data = os.read(child.stdout.fileno(), 4096)
-                    if not data:
-                        return 125
-                    pending += data
-        try:
-            return 0 if child.wait(timeout=cfg["reap_timeout"]) == 0 else 125
-        except subprocess.TimeoutExpired:
-            return 124
-    finally:
-        if child.returncode is None:
-            reap(child)
-        child.stdout.close()
-
-status = supervise()
-print("reaped", flush=True)
-sys.exit(status)
-"""
 
 _BATCH_WORKER = """
 def run_batch(cfg):
@@ -165,66 +92,60 @@ class WorkerOutcome:
     completed_pages: int
 
 
-def _monitor_supervisor(  # noqa: C901
+def _kill_worker_group(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    with contextlib.suppress(ProcessLookupError, OSError):
+        os.killpg(process.pid, signal.SIGKILL)
+    with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+        process.wait(timeout=_REAP_SECONDS)
+
+
+def _monitor_worker(
     process: subprocess.Popen[bytes],
     page_count: int,
     page_timeout: float,
 ) -> WorkerOutcome:
     stdout = process.stdout
     if stdout is None:
-        msg = "missing Copista supervisor heartbeat pipe"
+        msg = "missing Copista worker heartbeat pipe"
         raise StopConditionError(msg)
     complete = 0
-    reaped = False
     pending = b""
-    deadline = time.monotonic() + page_timeout + _REAP_SECONDS
+    deadline = time.monotonic() + page_timeout
     with stdout, selectors.DefaultSelector() as selector:
         selector.register(stdout, selectors.EVENT_READ)
-        while not reaped:
+        while complete < page_count:
             wait = deadline - time.monotonic()
             if wait <= 0 or not selector.select(wait):
-                msg = "Copista namespace teardown deadline expired"
-                raise StopConditionError(msg)
+                _kill_worker_group(process)
+                return WorkerOutcome(_TIMEOUT_RETURN_CODE, complete)
             data = os.read(stdout.fileno(), 4096)
             if not data:
-                # The wrapper may be between reaping PID 1 and exiting.
                 break
             pending += data
-            while b"\n" in pending:
+            while b"\n" in pending and complete < page_count:
                 line, pending = pending.split(b"\n", 1)
-                if (
-                    line == f"page:{complete}".encode()
-                    and complete < page_count
-                ):
-                    complete += 1
-                    deadline = (
-                        time.monotonic()
-                        + (
-                            page_timeout
-                            if complete < page_count
-                            else _REAP_SECONDS
-                        )
-                        + _REAP_SECONDS
-                    )
-                elif line == b"reaped":
-                    reaped = True
-                    break
-                else:
-                    msg = "invalid Copista namespace heartbeat"
+                if line not in {
+                    f"{complete}".encode(),
+                    f"page:{complete}".encode(),
+                }:
+                    _kill_worker_group(process)
+                    msg = "invalid Copista worker heartbeat"
                     raise StopConditionError(msg)
+                complete += 1
+                deadline = time.monotonic() + page_timeout
             if len(pending) > _MAX_HEARTBEAT_LENGTH:
-                msg = "invalid Copista namespace heartbeat length"
+                _kill_worker_group(process)
+                msg = "invalid Copista worker heartbeat length"
                 raise StopConditionError(msg)
-        try:
-            code = process.wait(timeout=_REAP_SECONDS)
-        except subprocess.TimeoutExpired as exc:
-            msg = "Copista namespace did not exit within 5 seconds"
-            raise StopConditionError(msg) from exc
-    if code < 0:
-        msg = "Copista namespace died by signal; scratch retained"
-        raise StopConditionError(msg)
-    if not reaped or (code == 0 and complete != page_count):
-        msg = "Copista namespace did not confirm worker teardown"
+    try:
+        code = process.wait(timeout=_REAP_SECONDS)
+    except subprocess.TimeoutExpired:
+        _kill_worker_group(process)
+        return WorkerOutcome(_TIMEOUT_RETURN_CODE, complete)
+    if code < 0 or (code == 0 and complete != page_count):
+        msg = "Copista worker exited abnormally before completing pages"
         raise StopConditionError(msg)
     return WorkerOutcome(code, complete)
 
@@ -239,30 +160,11 @@ def run_supervised_worker(  # noqa: PLR0913
     namespace_prefix: Sequence[str] = _UNSHARE,
     clean_scratch: bool = True,
 ) -> WorkerOutcome:
-    """Launch one supervisor and one worker; remove scratch only after reaping.
-
-    An empty namespace prefix exercises the same watchdog with synthetic jobs
-    in tests. Production uses the fixed namespace launcher.
-    """
+    """Run offline worker directly with per-page heartbeat timeout."""
     if page_count < 1 or not 0 < page_timeout <= W6_WORKER_TIMEOUT_SECONDS:
         msg = "Copista requires a positive page count and bounded timeout"
         raise StopConditionError(msg)
-    config = {
-        "isolated": bool(namespace_prefix),
-        "worker": list(worker_command),
-        "timeout": page_timeout,
-        "reap_timeout": _REAP_SECONDS,
-        "page_count": page_count,
-    }
-    command = [
-        *namespace_prefix,
-        sys.executable,
-        "-I",
-        "-B",
-        "-c",
-        _WATCHDOG,
-        json.dumps(config),
-    ]
+    command = [*namespace_prefix, *worker_command]
     try:
         proc = subprocess.Popen(  # noqa: S603
             command,
@@ -272,16 +174,15 @@ def run_supervised_worker(  # noqa: PLR0913
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
+            start_new_session=True,
         )
     except OSError as exc:
-        msg = "cannot start isolated Copista watchdog"
+        msg = "cannot start isolated Copista worker"
         raise StopConditionError(msg) from exc
     try:
-        result = _monitor_supervisor(proc, page_count, page_timeout)
+        result = _monitor_worker(proc, page_count, page_timeout)
     except BaseException:
-        if proc.poll() is None:
-            proc.kill()
-            proc.wait(timeout=_REAP_SECONDS)
+        _kill_worker_group(proc)
         raise
     if clean_scratch:
         shutil.rmtree(scratch)

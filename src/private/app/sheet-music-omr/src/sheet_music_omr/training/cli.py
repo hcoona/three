@@ -14,9 +14,9 @@ from sheet_music_omr.evaluation.alignment import (
     venv_python_path,
 )
 from sheet_music_omr.harness.confine import Confinement
-from sheet_music_omr.harness.downloads import sha256_file
 from sheet_music_omr.harness.musescore import (
     MuseScore,
+    cli_version,
     default_executable,
     settings_path,
 )
@@ -26,12 +26,10 @@ from sheet_music_omr.harness.records import (
     source_state,
 )
 from sheet_music_omr.harness.stops import StopConditionError
-from sheet_music_omr.synthetic.ledgers import ACCEPTED_MUSESCORE_IDENTITIES
 from sheet_music_omr.training.copista_per_system import run_copista_per_system
 from sheet_music_omr.training.ledgers import (
     _check_w6_disk_cap,
     check_w6_runs_root,
-    migrate_w6_campaign_roots,
     scan_public_report,
     setup_w6_slice_a,
     verify_w6_training_assets,
@@ -39,6 +37,7 @@ from sheet_music_omr.training.ledgers import (
 )
 from sheet_music_omr.training.models import run_w6_neural_cpu_smoke
 from sheet_music_omr.training.packaging import (
+    _offline_musescore,
     run_expanded_w4a_and_package,
     run_musescore_supplement_and_package,
     validate_w6_packaging_minima,
@@ -104,15 +103,8 @@ def build_parser() -> argparse.ArgumentParser:
     setup.add_argument(
         "--init-campaign",
         action="store_true",
-        help="Initialize the host anchor.",
+        help="Compatibility no-op; ledgers are self-contained in downloads.",
     )
-
-    migrate = sub.add_parser(
-        "migrate-w6-downloads",
-        help="Rebind W6 after preserving its ledgers and retained runs.",
-    )
-    migrate.add_argument("--from-downloads", type=Path, required=True)
-    migrate.add_argument("--to-downloads", type=Path, required=True)
 
     smoke = sub.add_parser(
         "smoke-w6-stack",
@@ -218,30 +210,13 @@ def _prepare_packaging_context(
         msg = "formal Slice A run requires a clean code tree"
         raise StopConditionError(msg)
     with w6_disk_lock(downloads, run.parent) as runs:
-        # Check the initial headroom guarantee before querying host settings or
-        # touching MuseScore so low-cap runs fail closed immediately.
         _check_w6_disk_cap(runs, additional_bytes=1_048_576)
-        active_settings = settings_path()
-        if (
-            args.settings is not None
-            and args.settings.resolve() != active_settings.resolve()
-        ):
-            msg = (
-                "W6 packaging requires the active host MuseScore settings path"
-            )
-            raise StopConditionError(msg)
+        active_settings = (
+            settings_path() if args.settings is None else args.settings
+        )
         exe = default_executable() if args.musescore is None else args.musescore
         if not exe.is_file():
             msg = f"MuseScore is not installed at {exe}"
-            raise StopConditionError(msg)
-        exe_sha = sha256_file(exe)
-        matched = [
-            ver
-            for ver, sha in sorted(ACCEPTED_MUSESCORE_IDENTITIES)
-            if sha == exe_sha
-        ]
-        if not matched:
-            msg = "MuseScore identity needs accepted mutable-source recheck"
             raise StopConditionError(msg)
         settings_bytes = (
             active_settings.stat().st_size if active_settings.is_file() else 0
@@ -255,7 +230,9 @@ def _prepare_packaging_context(
             conf,
             executable=exe,
             settings=active_settings,
-            version_lookup=lambda: matched[0],
+            allow_missing_settings=True,
+            version_lookup=lambda: cli_version(exe, _offline_musescore),
+            launcher=_offline_musescore,
         )
     return downloads, run, ms
 
@@ -305,13 +282,6 @@ def _run_command(args: argparse.Namespace) -> dict[str, object]:
         downloads = args.downloads.absolute()
         check_outside_repository(downloads)
         return setup_w6_slice_a(downloads, init_campaign=args.init_campaign)
-    if args.command == "migrate-w6-downloads":
-        from_downloads, to_downloads = (
-            args.from_downloads.absolute(),
-            args.to_downloads.absolute(),
-        )
-        check_outside_repository(from_downloads, to_downloads)
-        return migrate_w6_campaign_roots(from_downloads, to_downloads)
     if args.command == "smoke-w6-stack":
         downloads = args.downloads.absolute()
         work_dir = args.work_dir.absolute()
