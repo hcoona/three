@@ -13,7 +13,7 @@ allowBuilds:
 autoInstallPeers: true
 
 catalog:
-  '@biomejs/biome': 2.6.8
+  '@biomejs/biome': 2.6.9
   '@types/node': ^26.0.0
   '@typescript/native-preview': ^7.0.0-dev.20260523.1
   markdownlint-cli2: 0.24.2
