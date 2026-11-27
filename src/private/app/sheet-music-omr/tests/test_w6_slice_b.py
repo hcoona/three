@@ -680,25 +680,56 @@ def test_system_results_to_crop_assembly_prefix_and_abstention_fallback() -> (
     r2 = SystemDecodeResult(
         valid=True, document=d2, text=s2_txt, raw_logprob=-3.0
     )
-    full_asm, scores = slice_b_runner._system_results_to_crop_assembly(
+    full_asm, scores, loc_map = slice_b_runner._system_results_to_crop_assembly(
         [(1, 1), (1, 2)], [r1, r2]
     )
     assert full_asm.parse_valid
     assert full_asm.failed_crops == ()
     assert full_asm.pred_measure_crop_indices == (0, 1)
+    assert loc_map == {(0, 1): 1, (1, 1): 2}
     assert len(scores) == 2
     assert np.all(np.isfinite(scores))
+
+    # Split measure across systems ([m 1 to=1/4] + [m 1 from=1/4, m 2]) shares
+    # candidate ordinal 1 across merged fragments and maps m 2 -> 2!
+    sp1_txt = (
+        f"format: text-score/2\nkey: 0\ntime: 2/4\nclefs: G2 F4\n"
+        f"carry: octave\npage: 1\nsystem: 1\ncarry-in: {_INITIAL_CARRY}\n"
+        "m 1 to=1/4\n1.1: C4/4\n2.1: C3/4\n"
+    )
+    sp2_txt = (
+        "format: text-score/2\nkey: 0\ntime: 2/4\nclefs: G2 F4\n"
+        "carry: octave\npage: 1\nsystem: 2\n"
+        'carry-in: {"measure":1,"offset":"1/4",'
+        '"event_counts":{"1.1":1,"2.1":1},'
+        '"accidental_scope":"octave","accidentals":[],"open":[]}\n'
+        "m 1 from=1/4\n1.1: E4/4\n2.1: E3/4\n"
+        "m 2\n1.1: G4/2\n2.1: G3/2\n"
+    )
+    sp_d1 = parse_document(sp1_txt)
+    sp_d2 = parse_document(sp2_txt)
+    assert isinstance(sp_d1, SystemDocument)
+    assert isinstance(sp_d2, SystemDocument)
+    _, _, sp_map = slice_b_runner._system_results_to_crop_assembly(
+        [(1, 1), (1, 2)],
+        [
+            SystemDecodeResult(valid=True, document=sp_d1, text=sp1_txt),
+            SystemDecodeResult(valid=True, document=sp_d2, text=sp2_txt),
+        ],
+    )
+    assert sp_map == {(0, 1): 1, (1, 1): 1, (1, 2): 2}
 
     # Abstention on system 2 retains valid closed prefix from system 1
     r2_abs = SystemDecodeResult(
         valid=False, abstention_reason="upstream_carry_gap"
     )
-    part_asm, _ = slice_b_runner._system_results_to_crop_assembly(
+    part_asm, _, part_map = slice_b_runner._system_results_to_crop_assembly(
         [(1, 1), (1, 2)], [r1, r2_abs]
     )
     assert part_asm.parse_valid
     assert part_asm.failed_crops == (1,)
     assert part_asm.pred_measure_crop_indices == (0,)
+    assert part_map == {(0, 1): 1}
 
 
 def test_slice_b_cli_subcommands_and_packaged_verification(
@@ -748,6 +779,37 @@ def test_slice_b_cli_subcommands_and_packaged_verification(
                 "--no-formal",
             ]
         )
+    # Out-of-bounds --num-beams or --max-new-tokens rejected at parse time
+    for bad_flag, bad_val in (
+        ("--num-beams", "4"),
+        ("--max-new-tokens", "1537"),
+    ):
+        with pytest.raises(SystemExit):
+            parser.parse_args(
+                [
+                    "run-w6-replay",
+                    "--downloads",
+                    str(tmp_path / "dl"),
+                    "--run-dir",
+                    str(tmp_path / "runs" / "w6-slice-b-rep"),
+                    "--traindev-root",
+                    str(tmp_path / "td"),
+                    "--synth-dataset-dir",
+                    str(tmp_path / "ds"),
+                    "--arm",
+                    "arm-b",
+                    "--selected-recognizer-checkpoint",
+                    str(tmp_path / "ckpt"),
+                    "--e0-run-ids",
+                    "r0",
+                    "r1",
+                    "r2",
+                    "--synthetic-selection-run-id",
+                    "sel",
+                    bad_flag,
+                    bad_val,
+                ]
+            )
     # E0 mode rejects fine-tuned checkpoint overrides before reserving
     with pytest.raises(StopConditionError, match="E0 zero-shot baseline"):
         slice_b_runner.run_w6_traindev_eval(

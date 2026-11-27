@@ -1978,7 +1978,7 @@ def run_arm_a_manifest_train_step(  # noqa: PLR0913
             if is_masked:
                 labels[:, prefix_len + idx] = -100
     model.train()
-    if disabled := _disabled_ids(mask, assignments):
+    if eligible_static and (disabled := _disabled_ids(mask, assignments)):
         labels = _mask_category_targets(labels, disabled)
         logits = model(**batch, use_cache=False, return_dict=True).logits
         masked = apply_category_supervision_logit_mask(

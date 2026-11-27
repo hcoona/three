@@ -197,6 +197,14 @@ def _positive_float(raw: str) -> float:
     raise argparse.ArgumentTypeError(msg)
 
 
+def _max_system_tokens_int(raw: str) -> int:
+    val = _positive_int(raw)
+    if val > 1536:  # noqa: PLR2004
+        msg = f"--max-new-tokens cannot exceed 1536, got {val}"
+        raise argparse.ArgumentTypeError(msg)
+    return val
+
+
 def _add_slice_b_subparsers(  # noqa: PLR0915
     sub: Any,  # noqa: ANN401
 ) -> None:
@@ -255,8 +263,10 @@ def _add_slice_b_subparsers(  # noqa: PLR0915
     sb_eval.add_argument("--recognizer-checkpoint", type=Path, default=None)
     sb_eval.add_argument("--detector-mode", type=str, default="comb_dp_blind")
     sb_eval.add_argument("--detector-checkpoint", type=Path, default=None)
-    sb_eval.add_argument("--max-new-tokens", type=_positive_int, default=1536)
-    sb_eval.add_argument("--num-beams", type=_positive_int, default=3)
+    sb_eval.add_argument(
+        "--max-new-tokens", type=_max_system_tokens_int, default=1536
+    )
+    sb_eval.add_argument("--num-beams", type=int, choices=(1, 2, 3), default=3)
 
     sb_rep = sub.add_parser(
         "run-w6-replay",
@@ -282,8 +292,10 @@ def _add_slice_b_subparsers(  # noqa: PLR0915
     sb_rep.add_argument("--matched-steps", type=_positive_int, default=160)
     sb_rep.add_argument("--grad-accum", type=_positive_int, default=4)
     sb_rep.add_argument("--lr", type=_positive_float, default=5e-5)
-    sb_rep.add_argument("--max-new-tokens", type=_positive_int, default=1536)
-    sb_rep.add_argument("--num-beams", type=_positive_int, default=3)
+    sb_rep.add_argument(
+        "--max-new-tokens", type=_max_system_tokens_int, default=1536
+    )
+    sb_rep.add_argument("--num-beams", type=int, choices=(1, 2, 3), default=3)
     sb_rep.add_argument("--seed", type=int, default=42)
 
     sb_final = sub.add_parser(
