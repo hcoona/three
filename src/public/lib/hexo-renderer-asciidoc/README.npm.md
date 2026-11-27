@@ -100,13 +100,7 @@ published package as described in [Installation](#installation).
 
 ## Release history
 
-4.x highlights:
-
-- Asynchronous `Promise<string>` renderer contract backed by `@asciidoctor/core` 4.x (`renderSync` is unsupported for AsciiDoc input).
-- Dual ESM and CommonJS entrypoints with TypeScript declarations, requiring Node.js `>=22` and Hexo `>=8.0.0`.
-- Static syntax highlighting scoped strictly to direct `div.listingblock > div.content > pre > code` blocks.
-
-See [`CHANGELOG.md`](https://github.com/hcoona/three/blob/main/src/public/lib/hexo-renderer-asciidoc/CHANGELOG.md) on GitHub (also bundled in the published npm package) for full release notes and 3.x-to-4.x migration guidance.
+See [`CHANGELOG.md`](https://github.com/hcoona/three/blob/main/src/public/lib/hexo-renderer-asciidoc/CHANGELOG.md) on GitHub (also bundled in the published npm package) for release notes and migration guidance.
 
 ## License
 
