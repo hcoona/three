@@ -7,7 +7,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nbgv-python"
-version = "2.1.0.dev2"
+version = "2.1.0"
 description = "Python wrapper around the Nerdbank.GitVersioning CLI"
 readme = "README.md"
 requires-python = ">=3.12"

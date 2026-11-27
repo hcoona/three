@@ -1543,7 +1543,7 @@ dev = [{ name = "hatch", specifier = ">=1.9.1" }]
 
 [[package]]
 name = "nbgv-python"
-version = "2.1.0.dev2"
+version = "2.1.0"
 source = { editable = "src/public/lib/nbgv-python" }
 dependencies = [
     { name = "packaging" },

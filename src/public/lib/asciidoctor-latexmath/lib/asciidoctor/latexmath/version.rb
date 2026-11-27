@@ -11,7 +11,7 @@ module Asciidoctor
     # Resolves the installed or source-tree gem version and normalizes SemVer2 strings.
     module Version
       GEM_NAME = "asciidoctor-latexmath"
-      STATIC_VERSION = "2.1.0.alpha.1"
+      STATIC_VERSION = "2.1.0"
 
       module_function
 

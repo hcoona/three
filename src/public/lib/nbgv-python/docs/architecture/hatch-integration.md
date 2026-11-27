@@ -99,7 +99,7 @@ original diagnostic intent.
 The Hatch adapter wraps `NbgvError` from discovery, retrieval, and normalization
 as plain `RuntimeError` with the original cause. This allows Hatchling to
 reconstruct the error while retaining diagnostics, the rationale behind the
-[unreleased changelog entry](../../CHANGELOG.md#unreleased). Configuration
+[2.1.0 changelog entry](../../CHANGELOG.md#210---2026-11-27). Configuration
 parsing, missing selected fields, tuple construction, and writer failures have
 their own error paths; this wrapper does not promise to convert every error.
 
