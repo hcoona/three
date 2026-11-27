@@ -351,8 +351,8 @@ regex custom managers for this file:
   the global `allowedCommands` and the manager's file filters, downloads
   `schedule.json` at the new commit and rewrites `schedule.releases`. A monthly
   Renovate schedule bounds noise from unrelated upstream commits. These pull
-  requests are not automerged, because they can change the qualification
-  matrix.
+  requests automerge through GitHub after the required `Validate` check
+  qualifies the resulting matrix.
 
 A successful Renovate run in the monthly window whose logs show that
 `nodejs/Release` was checked and no update was found is the expected no-PR

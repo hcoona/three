@@ -262,6 +262,12 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/eng/test_release_triage.py", ".github/workflows/release-triage.yml")]
     [DataRow("tests/eng/test_release_triage.py",
         "src/public/lib/Memoization/workflow-delivery.release-unit.yml")]
+    [DataRow("tests/eng/test_supply_chain_policy.py",
+        "eng/scripts/check_supply_chain_policy.py")]
+    [DataRow("tests/eng/test_supply_chain_policy.py",
+        "tests/private/app/workflow-delivery/Native/Ruby/.bundle/config")]
+    [DataRow("tests/eng/test_supply_chain_policy.py",
+        "src/public/lib/Directory.Packages.props")]
     public void SpecialInputsReachTheirActualTargets(string target, string path)
     {
         var endpoint = Endpoint([target, "tests/unrelated.py"], [path, "docs/unrelated.md"]);

@@ -525,6 +525,7 @@ internal static partial class CiScope
             "eng/linter/TlaSanyCheck.java" or
             ".github/workflows/workflow-delivery-v3-python-release.yml" or
             ".github/workflows/workflow-delivery-v3-ruby-release.yml" or ".typos.toml" ||
+        PythonRepositoryInputs.IsSupplyChainPolicyInput(path) ||
         PythonRepositoryInputs.BuddyGuardInputs.Contains(path, StringComparer.Ordinal) ||
         PythonRepositoryInputs.IsWorkflow(path) ||
         AzureInput(path);

@@ -466,6 +466,12 @@ local workflow_delivery_v3_validation = new Mapping<String, Step> {
       argv = List("mise", "run", "records:check")
     }
   }
+  ["supply-chain-policy"] {
+    profiles = List("small")
+    check = new Command {
+      argv = List("uv", "run", "python", "eng/scripts/check_supply_chain_policy.py")
+    }
+  }
 }
 
 local scholarly_publication_validation = new Mapping<String, Step> {

@@ -404,43 +404,6 @@ and history.
   other projects' behavior; and no publication, release, credential or access
   change.
 
-### Align three-day minimum release age and public library dependency floors (#1307)
-
-- **Work carrier:** [Issue #1307](https://github.com/hcoona/three/issues/1307)
-  under [Issue #1868](https://github.com/hcoona/three/issues/1868), and its
-  linked pull requests.
-- **Accepted inputs and scope/outcome:** using
-  [governance](governance/governance-system.md),
-  [record policy](governance/record-system.md),
-  [workspaces](engineering/workspaces.md), Workflow Delivery's
-  [Python](../src/private/app/workflow-delivery/docs/integration/python.md),
-  [Node](../src/private/app/workflow-delivery/docs/integration/node.md), and
-  [Ruby](../src/private/app/workflow-delivery/docs/integration/ruby.md)
-  integration records and
-  [native Ruby suite](../tests/private/app/workflow-delivery/Native/Ruby/README.md),
-  root `hk.pkl`, `mise.toml`, `renovate.json`, `eng/renovate/.npmrc`, workspace
-  manifests, and `src/public/lib/**` manifests/lockfiles, align a three-day
-  minimum release age across native resolvers (`Renovate` retaining only the
-  three HK-locked timestamp-less datasource rules with `automerge: true` on
-  `nodejs/Release` and `devcontainer`, `eng/renovate/.npmrc`, `pnpm`, `uv`,
-  `mise`, and qualified `Bundler` `4.0.20` with `BUNDLE_COOLDOWN: "3"` while
-  retaining pre-switch Bundler context fixtures); lock runtime, optional, peer,
-  and engine dependency floors across `src/public/lib/**` (freezing routine
-  `Renovate` floor bumps, retaining `hexo-renderer-asciidoc`'s
-  `@asciidoctor/core` exact-pin exception, and isolating packable public NuGet
-  runtime dependencies into `src/public/lib/Directory.Packages.props`
-  `[x.y.z,)` ranges); and enforce both invariants mechanically via `hk.pkl`,
-  [`workspaces.md`](engineering/workspaces.md), and `CiScope` routing.
-- **Permitted external/paid effects:** none beyond routine repository
-  package/lockfile resolution and governed CI validation.
-- **Exclusions and closure:** no non-native NuGet release-age wrapper, routine
-  bumping of existing public-library minimum floors, lockfile-verification
-  weakening, release/proving dispatch, publication, ruleset, credential, or
-  access change; raising a public library floor requires security remediation or
-  separate owner Wave authorization. Retain applicable independent reviews and
-  `GOV-011` disposition; delete this entry atomically in the delivery PR that
-  closes #1307.
-
 ### Complete Official tags, release notes, and non-.NET contracts (#1868)
 
 - **Work carrier:** umbrella
