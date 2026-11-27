@@ -28,7 +28,9 @@ require_relative "rendering/tool_detector"
 
 module Asciidoctor
   module Latexmath
+    # Coordinates attribute resolution, caching, LaTeX compilation, and statistics per document.
     class RendererService
+      # Structured outcome returned by block and inline render entry points.
       Result = Struct.new(
         :type,
         :target,
@@ -58,18 +60,35 @@ module Asciidoctor
         keyword_init: true
       )
 
+      # @param document [::Asciidoctor::Document] owning Asciidoctor document
+      # @param logger [Logger] logger receiving warnings, errors, and statistics
       def initialize(document, logger: Asciidoctor::LoggerManager.logger)
         @document = document
         @logger = logger
         @attribute_resolver = AttributeResolver.new(document, logger: logger)
       end
 
+      # Renders a `latexmath` block from an Asciidoctor reader.
+      #
+      # @param parent [::Asciidoctor::AbstractBlock] parent AST block
+      # @param reader [::Asciidoctor::Reader] block line reader
+      # @param attrs [Hash] block attributes
+      # @return [Result]
+      # @raise [LatexmathError] when `on-error` is `abort` and rendering fails
       def render_block(parent, reader, attrs)
         cursor = reader.cursor if reader.respond_to?(:cursor)
         content = reader.lines.join("\n")
         render_block_content(parent, content, attrs, cursor: cursor)
       end
 
+      # Renders raw `latexmath` block content.
+      #
+      # @param parent [::Asciidoctor::AbstractBlock] parent AST block
+      # @param content [String] raw LaTeX expression
+      # @param attrs [Hash] block attributes
+      # @param cursor [::Asciidoctor::Reader::Cursor, nil] optional source cursor
+      # @return [Result]
+      # @raise [LatexmathError] when `on-error` is `abort` and rendering fails
       def render_block_content(parent, content, attrs, cursor: nil)
         target_basename = extract_target(attrs, style: attrs["style"] || attrs[1] || attrs["1"])
         location = derive_block_location(parent, cursor)
@@ -84,10 +103,24 @@ module Asciidoctor
         render_common(parent, expression, attrs)
       end
 
+      # Renders an inline `latexmath:[...]` macro target.
+      #
+      # @param parent [::Asciidoctor::AbstractNode] parent AST node
+      # @param target [String] inline LaTeX expression
+      # @param attrs [Hash] macro attributes
+      # @return [Result]
+      # @raise [LatexmathError] when `on-error` is `abort` and rendering fails
       def render_inline(parent, target, attrs)
         render_inline_content(parent, target, attrs)
       end
 
+      # Renders inline `latexmath` content.
+      #
+      # @param parent [::Asciidoctor::AbstractNode] parent AST node
+      # @param content [String] inline LaTeX expression
+      # @param attrs [Hash] macro attributes
+      # @return [Result]
+      # @raise [LatexmathError] when `on-error` is `abort` and rendering fails
       def render_inline_content(parent, content, attrs)
         target_basename = extract_target(attrs)
         location = derive_inline_location(parent)

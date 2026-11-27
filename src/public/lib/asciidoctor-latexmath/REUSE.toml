@@ -11,6 +11,7 @@ path = [
   ".editorconfig",
   ".gitignore",
   ".vscode/settings.json",
+  "CHANGELOG.md",
   "README.md",
   "sample.adoc",
 ]

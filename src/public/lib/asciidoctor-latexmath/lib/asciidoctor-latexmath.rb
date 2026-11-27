@@ -13,8 +13,13 @@ require_relative "asciidoctor/latexmath/processors/statistics_postprocessor"
 require_relative "asciidoctor/latexmath/converters/html5"
 
 module Asciidoctor
+  # Offline LaTeX math block and inline macro rendering extension for Asciidoctor.
   module Latexmath
     class << self
+      # Registers the block, inline macro, and statistics postprocessor extensions.
+      #
+      # @param registry [Class, ::Asciidoctor::Extensions::Registry] target Asciidoctor registry
+      # @return [Class, ::Asciidoctor::Extensions::Registry] the configured registry
       def register(registry = ::Asciidoctor::Extensions)
         block_extension = registry.block Processors::BlockProcessor
         inline_extension = registry.inline_macro Processors::InlineMacroProcessor
@@ -30,14 +35,23 @@ module Asciidoctor
         registry
       end
 
+      # Resets the in-process render invocation counter.
+      #
+      # @return [Integer] zeroed invocation count
       def reset_render_counters!
         @render_invocations = 0
       end
 
+      # Increments the in-process render invocation counter.
+      #
+      # @return [Integer] updated invocation count
       def record_render_invocation!
         @render_invocations = render_invocations + 1
       end
 
+      # Returns the number of uncached LaTeX render invocations recorded in-process.
+      #
+      # @return [Integer]
       def render_invocations
         @render_invocations ||= 0
       end

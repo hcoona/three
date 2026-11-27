@@ -11,7 +11,7 @@ public sealed class RubyGroupExecutionTests(TestContext context)
 {
     private const string Suite = "src/asciidoctor-latexmath";
     private static readonly string[] RequirePaths = ["lib"];
-    private static readonly string[] LatexmathFiles = ["LICENSE", "README.md",
+    private static readonly string[] LatexmathFiles = ["CHANGELOG.md", "LICENSE", "README.md",
         "lib/asciidoctor-latexmath.rb", "lib/asciidoctor/latexmath/version.rb"];
     private static NativeCommandResult Answer(object value) => new(NativeTermination.Exited,
         0, JsonSerializer.Serialize(value), "", 0, null);

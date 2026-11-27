@@ -27,7 +27,7 @@ Offline `latexmath` rendering for Asciidoctor documents powered by your local La
     - [Statistics Line](#statistics-line)
     - [Troubleshooting](#troubleshooting)
     - [Contributing](#contributing)
-    - [Releasing](#releasing)
+    - [Changelog](#changelog)
     - [Author](#author)
     - [License](#license)
 
@@ -45,13 +45,12 @@ Offline `latexmath` rendering for Asciidoctor documents powered by your local La
 
 ## Security Note
 
-This extension assumes a trusted documentation source (version-controlled repository you control). Explicit output basenames (first positional block attribute) may include relative path segments including `..` and can therefore write outside the images directory intentionally (spec FR-008/FR-009 under trust model FR-036). If you process untrusted / user‑supplied AsciiDoc:
+This extension assumes a trusted documentation source (a version-controlled repository you control). Explicit output basenames (first positional block attribute) may include relative path segments including `..` and can therefore write outside the images directory intentionally. If you process untrusted or user-supplied AsciiDoc:
 
-1. Disable asciidoctor-latexmath for that pipeline; OR
-2. Run in a container / chroot / sandbox restricting filesystem writes; OR
-3. (Future) Enable the planned strict mode (will reject path traversal).
+1. Disable `asciidoctor-latexmath` for that pipeline; OR
+2. Run in a container, chroot, or sandbox restricting filesystem writes.
 
-Shell escape is never enabled (FR-017). Cache key excludes engine & converter tool names/versions (P5 / FR-011); pin a single toolchain if you need identical byte output across environments.
+Shell escape is never enabled. The cache key excludes engine and converter tool names/versions; pin a single toolchain if you need identical byte output across environments.
 
 ## How It Works
 
@@ -74,7 +73,7 @@ All processing happens locally, which keeps your documentation builds reproducib
 
 Make sure the following tools are available on your system `PATH` before enabling the extension:
 
-- **Ruby 3.3+** and **Asciidoctor 2.0+**
+- **Ruby 3.2+** and **Asciidoctor 2.0+**
 - A LaTeX engine such as **`pdflatex`**, **`xelatex`**, **`lualatex`**, or **`tectonic`** (provided by TeX Live, MiKTeX, MacTeX, etc.)
 - Optional: **`dvisvgm`** for SVG conversion and **ImageMagick** or **ghostscript** for PNG conversion
 - Computer Modern fonts (usually bundled with the TeX distribution)
@@ -105,11 +104,11 @@ Run `bundle install` to make the extension available to your project.
 
 ### From Source
 
-Clone this repository and point Asciidoctor at the local checkout:
+Clone the repository and install dependencies from the gem subdirectory:
 
 ```bash
-git clone https://github.com/your-org/asciidoctor-latexmath.git
-cd asciidoctor-latexmath
+git clone https://github.com/hcoona/three.git
+cd three/src/public/lib/asciidoctor-latexmath
 bundle install
 ```
 
@@ -219,7 +218,7 @@ All generated images respect Asciidoctor's standard image directory rules. Use `
 
 ## Caching
 
-The renderer persists every successful compilation so repeated conversions can reuse the existing SVG/PNG/PDF payloads without invoking your LaTeX toolchain again. Cache entries hash the following ordered fields with SHA256: extension version, normalized content hash, output format, preamble hash, font-size hash, PPI (PNG only, otherwise `-`), and entry type (`block` | `inline`). Delimiter changes, engine switches, or tool swaps do **not** affect the cache key (FR-011 / P5), so switching `pdflatex` → `xelatex` with other factors constant reuses the same cache entry. Inline rendering via `-a latexmath-inline` reuses the cached inline markup; enabling `-a data-uri` does not invalidate cached images.
+The renderer persists every successful compilation so repeated conversions can reuse the existing SVG/PNG/PDF payloads without invoking your LaTeX toolchain again. Cache entries hash the following ordered fields with SHA256: extension version, normalized content hash, output format, preamble hash, font-size hash, PPI (PNG only, otherwise `-`), and entry type (`block` | `inline`). Delimiter changes, engine switches, or tool swaps do **not** affect the cache key, so switching `pdflatex` → `xelatex` with other factors constant reuses the same cache entry. Inline rendering via `-a latexmath-inline` reuses the cached inline markup; enabling `-a data-uri` does not invalidate cached images.
 
 By default, cache files live under `<outdir>/.asciidoctor/latexmath`. Override this location with `-a latexmath-cachedir=path/to/cache` (legacy `-a latexmath-cache-dir=...` still works but logs a deprecation message) or disable caching altogether with `-a latexmath-cache=false` when you need a clean rebuild. Removing the cache directory forces the next run to regenerate every formula.
 
@@ -245,7 +244,7 @@ When logging at INFO (the default), the extension prints a single summary line p
 latexmath stats: renders=<int> cache_hits=<int> avg_render_ms=<int> avg_hit_ms=<int>
 ```
 
-Fields are fixed in name and order (FR-022 / FR-035). Use this line to monitor warm-cache behaviour in CI or to flag unexpected cache misses.
+Fields are fixed in name and order. Use this line to monitor warm-cache behaviour in CI or to flag unexpected cache misses.
 
 Choose `asciidoctor-latexmath` when you already depend on a LaTeX distribution and want fully offline builds with minimal additional dependencies.
 
@@ -260,16 +259,9 @@ Choose `asciidoctor-latexmath` when you already depend on a LaTeX distribution a
 
 Bug reports, feature requests, and patches are welcome. Please open an issue describing the use case before submitting large changes. If you plan to contribute code, follow the established Ruby style guidelines and add documentation or samples for new behaviors.
 
-## Releasing
+## Changelog
 
-Workflow Delivery releases this gem to the GitHub Packages (Buddy) RubyGems
-registry and to RubyGems.org (Official) through the manually dispatched
-`.github/workflows/workflow-delivery-v3-ruby-release.yml` caller with
-`unit: asciidoctor-latexmath`, as declared by `workflow-delivery.release-unit.yml`.
-Live RubyGems.org publication runs only from `main` and uses the NBGV
-public-release version that `version.json` selects there.
-Preparation builds the gem at the selected revision, checks its native facts and
-installs it locally with the runtime dependencies locked by `Gemfile.lock`.
+Release history is documented in [CHANGELOG.md](https://github.com/hcoona/three/blob/main/src/public/lib/asciidoctor-latexmath/CHANGELOG.md).
 
 ## Author
 

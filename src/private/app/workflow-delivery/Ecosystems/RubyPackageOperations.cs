@@ -53,7 +53,8 @@ internal sealed class RubyPackageOperations(RubyReleaseUnit unit, RubyFactTools 
         string[] expected = unit.LockedBundle
             ? [.. checkout.Revision.Entries
                 .Where(entry => entry.Path.StartsWith(prefix + "lib/", StringComparison.Ordinal))
-                .Select(entry => entry.Path[prefix.Length..]), "README.md", "LICENSE"]
+                .Select(entry => entry.Path[prefix.Length..]), "README.md", "CHANGELOG.md",
+                "LICENSE"]
             : ["LICENSE", "README.md", $"lib/{unit.Require}.rb", $"lib/{unit.Require}/version.rb"];
         RubyDependency[] expectedDeps = [.. unit.Dependencies.Select(spec =>
         {
