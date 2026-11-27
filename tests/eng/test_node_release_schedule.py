@@ -111,7 +111,7 @@ def test_newest_release_manager_proposes_released_current_majors_only() -> None:
         assert _effective("node", update_type)["enabled"] is False
 
 
-def test_schedule_commit_manager_is_a_monthly_reviewed_digest() -> None:
+def test_schedule_commit_manager_is_a_monthly_automerged_digest() -> None:
     """The pinned commit moves monthly and refreshes the releases verbatim."""
     manager = _manager("nodejs/Release")
     assert manager["datasourceTemplate"] == "git-refs"
@@ -121,7 +121,7 @@ def test_schedule_commit_manager_is_a_monthly_reviewed_digest() -> None:
     assert _capture(manager) == {"currentDigest": data["schedule"]["commit"]}
 
     config = _effective("nodejs/Release", "digest")
-    assert config["automerge"] is False
+    assert config["automerge"] is True
     assert config["schedule"] == ["* 0-3 1 * *"]
     # git-refs digests carry no release timestamp, which the global age gate
     # would hold forever.
