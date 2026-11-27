@@ -2,9 +2,12 @@
 
   <PropertyGroup>
     <TargetFramework>$(CurrentTargetFramework)</TargetFramework>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="CsCheck" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <ProjectReference Include="../../../../src/public/lib/PhiFailureDetector/PhiFailureDetector.csproj" />
   </ItemGroup>
 

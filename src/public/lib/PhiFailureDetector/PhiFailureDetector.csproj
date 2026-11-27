@@ -2,9 +2,10 @@
 
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0;netstandard2.1;net462;net8.0;net9.0</TargetFrameworks>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
     <RootNamespace>PhiFailureDetector</RootNamespace>
-
-    <Nullable Condition="'$(TargetFramework)' != 'netstandard2.0' AND '$(TargetFramework)' != 'net462'">enable</Nullable>
 
     <PackageId>PhiFailureDetector</PackageId>
     <PackageDescription>An implementation of the phi accrual failure detector for distributed systems. Based on the paper by N. Hayashibara, X. Defago, R. Yared, and T. Katayama, providing adaptive failure detection with configurable thresholds and statistical analysis.</PackageDescription>
@@ -13,6 +14,10 @@
 
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PhiFailureDetector.UnitTest" />
+  </ItemGroup>
 
   <Target Name="SetPackageReleaseNotes" BeforeTargets="GenerateNuspec">
     <ReadLinesFromFile File="$(MSBuildProjectDirectory)\ReleaseNotes.md">

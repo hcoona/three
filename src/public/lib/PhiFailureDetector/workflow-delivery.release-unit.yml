@@ -9,4 +9,4 @@ builds:
         role: primary-package
         kind: nuget-package
     qualification:
-      probe: typeof(global::PhiFailureDetector.PhiFailureDetector).Assembly.GetName().Name
+      probe: typeof(global::PhiFailureDetector.PhiAccrualFailureDetector).Assembly.GetName().Name
