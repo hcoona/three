@@ -13,6 +13,44 @@ from sheet_music_omr.harness.stops import StopConditionError
 EXPECTED_TRAINDEV_PORTABLE_SHA256 = (
     "d52fbea06bcf92246dd2625ae47898f85dc9662db413d1eadef213a7ad1f4eb6"
 )
+EXPECTED_W6_PACKAGING_REPORT_SHA256 = (
+    "77b8c24212118c8707b164eae2e46b3c668400ff644b443d09bbb7c4c0be0331"
+)
+EXPECTED_W6_CROPS_20K_SUMMARY_SHA256 = (
+    "5ded55ce63fb1f2591529e65a5c605cffc77c4b4d770d4090a524db356e1e495"
+)
+EXPECTED_W6_CROPS_50K_SUMMARY_SHA256 = (
+    "b0f3cf6ef51973e07c9aa8f4914b14f9d23d9ed392699207c10d8aaa0df2756f"
+)
+EXPECTED_W6_FORMAL_6_MANIFEST_SHA256S: dict[str, str] = {
+    "report/w6-packaging.json": EXPECTED_W6_PACKAGING_REPORT_SHA256,
+    "datasets/w6-crops-20k/summary.json": EXPECTED_W6_CROPS_20K_SUMMARY_SHA256,
+    "datasets/w6-crops-50k/summary.json": EXPECTED_W6_CROPS_50K_SUMMARY_SHA256,
+    "datasets/w6-crops-20k/synth_train/crops.jsonl": (
+        "22b3df256de3d3ee979e7212c6a409d26d3258ccfee878863804ffe6aeef119d"
+    ),
+    "datasets/w6-crops-20k/synth_train/page-boxes.jsonl": (
+        "56ed3bd903a8f74ec2733bc8d1b34b6bca0528f8909ba854cd31aa29c11f7256"
+    ),
+    "datasets/w6-crops-20k/synth_val/crops.jsonl": (
+        "68d1370e13f79f50d9960fd51094b5f5da45a2ba6579db4076fd3a00734978d2"
+    ),
+    "datasets/w6-crops-20k/synth_val/page-boxes.jsonl": (
+        "93b51c23c8789f49bbdc6b7335c9acf639ddc003de48ad638315762a984a1eb2"
+    ),
+    "datasets/w6-crops-50k/synth_train/crops.jsonl": (
+        "3fbdabca6dde5245638c0f3202c19c8b118221126073d4e9a7d4cfc8d3ffa538"
+    ),
+    "datasets/w6-crops-50k/synth_train/page-boxes.jsonl": (
+        "d7950603694505f06a4675653633459cb56a104cb4de92c947c04e56e1f5dea8"
+    ),
+    "datasets/w6-crops-50k/synth_val/crops.jsonl": (
+        "755e9446db5be5183b0b0db79ccd26dd21784ecc1787c9e7a0e709505e07cf5c"
+    ),
+    "datasets/w6-crops-50k/synth_val/page-boxes.jsonl": (
+        "423b901cdb9537897ed961bdcee30d355b3ca8a8f33f5b0bc6db5d5a2f2effda"
+    ),
+}
 
 TRAINDEV_GOLD_IDS: frozenset[str] = frozenset(
     {
@@ -80,6 +118,13 @@ FORBIDDEN_WHEEL_LICENSE_SUBSTRINGS: tuple[str, ...] = (
 
 ALLOWED_MODEL_LICENSES: frozenset[str] = frozenset(
     {"Apache-2.0", "MIT", "BSD-3-Clause"}
+)
+LOCAL_GPU_RUNTIME_WHEEL_LICENSES: frozenset[str] = frozenset(
+    {"LicenseRef-NVIDIA-Proprietary"}
+)
+TORCH_CUDA_WHEEL_LICENSE = (
+    "Apache-2.0 AND Apache-2.0 WITH LLVM-exception AND BSD-2-Clause"
+    " AND BSD-3-Clause AND BSL-1.0 AND ISC AND MIT AND Zlib"
 )
 
 
@@ -939,9 +984,321 @@ W6_MODEL_METADATA_LOCKS: tuple[LockedModelRepo, ...] = (
 )
 
 
-def verify_lock_licenses() -> None:
-    """Fail closed if any locked wheel or model violates W6 license rules."""
-    for wheel in W6_LINUX_X86_64_WHEELS:
+W6_CUDA_RUNTIME_WHEELS: tuple[LockedWheel, ...] = (
+    LockedWheel(
+        name="cuda-bindings",
+        version="13.5.0",
+        url="https://files.pythonhosted.org/packages/b9/fc/220c4d23f2675d237fb3a1fb5b35a77b82825c5a5097451b3d0da55d5160/cuda_bindings-13.5.0-cp314-cp314-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl",
+        size=8443163,
+        sha256="99746f2928150042191edf7952323bb22e8f104f7bcee787bd7e2001a8bba70b",
+        license_id="Apache-2.0",
+    ),
+    LockedWheel(
+        name="cuda-pathfinder",
+        version="1.9.1",
+        url="https://files.pythonhosted.org/packages/62/8e/e6101ff068e7e78b362879ffc0c7cbfe68c9742943c9b034f009fe19f88f/cuda_pathfinder-1.9.1-py3-none-any.whl",
+        size=63462,
+        sha256="b743c132f90ad2d1e71d43fd28f31ebcde518f943e50fd44aca62b2a80d5230d",
+        license_id="Apache-2.0",
+    ),
+    LockedWheel(
+        name="cuda-toolkit",
+        version="13.2.2",
+        url="https://files.pythonhosted.org/packages/3d/62/854e4a141f5e87e5425513bad2a742a6260acfe06ef148001b5362148f31/cuda_toolkit-13.2.2-py2.py3-none-any.whl",
+        size=2607,
+        sha256="d12edc1aad1356236a2ee10c0d794b1aff5d3e79bfeca54867c3bb8e5afd87b0",
+        license_id="LicenseRef-NVIDIA-Proprietary",
+    ),
+    LockedWheel(
+        name="nvidia-cublas",
+        version="13.4.1.3",
+        url="https://files.pythonhosted.org/packages/e1/97/d483a41da34df5c88727c57319576967f6d7befba5028d70928d2999635e/nvidia_cublas-13.4.1.3-py3-none-manylinux_2_27_x86_64.whl",
+        size=404870805,
+        sha256="a5917cb642cfb07f4a0231ee16aec7e2e0357d8cb8b1b78a0c9c68dba3e6afc7",
+        license_id="LicenseRef-NVIDIA-Proprietary",
+    ),
+    LockedWheel(
+        name="nvidia-cuda-cccl",
+        version="13.3.5.0.6",
+        url="https://files.pythonhosted.org/packages/a7/7e/4aa67cca14e0558b5a151a692f5ffe609930cdfc20d16c7a584de68424d4/nvidia_cuda_cccl-13.3.5.0.6-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        size=4113651,
+        sha256="d5230098fa2df5021e1a00c0c4eee41797671a91119d31e892463e5ccf3ee326",
+        license_id="LicenseRef-NVIDIA-Proprietary",
+    ),
+    LockedWheel(
+        name="nvidia-cuda-cupti",
+        version="13.2.86",
+        url="https://files.pythonhosted.org/packages/b4/76/a10d9fb5d9a0e46d5f95e5520bd1b2d8ad22a9c0a09d2f8c20c5ee842a96/nvidia_cuda_cupti-13.2.86-py3-none-manylinux_2_25_x86_64.whl",
+        size=11988600,
+        sha256="8fa29f15dd8336181f961764d9d95236fc6b931dd0c8fcf8cd70aab0c310b586",
+        license_id="LicenseRef-NVIDIA-Proprietary",
+    ),
+    LockedWheel(
+        name="nvidia-cuda-nvrtc",
+        version="13.2.86",
+        url="https://files.pythonhosted.org/packages/1e/39/c58835ec8392a91b8d7bad83760eafc3085f64788b722ec2b44a27b3ca3e/nvidia_cuda_nvrtc-13.2.86-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl",
+        size=47018468,
+        sha256="8111c5130e967b78222ea2124145f8efe9ce201b752b2579a2513100a53be1c5",
+        license_id="LicenseRef-NVIDIA-Proprietary",
+    ),
+    LockedWheel(
+        name="nvidia-cuda-runtime",
+        version="13.2.86",
+        url="https://files.pythonhosted.org/packages/70/c6/8f8c5e893d183082ea78f973aebc7ebc845ee219d68bddac73b0f62490fe/nvidia_cuda_runtime-13.2.86-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        size=2323576,
+        sha256="3498247680dfddce31bad102af7e3e26fc795342a3cac64722bb0fa95e7f60f0",
+        license_id="LicenseRef-NVIDIA-Proprietary",
+    ),
+    LockedWheel(
+        name="nvidia-cudnn-cu13",
+        version="9.26.0.51",
+        url="https://files.pythonhosted.org/packages/ac/1b/ea72dd62f26ce3e0a7870b85148b75a5987507629b712deebeb87f7cce9a/nvidia_cudnn_cu13-9.26.0.51-py3-none-manylinux_2_27_x86_64.whl",
+        size=519150073,
+        sha256="9c976d539786698c71d6bcdbe2053b7485fae062ff7e1215d2f2ff67b1a2149a",
+        license_id="LicenseRef-NVIDIA-Proprietary",
+    ),
+    LockedWheel(
+        name="nvidia-cufft",
+        version="12.2.0.57",
+        url="https://files.pythonhosted.org/packages/41/28/868ed0c6ade5e6a75b25166b3cf191f4a2ff58ad618c1e40befb776c97c5/nvidia_cufft-12.2.0.57-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        size=218258101,
+        sha256="34da27fadf3979b0b042c43823f0530be8408b86df31ee0108e1ca0b621d4ef6",
+        license_id="LicenseRef-NVIDIA-Proprietary",
+    ),
+    LockedWheel(
+        name="nvidia-cufile",
+        version="1.17.1.22",
+        url="https://files.pythonhosted.org/packages/23/c5/661a73a9042fc5f81cdd5fe6e89f4170b3b33f7962e709987e2b5e5f1381/nvidia_cufile-1.17.1.22-py3-none-manylinux_2_27_x86_64.whl",
+        size=1387670,
+        sha256="87feaf8c3ad20d3d03a01933181801ff6892bace5c8f0b1e4b48f319d3e62d36",
+        license_id="LicenseRef-NVIDIA-Proprietary",
+    ),
+    LockedWheel(
+        name="nvidia-cusolver",
+        version="12.2.0.11",
+        url="https://files.pythonhosted.org/packages/e4/a4/90f7ade9992190788658c3c285f196fdb9bcc3a5bb93a325c245121d22fd/nvidia_cusolver-12.2.0.11-py3-none-manylinux_2_27_x86_64.whl",
+        size=227913465,
+        sha256="fab5778f6769947389a1a6abc07e635576825a08c0ffc68c3ae7f1392c794b42",
+        license_id="LicenseRef-NVIDIA-Proprietary",
+    ),
+    LockedWheel(
+        name="nvidia-cusparse",
+        version="12.7.10.12",
+        url="https://files.pythonhosted.org/packages/bc/46/3a9700cc13f30c9279af9a862363535c814fa27597199b21fd93cad66237/nvidia_cusparse-12.7.10.12-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        size=150999307,
+        sha256="25907c75e4db1581685f06f61cc6cdecc04611765516a52373e0a18ebd69fa00",
+        license_id="LicenseRef-NVIDIA-Proprietary",
+    ),
+    LockedWheel(
+        name="nvidia-cusparselt-cu13",
+        version="0.8.1",
+        url="https://files.pythonhosted.org/packages/34/7d/2661f2fb3ac4302f3a246f5fc030213ac60c1fe0bce84f9783dbd831dbb7/nvidia_cusparselt_cu13-0.8.1-py3-none-manylinux2014_x86_64.whl",
+        size=170148586,
+        sha256="786ce87568c303fadb5afcc7102d454cd3040d75f6f8626f5db460d1871f4dd0",
+        license_id="LicenseRef-NVIDIA-Proprietary",
+    ),
+    LockedWheel(
+        name="nvidia-nccl-cu13",
+        version="2.30.7",
+        url="https://files.pythonhosted.org/packages/3f/34/c500f90c7ae641b8e0f98965b36b8a7ac79cc8b296e8d251fe3eb592ee54/nvidia_nccl_cu13-2.30.7-py3-none-manylinux_2_18_x86_64.whl",
+        size=215965170,
+        sha256="cefa7fdb9710efd0f39c5f1be1d61ff6fc9a996c451265bd7fbdcf9455ed4b50",
+        license_id="LicenseRef-NVIDIA-Proprietary",
+    ),
+    LockedWheel(
+        name="nvidia-nvjitlink",
+        version="13.5.37",
+        url="https://files.pythonhosted.org/packages/cc/1f/2321702b8d60b4b4dd18b957f61612dbac9cb1c07e940cf6582106b7c8b8/nvidia_nvjitlink-13.5.37-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl",
+        size=46642491,
+        sha256="280d7cb9649704145f074b8dbde500de04ce02d0872e066e20a83c17bcaa93eb",
+        license_id="LicenseRef-NVIDIA-Proprietary",
+    ),
+    LockedWheel(
+        name="nvidia-nvshmem-cu13",
+        version="3.7.2",
+        url="https://files.pythonhosted.org/packages/4f/4a/037dfbbafc96ad1828ef62326f27970cae2c0eb271cf5b8e6922f32a7427/nvidia_nvshmem_cu13-3.7.2-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+        size=135397797,
+        sha256="b9a4f843c62b5dded8ad33fd6d220e007dcd39f06cee549292f5ba14ce4c235c",
+        license_id="LicenseRef-NVIDIA-Proprietary",
+    ),
+    LockedWheel(
+        name="nvidia-nvtx",
+        version="13.2.86",
+        url="https://files.pythonhosted.org/packages/49/ee/16bde09927e7ffacd50b117cd7d1dc764d145f03249fc41fdf6dfba3301f/nvidia_nvtx-13.2.86-py3-none-manylinux1_x86_64.manylinux_2_5_x86_64.whl",
+        size=153463,
+        sha256="968ce72baee2a01791c7d3254000eac81f24677b0b91c62d21b449a1f309c245",
+        license_id="LicenseRef-NVIDIA-Proprietary",
+    ),
+    LockedWheel(
+        name="torch",
+        version="2.15.0+cu132",
+        url="https://download-r2.pytorch.org/whl/cu132/torch-2.15.0%2Bcu132-cp314-cp314-manylinux_2_28_x86_64.whl",
+        size=539174169,
+        sha256="593e34d5a572e43a6ba5169e851c1eedb4aaab43f5338a257f0bfb30242a95fc",
+        license_id=TORCH_CUDA_WHEEL_LICENSE,
+    ),
+    LockedWheel(
+        name="torchvision",
+        version="0.29.2+cu132",
+        url="https://download-r2.pytorch.org/whl/cu132/torchvision-0.29.2%2Bcu132-py3-none-manylinux_2_28_x86_64.whl",
+        size=7585553,
+        sha256="9fd706c86025799e7dfec503513cd92f10081f3b99f1dd69994e2201406b8211",
+        license_id="BSD-3-Clause",
+    ),
+    LockedWheel(
+        name="triton",
+        version="3.9.0",
+        url="https://files.pythonhosted.org/packages/3f/c9/af85b25e0d98bd921a7646ad1db1c8746250ee04b8f1595982d29b6283cf/triton-3.9.0-cp312-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        size=285674620,
+        sha256="5e52ab4e2f1d64f0ac494c9aa723697b793f81a91c4cae4c36608ca0bc4267bf",
+        license_id="MIT",
+    ),
+)
+
+W6_GPU_LINUX_X86_64_WHEELS: tuple[LockedWheel, ...] = tuple(
+    sorted(
+        (
+            *(
+                w
+                for w in W6_LINUX_X86_64_WHEELS
+                if w.name not in {"torch", "torchvision"}
+            ),
+            *W6_CUDA_RUNTIME_WHEELS,
+        ),
+        key=lambda w: w.name,
+    )
+)
+
+W6_MODEL_WEIGHT_LOCKS: tuple[LockedModelRepo, ...] = (
+    LockedModelRepo(
+        repo_id="Qwen/Qwen3-VL-2B-Instruct",
+        commit_sha="89644892e4d85e24eaac8bacfd4f463576704203",
+        license_id="Apache-2.0",
+        files=(
+            LockedMetaFile(
+                filename="model.safetensors",
+                size=4255140312,
+                git_oid="756540b03375b1bb98d2b4b2c562f02eaf569821",
+                sha256="7de1838c87a5349b016c26a1c3f7d2bc400a3d485f95ef39a7059ffd734977a0",
+            ),
+        ),
+    ),
+    LockedModelRepo(
+        repo_id="Qwen/Qwen3-VL-4B-Instruct",
+        commit_sha="ebb281ec70b05090aa6165b016eac8ec08e71b17",
+        license_id="Apache-2.0",
+        files=(
+            LockedMetaFile(
+                filename="model-00001-of-00002.safetensors",
+                size=4967229296,
+                git_oid="c76bab650cbb4864c0f85f6d3af26ba3fe857165",
+                sha256="30a01a0556622645a3cce87b655bbbbbc1f170c196099f1b666c93202c3339a9",
+            ),
+            LockedMetaFile(
+                filename="model-00002-of-00002.safetensors",
+                size=3908490048,
+                git_oid="e2792feb019e73e6f15d89bc62295fd424807583",
+                sha256="046296a2a387efb43b0c997d5833c789604d168834f6e0d3064bf7bb13d002a6",
+            ),
+            LockedMetaFile(
+                filename="model.safetensors.index.json",
+                size=64742,
+                git_oid="3b52de97496e2f4501dfa92a87642f60db3e22a1",
+                sha256="58a7841d7bff2548dd91577d216274a83cf1b500bc6a534b809d6c1b1707cf2b",
+            ),
+        ),
+    ),
+    LockedModelRepo(
+        repo_id="Qwen/Qwen3.5-2B",
+        commit_sha="15852e8c16360a2fea060d615a32b45270f8a8fc",
+        license_id="Apache-2.0",
+        files=(
+            LockedMetaFile(
+                filename="model.safetensors-00001-of-00001.safetensors",
+                size=4548221488,
+                git_oid="3868ead7f1658210f24643fa927afa7d9717083c",
+                sha256="aa33250c4fc64891ddfaba3a314fd9542ea371843c387178b425fbcc5ed680b1",
+            ),
+            LockedMetaFile(
+                filename="model.safetensors.index.json",
+                size=64460,
+                git_oid="69a41758e1138259916d08b99b56fada441fd502",
+                sha256="aca8afed9da75b0f050b408d270766fd77627f1af401e240f61c3b47d0db02f9",
+            ),
+        ),
+    ),
+    LockedModelRepo(
+        repo_id="PaddlePaddle/PaddleOCR-VL-1.6",
+        commit_sha="132c45f52c0a26ed5a6b2f6bd8e3985794cc27dd",
+        license_id="Apache-2.0",
+        files=(
+            LockedMetaFile(
+                filename="model.safetensors",
+                size=1917255968,
+                git_oid="04667d00268d801a65293c1041e0fa4ad2ef573b",
+                sha256="85a479d506a11e724e7285d395c551be69f41dbc16b6342d3cacfb189aed71db",
+            ),
+        ),
+    ),
+    LockedModelRepo(
+        repo_id="timm/convnext_tiny.fb_in22k_ft_in1k",
+        commit_sha="bc48a87f119bae1b06418f5340bfa97ef75d4609",
+        license_id="Apache-2.0",
+        files=(
+            LockedMetaFile(
+                filename="model.safetensors",
+                size=114374272,
+                git_oid="30e98d952140f3485b5dff3bb492928eb3f6228f",
+                sha256="77b619e187de71bce58721689da0c009e84cc20677293d7d43105307e34d868a",
+            ),
+        ),
+    ),
+    LockedModelRepo(
+        repo_id="zenosai/MonkeyOCRv2-S",
+        commit_sha="8efa4f856af5d38030d83565c8a79b36e5454ce7",
+        license_id="Apache-2.0",
+        files=(
+            LockedMetaFile(
+                filename="model.safetensors",
+                size=114199200,
+                git_oid="d606f67047e48f587af5c226e5bf4275abac33fb",
+                sha256="8c8c2e50e0adabc0a91fc6699b3ec0cbbdc16a0a2dc5dbb8232d2eae268949f0",
+            ),
+        ),
+    ),
+    LockedModelRepo(
+        repo_id="ustc-community/dfine-small-coco",
+        commit_sha="f79e65b5fbb33ceb9d3ebba042955d7410c608f8",
+        license_id="Apache-2.0",
+        files=(
+            LockedMetaFile(
+                filename="model.safetensors",
+                size=41497620,
+                git_oid="55b2c08633109d62a4d348a564297323b0f920c5",
+                sha256="a144baff3a27bfd538fe37b11fa8d4fca5744b8c054b5301e7c699a1379cd18f",
+            ),
+        ),
+    ),
+    LockedModelRepo(
+        repo_id="PekingU/rtdetr_v2_r18vd",
+        commit_sha="5650961749fa93567c0d46fc7f43ea4f9e914107",
+        license_id="Apache-2.0",
+        files=(
+            LockedMetaFile(
+                filename="model.safetensors",
+                size=80904640,
+                git_oid="820a37cacd1a40bd83f736222a2f6ddd5e1f4eab",
+                sha256="d18309d0d7ea57048138885c4c6ecfcb1e24506fc6153b94ad484f8ab62c7115",
+            ),
+        ),
+    ),
+)
+
+
+def _verify_wheel_table(
+    wheels: tuple[LockedWheel, ...], *, allow_local_cuda_runtime: bool
+) -> None:
+    for wheel in wheels:
         upper = wheel.license_id.upper()
         for bad in FORBIDDEN_WHEEL_LICENSE_SUBSTRINGS:
             if bad in upper:
@@ -950,12 +1307,38 @@ def verify_lock_licenses() -> None:
         allowed_tqdm = (
             wheel.name == "tqdm" and wheel.license_id == "MPL-2.0 AND MIT"
         )
-        if not allowed_tqdm and wheel.license_id not in ALLOWED_WHEEL_LICENSES:
+        allowed_torch_cuda = (
+            allow_local_cuda_runtime
+            and wheel.name == "torch"
+            and wheel.license_id == TORCH_CUDA_WHEEL_LICENSE
+        )
+        allowed_nvidia = (
+            allow_local_cuda_runtime
+            and (
+                wheel.name == "cuda-toolkit" or wheel.name.startswith("nvidia-")
+            )
+            and wheel.license_id in LOCAL_GPU_RUNTIME_WHEEL_LICENSES
+        )
+        if not (
+            allowed_tqdm
+            or allowed_torch_cuda
+            or allowed_nvidia
+            or wheel.license_id in ALLOWED_WHEEL_LICENSES
+        ):
             msg = (
                 f"unpermitted wheel license {wheel.license_id!r}"
                 f" on {wheel.name}"
             )
             raise StopConditionError(msg)
+
+
+def verify_lock_licenses() -> None:
+    """Fail closed if any locked wheel or model violates W6 license rules."""
+    _verify_wheel_table(W6_LINUX_X86_64_WHEELS, allow_local_cuda_runtime=False)
+    _verify_wheel_table(
+        W6_GPU_LINUX_X86_64_WHEELS, allow_local_cuda_runtime=True
+    )
+    meta_by_repo = {repo.repo_id: repo for repo in W6_MODEL_METADATA_LOCKS}
     for repo in W6_MODEL_METADATA_LOCKS:
         if repo.license_id not in ALLOWED_MODEL_LICENSES:
             msg = (
@@ -972,18 +1355,59 @@ def verify_lock_licenses() -> None:
                     " in metadata lock"
                 )
                 raise StopConditionError(msg)
+    if {r.repo_id for r in W6_MODEL_WEIGHT_LOCKS} != set(meta_by_repo):
+        msg = "W6_MODEL_WEIGHT_LOCKS repo set differs from metadata lock"
+        raise StopConditionError(msg)
+    for repo in W6_MODEL_WEIGHT_LOCKS:
+        meta = meta_by_repo[repo.repo_id]
+        if (
+            repo.license_id not in ALLOWED_MODEL_LICENSES
+            or repo.commit_sha != meta.commit_sha
+            or repo.license_id != meta.license_id
+        ):
+            msg = f"weight lock provenance mismatch on {repo.repo_id}"
+            raise StopConditionError(msg)
+        for wf in repo.files:
+            if not wf.filename.endswith(
+                (".safetensors", ".safetensors.index.json")
+            ):
+                msg = (
+                    f"non-safetensors artifact {wf.filename!r}"
+                    " forbidden in W6_MODEL_WEIGHT_LOCKS"
+                )
+                raise StopConditionError(msg)
 
 
-def resolve_host_w6_wheels() -> tuple[LockedWheel, ...]:
-    """Return the locked wheel table for the active Python 3.14 Linux host."""
+def _check_host_python_linux_x86_64() -> None:
     verify_lock_licenses()
     if sys.version_info[:2] != (3, 14):
         msg = f"W6 wheel lock requires Python 3.14, got {sys.version_info[:2]}"
         raise StopConditionError(msg)
     mach = platform.machine().lower()
-    if sys.platform.startswith("linux") and mach in {"x86_64", "amd64"}:
-        return W6_LINUX_X86_64_WHEELS
-    msg = f"unsupported platform for W6 wheel lock: {sys.platform}/{mach}"
+    if not (sys.platform.startswith("linux") and mach in {"x86_64", "amd64"}):
+        msg = f"unsupported platform for W6 wheel lock: {sys.platform}/{mach}"
+        raise StopConditionError(msg)
+
+
+def resolve_host_w6_wheels() -> tuple[LockedWheel, ...]:
+    """Return the locked CPU wheel table for the active Python 3.14 host."""
+    _check_host_python_linux_x86_64()
+    return W6_LINUX_X86_64_WHEELS
+
+
+def resolve_host_w6_gpu_wheels() -> tuple[LockedWheel, ...]:
+    """Return the locked CUDA wheel table for the active Python 3.14 host."""
+    _check_host_python_linux_x86_64()
+    return W6_GPU_LINUX_X86_64_WHEELS
+
+
+def resolve_model_weight_lock(repo_id_or_slug: str) -> LockedModelRepo:
+    """Resolve a pinned model weight lock by repo_id or slug."""
+    verify_lock_licenses()
+    for repo in W6_MODEL_WEIGHT_LOCKS:
+        if repo_id_or_slug in {repo.repo_id, repo.slug}:
+            return repo
+    msg = f"unknown or unpinned W6 model repository: {repo_id_or_slug!r}"
     raise StopConditionError(msg)
 
 
@@ -1004,8 +1428,7 @@ def compute_w6_wheel_lock_sha256(wheels: tuple[LockedWheel, ...]) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
-def compute_w6_metadata_lock_sha256() -> str:
-    """Deterministic digest over all pinned Hugging Face metadata files."""
+def _compute_repo_locks_sha256(repos: tuple[LockedModelRepo, ...]) -> str:
     payload = [
         {
             "repo_id": r.repo_id,
@@ -1016,9 +1439,19 @@ def compute_w6_metadata_lock_sha256() -> str:
                 for f in r.files
             ],
         }
-        for r in W6_MODEL_METADATA_LOCKS
+        for r in repos
     ]
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
         "utf-8"
     )
     return hashlib.sha256(raw).hexdigest()
+
+
+def compute_w6_metadata_lock_sha256() -> str:
+    """Deterministic digest over all pinned Hugging Face metadata files."""
+    return _compute_repo_locks_sha256(W6_MODEL_METADATA_LOCKS)
+
+
+def compute_w6_weight_lock_sha256() -> str:
+    """Deterministic digest over all pinned Hugging Face weight files."""
+    return _compute_repo_locks_sha256(W6_MODEL_WEIGHT_LOCKS)
