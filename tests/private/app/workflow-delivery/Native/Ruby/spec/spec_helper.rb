@@ -23,9 +23,13 @@ module NativeHelpers
   Context = Struct.new(:gemfile, :version, :environment, keyword_init: true)
   Result = Struct.new(:stdout, :stderr, :returncode, keyword_init: true)
 
-  # Native lock facts are the sole version source. Both finite contexts are
+  # Native lock facts are the sole version source. All finite contexts are
   # conventionally discoverable/preparable by repository Bundler inventory.
-  GEMFILES = [CARRIER / "Gemfile", CARRIER / "contexts/bundler-2.4/Gemfile"].freeze
+  GEMFILES = [
+    CARRIER / "Gemfile",
+    CARRIER / "contexts/bundler-2.7/Gemfile",
+    CARRIER / "contexts/bundler-2.4/Gemfile"
+  ].freeze
   CONTEXTS = GEMFILES.map do |gemfile|
     lock = Bundler::LockfileParser.new(File.read("#{gemfile}.lock"))
     Context.new(gemfile: gemfile, version: lock.bundler_version.to_s)

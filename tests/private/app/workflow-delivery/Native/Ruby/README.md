@@ -8,16 +8,19 @@ only the public RubyGems Source methods in `spec/support/public_source_answers.r
 RubyGems owns tuple/specification/URI behavior and the actual helper main remains
 in the child process. All credential strings are inert fixture values.
 
-The main `Gemfile.lock` selects Bundler 2.7.2. The conventional nested
-`contexts/bundler-2.4/Gemfile.lock` selects Bundler 2.4.20 and reuses the main
-Gemfile declarations. Selected group execution installs both frozen bundles in
-its owned environment before running the main carrier. The specs read
-Bundler versions and the public RSpec fixture version from those locks, and use
-native Bundler setup to obtain the prepared gem paths. There is no caller-side
-package install roster or installation during tests. Ruby is selected by the
-root mise configuration.
+The main `Gemfile.lock` selects Bundler 4.0.20, and `.bundle/config` sets the
+repository's three-day release-age cooldown (`BUNDLE_COOLDOWN: "3"`). The
+conventional nested `contexts/bundler-2.7/Gemfile.lock` and
+`contexts/bundler-2.4/Gemfile.lock` select Bundler 2.7.2 and Bundler 2.4.20 and
+reuse the main Gemfile declarations so historical lockfile formats stay covered
+without embedding `cooldown` syntax that pre-4.0 Bundler rejects. Selected group
+execution installs all three frozen bundles in its owned environment before
+running the main carrier. The specs read Bundler versions and the public RSpec
+fixture version from those locks, and use native Bundler setup to obtain the
+prepared gem paths. There is no caller-side package install roster or
+installation during tests. Ruby is selected by the root mise configuration.
 
-From this directory, with native tools and both locked bundles prepared in the
+From this directory, with native tools and all locked bundles prepared in the
 owned environment:
 
 ```sh

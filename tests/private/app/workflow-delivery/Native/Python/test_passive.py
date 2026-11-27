@@ -61,6 +61,7 @@ def test_declared_requirements_are_parsed_by_pypa(project, builder):
     builder.return_value.build_system_requires = requirements
     (project / "pyproject.toml").write_text(
         MANIFEST
+        + '[tool.uv]\nexclude-newer = "3 days"\n'
         + '[tool.uv.workspace]\nmembers = ["packages/*"]\n'
         + "[tool.uv.sources]\nnbgv-python = { workspace = true }\n"
     )
@@ -108,6 +109,9 @@ def test_tableless_context_does_not_inject_a_backend(
         MANIFEST + 'backend-path = ["."]\n',
         MANIFEST + "[tool.uv]\npackage = false\n",
         MANIFEST + '[tool.uv]\nindex-url = "https://example.invalid"\n',
+        MANIFEST + "[tool.uv]\nexclude-newer = true\n",
+        MANIFEST + '[tool.uv]\nexclude-newer = "   "\n',
+        MANIFEST + '[tool.uv.exclude-newer-package]\nruff = "1 day"\n',
     ],
 )
 def test_unsupported_context_fails_before_native_extraction(
@@ -117,7 +121,8 @@ def test_unsupported_context_fails_before_native_extraction(
     (project / "pyproject.toml").write_text(manifest)
 
     with pytest.raises(
-        passive.UnsupportedContextError, match=r"supported|native adaptation"
+        passive.UnsupportedContextError,
+        match=r"supported|native adaptation|non-empty string",
     ):
         passive.inspect_project(project)
 

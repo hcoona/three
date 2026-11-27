@@ -21,6 +21,9 @@ dev = [
 ]
 workflow-delivery-python = ["build==1.6.1", "nbgv-python", "packaging==26.3"]
 
+[tool.uv]
+exclude-newer = "3 days"
+
 [tool.uv.workspace]
 # Python projects live under src/; internal delivery products live under tests/.
 members = [
@@ -194,6 +197,7 @@ testpaths = [
   "tests/eng/test_python_runtime.py",
   "tests/eng/test_release_batch_dispatch.py",
   "tests/eng/test_release_triage.py",
+  "tests/eng/test_supply_chain_policy.py",
   "tests/eng/test_svgedit_renovate.py",
   "tests/eng/test_tla_tools.py",
   "tests/eng/test_typos_config.py",
