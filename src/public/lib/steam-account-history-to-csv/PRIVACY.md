@@ -1,10 +1,8 @@
 # Privacy Policy — Steam Account History to CSV
 
-**Last updated:** 2025-12-19
+**Last updated:** 2026-11-27
 
 This page describes how the browser extension **Steam Account History to CSV** (the **“Extension”**) handles user data.
-
-> Note: Chrome Web Store requires that privacy policies be accessible via a **public URL** in the Chrome Web Store Developer Dashboard. This Markdown file is intended to be published as a publicly accessible web page (for example, via GitHub Pages).
 
 ## Summary
 

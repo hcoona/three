@@ -10,7 +10,7 @@
 [![Node support](https://img.shields.io/node/v/hexo-renderer-asciidoc.svg?logo=node.js)](package.json)
 [![License: LGPL-3.0-or-later](https://img.shields.io/badge/license-LGPL--3.0--or--later-0a76d5.svg)](LICENSE)
 
-Add first-class [AsciiDoc](https://asciidoc.org/) support to Hexo. This repository branch documents the 4.x migration, which uses `@asciidoctor/core` / Asciidoctor.js 4.x, returns `Promise<string>`, registers the Hexo renderer asynchronously, re-highlights recognized listing blocks with fixed `hexo-util.highlight` options, and encodes literal braces before returning the resulting HTML to Hexo.
+Add first-class [AsciiDoc](https://asciidoc.org/) support to Hexo. The 4.x release line uses `@asciidoctor/core` / Asciidoctor.js 4.x, returns `Promise<string>`, registers the Hexo renderer asynchronously, re-highlights recognized listing blocks with fixed `hexo-util.highlight` options, and encodes literal braces before returning the resulting HTML to Hexo.
 
 ## Rendering contract
 
@@ -54,12 +54,7 @@ npm install hexo-renderer-asciidoc@beta --save
 pnpm add hexo-renderer-asciidoc@beta
 ```
 
-Testers of an unpublished candidate must
-use the checkout instructions and evidence from the authoritative migration PR
-or prerelease announcement. That source must designate the immutable candidate
-SHA and the acceptance evidence/check URLs. Do not infer a candidate from
-default `main`, an arbitrary ref, or this README. This README intentionally
-cannot designate or authenticate a future candidate.
+When evaluating an unpublished source candidate rather than a published dist-tag, check out the exact immutable commit SHA designated by its review or release carrier rather than an unverified branch ref.
 
 Once installed, Hexo automatically pipes `.ad`, `.adoc`, and `.asciidoc` files through this renderer, no extra glue code is required.
 
@@ -84,11 +79,8 @@ the installed package.
 
 If you cloned the monorepo, the demo lives under `src/public/lib/hexo-renderer-asciidoc/examples/hexo-site` from the repository root.
 
-For an already independently verified and trusted source checkout, follow
-[`examples/hexo-site/README.md`](examples/hexo-site/README.md). Reviewers of an
-unpublished candidate must use the checkout instructions and acceptance
-evidence designated by the authoritative migration PR or prerelease
-announcement, as described above.
+To run the sample from a verified repository checkout (pinned to its immutable commit SHA when evaluating a specific candidate), follow
+[`examples/hexo-site/README.md`](examples/hexo-site/README.md).
 
 > [!NOTE]
 > The sample site is intentionally outside the root pnpm workspace. From the repository root, follow the exact `pnpm --dir ...` sequence in `examples/hexo-site/README.md`; it builds the parent package before installing and generating the example. After changing the parent renderer, rebuild it and reinstall the example's `file:` dependency before generating or restarting Hexo. Its `pnpm-workspace.yaml` and lockfile keep those dependencies isolated.
