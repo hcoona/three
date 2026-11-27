@@ -5,22 +5,14 @@ description: Review governance, Delivery Wave, record-binding, root instruction,
 
 # Record-System Review
 
-Review the proposed diff against target-branch
+Review the proposed diff against the versions accepted on `main` of
 [`governance-system.md`](../../../docs/governance/governance-system.md) and
 [`record-system.md`](../../../docs/governance/record-system.md). Do not invent
 new policy from this Skill.
 
 ## Triggers and Preconditions
 
-Invoke when a change edits `docs/governance/**`, `docs/delivery-wave.md`,
-`schemas/governance/**`, `docs/engineering/engineering-principles.md`, root
-`AGENTS.md` / `CONTRIBUTING.md` / `.github/pull_request_template.md`,
-`record-families.yaml` or `apm.lock.yaml` provenance, `hk` conformance controls,
-governance review Skills, authority/requirement-ID/immutability/license
-contracts in any record, or claims the
-[Record-System Gate](../../../docs/governance/record-system.md#record-system-gate).
-Ordinary project record edits covered by wildcard bindings, `lychee`, and
-`records:check` do not require this review unless they alter those contracts.
+Use the record policy's [review applicability](../../../docs/governance/record-system.md#independent-review-applicability).
 
 The reviewer must be independent of the change author and implementation agent.
 Proposed governance amendments are judged against `main`'s currently accepted
@@ -28,18 +20,14 @@ authorities and cannot waive an accepted obligation during their own review.
 
 ## Checklist
 
-1. **Authorization:** Verify the change either qualifies for the Wave-free
-   ordinary PR channel (contract-preserving maintenance, internal refactoring/CI
-   consolidation/dead-route retirement, owner-merged governance/doc cleanup, or
-   routine public-product release transitions/owner-instructed dispatches) or
-   stays within an accepted target-branch `docs/delivery-wave.md` entry
-   ([work authorization](../../../docs/governance/record-system.md#work-authorization-and-concurrency)),
-   with each `main` merge self-consistent.
+1. **Authorization:** Apply [work authorization](../../../docs/governance/record-system.md#work-authorization-and-concurrency)
+   on `main` to the action, workstream stage and effects. Verify each merge
+   stays self-consistent and no reserved step is taken early.
 2. **Thin Wave hygiene (when `docs/delivery-wave.md` changes):** Verify entries
    stay concise (~15–25 lines: carrier, scope/outcome, numeric external/paid
    ceilings when applicable, exclusions/closure), omit `Diagnosis` or
    implementation inventories, preserve active risk bounds, and retire grants
-   whose work or carrier Issue is complete.
+   only when their stated closure conditions are met.
 3. **Single authority & namespaces:** Verify each concern has one canonical
    authority, audience/portal files route without duplicating rules, wildcard or
    explicit bindings in `record-families.yaml` map to `repository` or real

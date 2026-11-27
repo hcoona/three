@@ -24,36 +24,21 @@ hand-edit generated `.agents/skills/` or `.github/agents/` outputs.
 
 ## Repository Governance
 
-Before starting work, read target-branch
-[`governance-system.md`](docs/governance/governance-system.md),
-[`record-system.md`](docs/governance/record-system.md) (especially
-[work authorization](docs/governance/record-system.md#work-authorization-and-concurrency),
-[project namespaces](docs/governance/record-system.md#project-namespaces), and
-[enforcement](docs/governance/record-system.md#enforcement)), and
-[`docs/delivery-wave.md`](docs/delivery-wave.md), then locate owning project
-records through [`docs/README.md`](docs/README.md). Proposed changes cannot
-authorize themselves or waive accepted review obligations.
+Start with [work authorization](docs/governance/record-system.md#work-authorization-and-concurrency)
+as accepted on `main`. Check [Wave entries](docs/delivery-wave.md) applicable
+to the workstream before relying on standing authority. Find owning records via
+[`docs/README.md`](docs/README.md) and respect their
+[namespaces](docs/governance/record-system.md#project-namespaces).
 
-Invoke canonical skills directly when their triggers apply (authors and
-implementers cannot satisfy their own independent review or solely dismiss
-material findings under
-[`GOV-011`](docs/governance/governance-system.md#gov-011-separate-findings-from-disposition)):
-
-- [Engineering guidance](.github/skills/engineering-guidance/SKILL.md): before
-  making or reviewing architecture, abstraction, dependency-boundary,
-  security/recovery, or test/evidence strategy decisions.
-- [Record-system review](.github/skills/record-system-review/SKILL.md): for
-  edits to `docs/governance/**`, `docs/delivery-wave.md`,
-  `schemas/governance/**`, `docs/engineering/engineering-principles.md`, root
-  `AGENTS.md` / `CONTRIBUTING.md` / PR template, `record-families.yaml` or
-  `apm.lock.yaml` provenance, `hk` conformance controls, governance review
-  Skills, authority/requirement-ID/immutability/license contracts in any
-  record, or [Record-System Gate](docs/governance/record-system.md#record-system-gate)
-  claims.
-- [Research-evidence review](.github/skills/research-evidence-review/SKILL.md):
-  for `research` records, empirical platform/support claims, fired
-  mutable-source rechecks, formal/empirical evidence reports, or Wave
-  grants/operations with external, credentialed, or paid empirical effects.
+Invoke [engineering guidance](.github/skills/engineering-guidance/SKILL.md)
+before architecture, abstraction, dependency, security/recovery or test/evidence
+strategy decisions. For governance, grant, contract or evidence changes, use
+[review applicability](docs/governance/record-system.md#independent-review-applicability)
+to route independent [record-system](.github/skills/record-system-review/SKILL.md)
+and [research-evidence](.github/skills/research-evidence-review/SKILL.md) reviews.
+Apply [`GOV-011`](docs/governance/governance-system.md#gov-011-separate-findings-from-disposition)
+to material findings. [Amendments](docs/governance/governance-system.md#changing-rules)
+cannot waive their own accepted review obligations.
 
 For multi-worktree delegated execution, follow
 [`docs/engineering/agent-execution.md`](docs/engineering/agent-execution.md).

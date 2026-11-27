@@ -17,7 +17,7 @@ and instructions route to canonical authorities without restating their rules.
 | Public navigation to repository and project entry points             | `README.md`, `docs/README.md`, and project `README`s |
 | AI-agent behavior and routing                                        | Root and project-local `AGENTS.md`                   |
 | Human contribution workflow                                          | Root `CONTRIBUTING.md`                               |
-| Current positive work authorization                                  | Root `docs/delivery-wave.md`                         |
+| Case-specific work grants and owner-reserved stages                  | Root `docs/delivery-wave.md`                         |
 | Repository governance and record policy                              | `docs/governance/`                                   |
 | Product purpose, behavior, architecture, decisions, research, gates  | Owning `<project-root>/README.md` and `docs/`        |
 | Upstream provenance and license notices                              | Project provenance and license notices               |
@@ -68,9 +68,12 @@ records or add status/author/revision-history headers to ordinary files.
 
 ### Wave-Free Ordinary Pull Requests
 
-The following execute directly through ordinary pull requests without a
-`docs/delivery-wave.md` entry, provided they introduce no new external, paid,
-credentialed, or privacy effects:
+Use an ordinary pull request when standing authority covers the action and
+effects, no applicable entry withholds the stage, and no case-specific decision
+below is needed. Check the affected workstream, not every
+project's grants. Within an outcome delegated for implementation, bounded
+internal increments need no separate grant. Implementing an agreed contract
+across two projects is not changing that contract. Other examples include:
 
 - Contract-preserving defect and test fixes, CI/build troubleshooting and
   diagnostics, lint/formatting, and documentation-drift repairs;
@@ -97,18 +100,25 @@ release workflows, approve Environments, or run publication commands.
 
 ### Positive Wave Authorization
 
-Target-branch `docs/delivery-wave.md` is the sole positive authorization
-authority for:
+[`docs/delivery-wave.md`](../delivery-wave.md) as accepted on `main` is the
+single source of case-specific authorization. An accepted entry must cover:
 
-1. New products/projects or feature and capability advancements;
-2. Breaking public-contract, target-framework, Official release-scope, or
-   cross-project architectural boundary changes;
-3. Non-routine external, paid, credentialed, privacy-sensitive, or irreversible
-   operations—including admitting new release units, out-of-band publication,
-   live smoke/proving operations, ruleset/permission changes, non-public or
-   credentialed external services, persistent host mutations outside
-   repository/toolchain/build/cache/temp state, and paid or empirical campaigns
-   (even inside a test or CI step).
+1. Starting a new product or introducing or changing a public or cross-project
+   contract, including supported target frameworks or Official release scope,
+   **before starting that advancement**.
+2. Non-routine external, paid, credentialed, privacy-sensitive or irreversible
+   operations, **before the effect**, even before merge or inside a test or CI
+   step. Examples include out-of-band publication, live proving, access changes,
+   persistent host mutations outside repository/toolchain/build/cache/temp
+   state, and paid or private-input campaigns.
+3. A stage the owner has explicitly reserved. Record the approved outcome and
+   the withheld next step for that workstream; do not start the next step
+   (even local coding) until an accepted entry authorizes it.
+
+Stage and effects are independent: a design grant may allow specific private
+reads without permitting implementation; permission to implement does not
+authorize a paid run. Neither a roadmap nor silence delegates work. If the
+applicable boundary is unclear, pause only the dependent action for the owner.
 
 Within authorized work, routine local editing, builds, lint, tests, scratch
 harnesses outside the repository, read-only inspection, independent review, and
@@ -129,15 +139,21 @@ Each Wave entry must remain a concise authorization contract (~15–25 lines)
 containing only:
 
 - **Work carrier:** Issue (for multi-PR coordination) or PR link;
-- **Accepted inputs and scope/outcome:** bounded objective and authority inputs;
+- **Accepted inputs and scope/outcome:** bounded objective, stage ceiling and
+  authority inputs;
 - **Permitted external/paid effects:** numeric ceilings only when applicable
   (detailed procedures belong in project protocols, not the Wave);
 - **Exclusions and closure:** explicit prohibitions and closure condition.
 
 Do not place root-cause `Diagnosis`, class/package inventories, or step-by-step
-implementation plans in `docs/delivery-wave.md`. Delete an entry atomically in
-its final delivery PR (or immediately once its carrier Issue closes); Git and PR
-history retain rationale and progress. Evaluate mutable external-interface
+implementation plans in `docs/delivery-wave.md`. A fresh session must be able
+to recover the approved boundary from `main`; changing a project protocol
+cannot enlarge it. A ceiling is not a remaining balance: use the existing
+consumption record before spending, and stop if the balance is unknown.
+Delete an entry when its stated closure condition is met, in the final delivery
+PR unless the grant specifies otherwise. Issue closure alone does not override
+a reserved owner decision. Git and PR history retain rationale and progress.
+Evaluate mutable external-interface
 rechecks in the consuming project protocol only when a change relies on that
 interface or runtime behavior contradicts the recorded contract.
 
@@ -167,20 +183,47 @@ references with Markdown links to `path#anchor`.
 
 ## Enforcement
 
-| Control                    | Class & enforcement          | Implementation & execution point                                                                                                   |
-| -------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Source & link conformance  | Mechanical (blocking)        | `hk.pkl` (`typos`, `editorconfig-check`, formatters, `lychee` offline Markdown link/anchor check) in local hooks and CI            |
-| Record & ID validation     | Mechanical (blocking in HK)  | `eng/scripts/check_repository_records.py` (`mise run records:check`) checking `record-families.yaml` coverage and `REQ/FR/NFR/AC`  |
-| Public release inventory   | Mechanical (blocking)        | `eng/scripts/release_triage.py --check-inventory` in `hk.pkl` (`docs/engineering/public-release-triage.md`)                        |
-| Engineering guidance       | Procedural review (advisory) | `.github/skills/engineering-guidance/SKILL.md` for design, security, and test-strategy decisions                                   |
-| Record-system review       | Procedural (review-required) | `.github/skills/record-system-review/SKILL.md` by an independent reviewer for governance, Wave, routing, or contract-authority PRs |
-| Research-evidence review   | Procedural (review-required) | `.github/skills/research-evidence-review/SKILL.md` by an independent reviewer for research, empirical claims, and paid/risk ops    |
-| Finding disposition & gate | Hybrid / owner disposition   | [`GOV-011`](governance-system.md#gov-011-separate-findings-from-disposition) delta/third-party triage and owner merge acceptance   |
+| Control                    | Class & enforcement          | Implementation & execution point                                                                                                  |
+| -------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Source & link conformance  | Mechanical (blocking)        | `hk.pkl` (`typos`, `editorconfig-check`, formatters, `lychee` offline Markdown link/anchor check) in local hooks and CI           |
+| Record & ID validation     | Mechanical (blocking in HK)  | `eng/scripts/check_repository_records.py` (`mise run records:check`) checking `record-families.yaml` coverage and `REQ/FR/NFR/AC` |
+| Public release inventory   | Mechanical (blocking)        | `eng/scripts/release_triage.py --check-inventory` in `hk.pkl` (`docs/engineering/public-release-triage.md`)                       |
+| Engineering guidance       | Procedural review (advisory) | `.github/skills/engineering-guidance/SKILL.md` for design, security, and test-strategy decisions                                  |
+| Record-system review       | Procedural (review-required) | [Record-system review](../../.github/skills/record-system-review/SKILL.md) when applicable below                                  |
+| Research-evidence review   | Procedural (review-required) | [Research-evidence review](../../.github/skills/research-evidence-review/SKILL.md) when applicable below                          |
+| Finding disposition & gate | Hybrid / owner disposition   | [`GOV-011`](governance-system.md#gov-011-separate-findings-from-disposition) delta/third-party triage and owner merge acceptance  |
 
 Contextual reviews inspect the proposed repository diff and relied-on evidence,
 not PR/Issue prose formatting or write order. Manually maintained authorities use
 direct repository files rather than symbolic links; generated `.agents/skills/`
 and `.github/agents/` outputs are owned by `apm.yml` / `apm.lock.yaml`.
+
+### Independent Review Applicability
+
+**Record-system review.** Governance records and schemas, the Wave, engineering
+principles, root contributor/agent instructions and PR template, governance
+review Skills, record bindings, APM lock provenance and `hk` controls are
+reminders to inspect the change, not automatic specialist-review triggers.
+Require independent review in **any path** for changes to who decides or
+reviews, work or effect bounds, what evidence suffices, or an authority,
+binding, requirement-ID, immutability or license contract. A formal
+[Record-System Gate](#record-system-gate) claim also requires it.
+
+Within that review scope, use an ordinary PR and applicable `hk` checks for
+clearly meaning-preserving edits, links repaired to the same owning decision,
+and retirements that execute an already approved and evidenced closure
+condition. Preserve any required owner acceptance, live dependencies, relied-on
+evidence and consumed limits. Retain independent review for all other or
+uncertain cases, including mixed changes and discretionary early closure.
+Ordinary project record edits outside this scope need no record-system review.
+
+**Research-evidence review.** Require independent review for research records,
+empirical platform/support claims, fired mutable-source rechecks, formal or
+empirical evidence reports, and grants or operations involving external,
+credentialed, destructive or paid empirical effects. Routine
+credential-free local development/debugging and governed CI validation of
+declared contracts are outside this scope. An ordinary route under one control
+does not waive another applicable review or an entry-specific condition.
 
 ## Record-System Gate
 

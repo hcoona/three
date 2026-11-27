@@ -6,8 +6,8 @@
 
 ## Authorization and Scope
 
-<!-- Cite the applicable Delivery Wave entry (or note routine contract-preserving
-maintenance), governing records/Issues, and any external/risk effects or copied-source
+<!-- Identify the applicable standing authority or Delivery Wave entry,
+governing records/Issues, and any external/risk effects or copied-source
 provenance when present. Omit inapplicable items rather than filling None. -->
 
 ## Validation and Review
