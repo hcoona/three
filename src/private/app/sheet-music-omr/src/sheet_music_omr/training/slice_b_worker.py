@@ -273,7 +273,41 @@ def _load_arm_a_for_worker(
     return model, proc, family
 
 
-def _generate_arm_a_beams(  # noqa: C901, PLR0913
+class _IncrementalBpeDecoder:
+    """Decode byte-level BPE IDs incrementally without splitting UTF-8 chars."""
+
+    def __init__(self, tok: Any) -> None:  # noqa: ANN401
+        self._tok = tok
+        self._ids: list[int] = []
+        self._prev = ""
+        self._last = ""
+
+    def push(self, tid: int) -> str:
+        self._ids.append(tid)
+        full = str(
+            self._tok.decode(self._ids, clean_up_tokenization_spaces=False)
+        )
+        self._last = full
+        valid = full.rstrip("\ufffd")
+        delta = valid[len(self._prev) :]
+        self._prev = valid
+        return delta
+
+    def flush_remainder(self) -> str:
+        rem = self._last[len(self._prev) :]
+        self._prev = self._last
+        return rem
+
+
+def _decode_bpe_ids_to_pieces(tok: Any, token_ids: Sequence[int]) -> list[str]:  # noqa: ANN401
+    dec = _IncrementalBpeDecoder(tok)
+    pieces = [dec.push(int(t)) for t in token_ids]
+    if pieces and (rem := dec.flush_remainder()):
+        pieces[-1] += rem
+    return pieces
+
+
+def _generate_arm_a_beams(  # noqa: C901, PLR0912, PLR0913, PLR0915
     model: Any,  # noqa: ANN401
     processor: Any,  # noqa: ANN401
     family: ArmAFamily,
@@ -357,6 +391,7 @@ def _generate_arm_a_beams(  # noqa: C901, PLR0913
         seq_ids = [int(t) for t in gen.sequences[b_idx, prompt_len:].tolist()]
         step_lps = [float(s) for s in trans_scores[b_idx].tolist()]
         pieces: list[str] = []
+        inc_dec = _IncrementalBpeDecoder(tok)
         total_lp = 0.0
         capped = False
         mb = _MeasureBudget(carry_measure_tokens)
@@ -367,28 +402,30 @@ def _generate_arm_a_beams(  # noqa: C901, PLR0913
                 total_lp += lp
             if tid == eos_id:
                 hit_eos = True
+                if pieces and (rem := inc_dec.flush_remainder()):
+                    pieces[-1] += rem
                 if not mb.can_end(MAX_MEASURE_TOKENS):
                     capped = True
                 break
             if tid == pad_id and step_i > 0:
                 continue
-            piece = str(tok.decode([tid], clean_up_tokenization_spaces=False))
+            piece = inc_dec.push(tid)
             pieces.append(piece)
             if len(pieces) > MAX_SYSTEM_TOKENS or not mb.advance(
                 piece, len(pieces), MAX_MEASURE_TOKENS
             ):
                 capped = True
                 break
-        if not hit_eos and len(pieces) >= min(
-            max_new_tokens, MAX_SYSTEM_TOKENS
-        ):
-            capped = True
+        if not hit_eos:
+            if pieces and (rem := inc_dec.flush_remainder()):
+                pieces[-1] += rem
+            if len(pieces) >= min(max_new_tokens, MAX_SYSTEM_TOKENS):
+                capped = True
         if zero_shot_e0 and pieces and not capped:
             cleaned = _strip_markdown_fences("".join(pieces))
-            pieces = [
-                str(tok.decode([t], clean_up_tokenization_spaces=False))
-                for t in tok.encode(cleaned, add_special_tokens=False)
-            ]
+            pieces = _decode_bpe_ids_to_pieces(
+                tok, tok.encode(cleaned, add_special_tokens=False)
+            )
         candidates.append(
             BeamCandidate(
                 raw_logprob=total_lp if math.isfinite(total_lp) else -1e9,

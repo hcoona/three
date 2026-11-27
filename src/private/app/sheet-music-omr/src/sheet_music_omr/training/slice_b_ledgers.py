@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import math
 import os
@@ -139,7 +140,7 @@ def _read_slice_b_download_ledger(raw: bytes) -> dict[str, Any]:
     return data
 
 
-def _transfer_slice_b_payload(
+def _transfer_slice_b_payload(  # noqa: C901
     url: str, dest: Path, size: int, read_counter: list[int]
 ) -> None:
     _validate_https(url)
@@ -158,9 +159,15 @@ def _transfer_slice_b_payload(
             if cl_hdr is not None and cl_hdr.strip() != str(size):
                 _stop("Slice B response Content-Length differs from lock")
             with dest.open("xb") as stream:
+                read_fn = getattr(response, "read1", None) or response.read
                 remaining = size
                 while remaining:
-                    chunk = response.read(min(remaining, 1 << 20))
+                    try:
+                        chunk = read_fn(min(remaining, 1 << 20))
+                    except http.client.IncompleteRead as exc:
+                        read_counter[0] += len(exc.partial)
+                        msg = f"truncated Slice B payload for {leaf}"
+                        raise StopConditionError(msg) from exc
                     if not chunk:
                         _stop("truncated Slice B payload")
                     read_counter[0] += len(chunk)
@@ -168,8 +175,14 @@ def _transfer_slice_b_payload(
                         _stop("Slice B payload exceeded locked size")
                     stream.write(chunk)
                     remaining -= len(chunk)
-                if response.read(1):
-                    read_counter[0] += 1
+                try:
+                    extra = read_fn(1)
+                except http.client.IncompleteRead as exc:
+                    read_counter[0] += len(exc.partial)
+                    msg = f"truncated Slice B EOF probe for {leaf}"
+                    raise StopConditionError(msg) from exc
+                if extra:
+                    read_counter[0] += len(extra)
                     _stop("Slice B payload exceeded locked size")
                 stream.flush()
                 os.fsync(stream.fileno())

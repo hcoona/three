@@ -4,10 +4,13 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
+import re
 import subprocess
 import venv
+from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
@@ -33,8 +36,10 @@ from sheet_music_omr.training import (
 )
 from sheet_music_omr.training.decoding import (
     BeamCandidate,
+    CalibrationPrediction,
     SystemDecodeResult,
     SystemPromptState,
+    fit_score_calibrator,
 )
 from sheet_music_omr.training.models import (
     TextScore2DomainTokenizer,
@@ -993,6 +998,94 @@ def test_slice_b_bare_venv_isolated_worker_and_zero_crop_page_heartbeat(
     sys_out = pieces_dict["gold-07"]["systems"]
     assert len(sys_out) == 1
     assert sys_out[0]["valid"] is True
+
+
+def test_slice_b_vision_lora_regex_incremental_bpe_platt_and_incomplete_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify vision LoRA regex, UTF-8 BPE decode, logit Platt, and reads."""
+    vis_pat = re.compile(
+        training_models._arm_a_lora_target_regex(include_vision=True)
+    )
+    lang_pat = re.compile(
+        training_models._arm_a_lora_target_regex(include_vision=False)
+    )
+    assert vis_pat.match("model.visual.blocks.0.attn.qkv")
+    assert vis_pat.match("model.visual.blocks.0.attn.proj")
+    assert vis_pat.match(
+        "model.visual.vision_model.encoder.layers.0.self_attn.out_proj"
+    )
+    assert not vis_pat.match("model.visual.patch_embed.proj")
+    assert not lang_pat.match("model.visual.blocks.0.attn.qkv")
+    assert lang_pat.match("model.language_model.layers.0.self_attn.q_proj")
+
+    # Byte-level BPE split UTF-8 ("ä" = 0xC3 0xA4) decodes without \ufffd
+    raw_map = {1: b"<", 2: b'text "', 3: b"\xc3", 4: b"\xa4", 5: b'">'}
+
+    class _ByteBpeTok:
+        def decode(
+            self, ids: list[int], *, clean_up_tokenization_spaces: bool = False
+        ) -> str:
+            del clean_up_tokenization_spaces
+            return b"".join(raw_map[i] for i in ids).decode(
+                "utf-8", errors="replace"
+            )
+
+    bpe_pieces = slice_b_worker._decode_bpe_ids_to_pieces(
+        _ByteBpeTok(), [1, 2, 3, 4, 5]
+    )
+    assert len(bpe_pieces) == 5
+    assert "".join(bpe_pieces) == '<text "ä">'
+    assert "\ufffd" not in "".join(bpe_pieces)
+
+    # Logit-domain Platt fit preserves ordering across distinct negative logits
+    rows = [
+        *[
+            CalibrationPrediction(
+                score=-5.0, has_error=True, category="overall"
+            )
+            for _ in range(12)
+        ],
+        *[
+            CalibrationPrediction(
+                score=-1.0, has_error=False, category="overall"
+            )
+            for _ in range(12)
+        ],
+    ]
+    cal = fit_score_calibrator(rows, "platt")
+    assert cal.status == "fit"
+    p_lo = cal.predict(-5.0)
+    p_hi = cal.predict(-1.0)
+    assert p_lo is not None
+    assert p_hi is not None
+    assert p_lo < p_hi
+
+    # IncompleteRead charges partial bytes in _transfer_slice_b_payload
+    class _TruncStream:
+        url = "https://huggingface.co/model.safetensors"
+
+        def __init__(self) -> None:
+            self.headers = {"Content-Length": "20"}
+
+        def read1(self, _n: int = -1) -> bytes:
+            partial = b"12345"
+            raise http.client.IncompleteRead(partial, 15)
+
+    monkeypatch.setattr(
+        copista,
+        "_open_https_request",
+        lambda *_a, **_kw: nullcontext(_TruncStream()),
+    )
+    counter = [0]
+    with pytest.raises(StopConditionError, match="truncated Slice B payload"):
+        slice_b_ledgers._transfer_slice_b_payload(
+            "https://huggingface.co/model.safetensors",
+            tmp_path / "trunc.safetensors",
+            20,
+            counter,
+        )
+    assert counter[0] == 5
 
 
 def test_slice_b_monkeyocrv2_arm_b_beam_generation() -> None:
