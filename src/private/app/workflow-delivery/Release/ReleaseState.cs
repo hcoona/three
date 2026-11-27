@@ -18,8 +18,18 @@ internal enum ReleaseCheckStatus { Passed, Failed, Missing, Cancelled, Skipped, 
 internal sealed record ReleaseCheck(string Id, ReleaseCheckStatus Status);
 internal sealed record ReleaseCommand(string Check, NativeCommand Command,
     NativeCommandResult Result);
+internal sealed record PreparedGithubAnchor(
+    ReleaseFile[] Assets,
+    string ReleaseNotes,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string[]? AllowedSiblingAssets = null);
+
 internal sealed record PreparedRelease(ReleaseSubject Subject, ReleaseFile[] Files,
-    string[] RequiredChecks, ReleaseCheck[] Checks);
+    string[] RequiredChecks, ReleaseCheck[] Checks,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? ReleaseNotes = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    PreparedGithubAnchor? Anchor = null);
 
 internal sealed record BrowserStoreTarget(string Store, string Item,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -66,7 +76,9 @@ internal enum ReleaseBusinessState { Satisfied, Unsatisfied, Unknown }
 internal sealed record ReleaseOutcome(ReleaseSubject Subject, ReleaseBusinessState State,
     ReleaseUpload[] Uploads, string[] Reasons);
 internal sealed record ReleaseDryRun(ReleaseSubject Subject, bool Ready,
-    string[] HypotheticalWrites, string[] Reasons);
+    string[] HypotheticalWrites, string[] Reasons,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string[]? HypotheticalAnchorWrites = null);
 
 internal sealed record ReleasePreparationResult(
     PreparedRelease Prepared,
@@ -153,7 +165,11 @@ internal sealed record ReleaseCompletionResult(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     NuGetPushResult? Invocation = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    StoreState? StoreState = null);
+    StoreState? StoreState = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    ReleaseOutcome? AnchorOutcome = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    ReleasePublicationResult? AnchorPublication = null);
 
 // Application-owned Release request policy. Live ref eligibility is checked where the
 // request is formed and again by the privileged publisher; dry runs have no write capability.

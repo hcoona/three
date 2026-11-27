@@ -75,6 +75,14 @@ public sealed class RubyPreparationTests(TestContext context)
         Assert.IsEmpty(result.Errors, string.Join("; ", result.Errors));
         ReleaseCompletion.Validate(result.Prepared);
         Assert.AreEqual(fixture.Subject, result.Prepared.Subject);
+        if (channel == "official")
+        {
+            Assert.IsNotNull(result.Prepared.Anchor);
+            Assert.Contains("Fixture Ruby stable notes.", result.Prepared.Anchor.ReleaseNotes);
+            Assert.AreEqual($"{Fixture.Unit}-1.2.3.gem",
+                Assert.ContainsSingle(result.Prepared.Anchor.Assets).Name);
+        }
+        else Assert.IsNull(result.Prepared.Anchor);
         CollectionAssert.AreEqual(Checks, result.Prepared.RequiredChecks);
         Assert.IsTrue(result.Prepared.Checks.All(check =>
             check.Status == ReleaseCheckStatus.Passed));
@@ -473,7 +481,7 @@ public sealed class RubyPreparationTests(TestContext context)
         internal static readonly string[] LatexmathLibrary = ["lib/asciidoctor-latexmath.rb",
             "lib/asciidoctor/latexmath/version.rb"];
         private static readonly string[] LatexmathFiles = [.. LatexmathLibrary, "README.md",
-            "LICENSE"];
+            "CHANGELOG.md", "LICENSE"];
         internal const string Entry = "product/hcoona-release-smoke-ruby.gemspec";
         internal const string HelperPath = "src/private/app/workflow-delivery/Native/Ruby/facts.rb";
         private static readonly string[] SmokeFiles = ["LICENSE", "README.md",
@@ -586,6 +594,17 @@ public sealed class RubyPreparationTests(TestContext context)
             var files = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [$"{directory}/{unit}.gemspec"] = "fixture",
+                [$"{directory}/CHANGELOG.md"] = """
+                    # Changelog
+
+                    ## [Unreleased]
+
+                    - Fixture Ruby prerelease notes.
+
+                    ## [1.2.3] - 2026-04-20
+
+                    - Fixture Ruby stable notes.
+                    """,
                 [$"{directory}/workflow-delivery.quality.yml"] = $$$"""
                     schema: workflow-delivery/v3/quality-selection
                     ecosystems: {ruby: {preset: {{{preset}}} } }

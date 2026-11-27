@@ -65,7 +65,13 @@ The native Environment gate belongs on the publisher job. Its effective settings
 are the policy; do not mirror reviewers, replay approval/deployment history or
 maintain a sentinel certificate. Destination-specific jobs remain appropriate for
 different permissions and runners. A common Release use case does not require a
-job with the union of every destination's privileges.
+job with the union of every destination's privileges. For Official `Python`,
+`npm`, `Ruby` and `BrowserStore` callers, repository `contents: write` for the
+`release/<unit>/v<version>` tag and GitHub Release anchor is scoped to a
+dedicated post-publisher `publish-github-anchor` job serialized by unit
+(`workflow-delivery-github-release-<unit>`), keeping `prepare` and `observe`
+free of write permissions and keeping destination publishers free of
+`contents: write`.
 
 Logical phases are prepare/qualify, observe/describe, gated publication when needed,
 and verification/result. Combine or split them according to actual runner,
@@ -130,8 +136,10 @@ settings, reviewed with their caller. Expired required inputs block that operati
 Fresh same-revision recovery may use current native state under its destination
 contract without requiring a permanent application record store. Optional
 telemetry failure does not undo an established result; missing required
-completion evidence leaves uncertainty. No permanent ledger or mandatory
-per-product GitHub Release audit anchor is added.
+completion evidence leaves uncertainty. No permanent external release ledger is
+added; Official `Python`, `npm`, `Ruby` and `BrowserStore` requests record their
+tag and GitHub Release anchor as part of same-request completion under
+[WD-RET-004](../requirements.md#retention-and-platform-state).
 
 ## Native Helper and Caller Boundaries
 

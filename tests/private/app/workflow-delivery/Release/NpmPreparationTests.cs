@@ -94,6 +94,15 @@ public sealed class NpmPreparationTests(TestContext context)
         ReleaseFile output = Assert.ContainsSingle(result.Prepared.Files);
         Assert.AreEqual(package, output.Name);
         Assert.AreEqual(fixture.Request.Subject, result.Prepared.Subject);
+        if (channel == "official")
+        {
+            Assert.IsNotNull(result.Prepared.Anchor);
+            Assert.Contains("Fixture hexo stable notes.", result.Prepared.Anchor.ReleaseNotes);
+            ReleaseFile asset = Assert.ContainsSingle(result.Prepared.Anchor.Assets);
+            Assert.AreEqual("hexo-renderer-asciidoc-1.2.3.tgz", asset.Name);
+            Assert.AreEqual("1.2.3", asset.Version);
+        }
+        else Assert.IsNull(result.Prepared.Anchor);
         // The channel name is set in the disposable checkout only when it differs.
         string[] renamed = result.Commands.Where(command => command.Command.Arguments
             .Contains("set")).Select(command => command.Command.Arguments[^1]).ToArray();
@@ -288,6 +297,17 @@ public sealed class NpmPreparationTests(TestContext context)
         internal static async Task<string> CommitAsync(GitFixture repository)
         {
             await repository.SetAsync("product/package.json", NodeExecutionFixture.Metadata);
+            await repository.SetAsync("product/CHANGELOG.md", """
+                # Changelog
+
+                ## [9.9.9] - 2026-04-20
+
+                - Fixture disagreement version notes.
+
+                ## [1.2.3] - 2026-04-20
+
+                - Fixture smoke npm release notes.
+                """);
             await repository.SetAsync("product/workflow-delivery.release-unit.yml", """
                 schema: workflow-delivery/v3/release-unit
                 release-unit: hcoona-release-smoke-npm
@@ -307,6 +327,17 @@ public sealed class NpmPreparationTests(TestContext context)
                     preset: node/hcoona-release-smoke-npm-v1
                 """);
             await repository.SetAsync("hexo/package.json", "{\"name\":\"hexo-renderer-asciidoc\"}");
+            await repository.SetAsync("hexo/CHANGELOG.md", """
+                # Changelog
+
+                ## [Unreleased]
+
+                - Fixture hexo prerelease notes.
+
+                ## [1.2.3] - 2026-04-20
+
+                - Fixture hexo stable notes.
+                """);
             await repository.SetAsync("hexo/workflow-delivery.release-unit.yml", """
                 schema: workflow-delivery/v3/release-unit
                 release-unit: hexo-renderer-asciidoc

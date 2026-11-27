@@ -70,10 +70,11 @@ def test_only_the_publisher_holds_environment_secrets_and_write_scope(
     assert "secrets." not in yaml.safe_dump(workflow["env"])
     permitted_auth = {"observe", "publish", "verify-result"}
     for name, job in jobs.items():
-        permissions = {"contents": "read"}
-        if name in permitted_auth:
-            permissions["id-token"] = "write"
-        assert job["permissions"] == permissions
+        if name != "publish-github-anchor":
+            permissions = {"contents": "read"}
+            if name in permitted_auth:
+                permissions["id-token"] = "write"
+            assert job["permissions"] == permissions
         assert ("environment" in job) == (name == "publish")
         for checkout in action_steps(job, "actions/checkout"):
             assert checkout["with"]["persist-credentials"] is False
@@ -108,6 +109,27 @@ def test_only_the_publisher_holds_environment_secrets_and_write_scope(
     )
 
 
+def test_anchor_publisher_isolates_contents_write_and_serializes_unit(
+    workflow,
+):
+    """Only the anchor publisher gets contents:write and unit serialization."""
+    jobs = workflow["jobs"]
+    anchor_job = jobs["publish-github-anchor"]
+    assert anchor_job["permissions"] == {"contents": "write"}
+    assert anchor_job["concurrency"] == {
+        "group": (
+            "workflow-delivery-github-release-steam-account-history-to-csv"
+        ),
+        "cancel-in-progress": False,
+    }
+    for name, job in jobs.items():
+        if name != "publish-github-anchor":
+            run_text = "\n".join(
+                step.get("run", "") for step in job.get("steps", [])
+            )
+            assert "publish-github-anchor" not in run_text
+
+
 @pytest.mark.parametrize(
     ("dry", "needed", "allowed"),
     [
@@ -135,15 +157,61 @@ def test_publisher_gate_excludes_dry_runs_and_satisfied_stores(
 
 
 @pytest.mark.parametrize(
-    ("publish", "publication_id"),
-    [("success", "42"), ("failure", "42"), ("failure", ""), ("skipped", "")],
+    ("case", "allowed"),
+    [
+        (("official", False, "success", True), True),
+        (("official", False, "skipped", True), True),
+        (("official", False, "failure", True), False),
+        (("official", False, "cancelled", True), False),
+        (("official", False, "success", False), False),
+        (("official", True, "skipped", True), False),
+        (("buddy", False, "success", True), False),
+    ],
+)
+def test_anchor_gate_requires_official_store_submission_or_satisfaction(
+    workflow, case, allowed
+):
+    """Anchor publisher runs only for Official non-dry store success or skip."""
+    channel, dry, publish, anchor_needed = case
+    job = workflow["jobs"]["publish-github-anchor"]
+    assert {"prepare", "observe", "publish"} <= set(dependencies(job))
+    assert (
+        condition(
+            job["if"],
+            {
+                "cancelled": False,
+                "inputs.channel": channel,
+                "inputs.dry-run": dry,
+                "needs.prepare.result": "success",
+                "needs.observe.result": "success",
+                "needs.publish.result": publish,
+                "needs.observe.outputs.anchor-write-needed": str(
+                    anchor_needed
+                ).lower(),
+            },
+            success=publish == "success",
+        )
+        is allowed
+    )
+
+
+@pytest.mark.parametrize(
+    ("publish", "publication_id", "anchor_id"),
+    [
+        ("success", "42", "84"),
+        ("failure", "42", ""),
+        ("failure", "", ""),
+        ("skipped", "", "84"),
+    ],
 )
 def test_verification_follows_any_publisher_result(
-    workflow, publish, publication_id
+    workflow, publish, publication_id, anchor_id
 ):
     """Verification completes from store state after any publisher result."""
     job = workflow["jobs"]["verify-result"]
-    assert {"prepare", "observe", "publish"} <= set(dependencies(job))
+    assert {"prepare", "observe", "publish", "publish-github-anchor"} <= set(
+        dependencies(job)
+    )
     values = {
         "cancelled": False,
         "inputs.dry-run": False,
@@ -151,6 +219,7 @@ def test_verification_follows_any_publisher_result(
         "needs.observe.result": "success",
         "needs.publish.result": publish,
         "needs.publish.outputs.publication-id": publication_id,
+        "needs.publish-github-anchor.outputs.anchor-id": anchor_id,
     }
     assert condition(job["if"], values, success=publish == "success")
     assert not condition(job["if"], {**values, "inputs.dry-run": True})
@@ -165,6 +234,12 @@ def test_verification_follows_any_publisher_result(
         if step["with"]["path"] == "${{ runner.temp }}/publication"
     )
     assert condition(publication["if"], values) is bool(publication_id)
+    anchor = next(
+        step
+        for step in action_steps(job, "actions/download-artifact")
+        if step["with"]["path"] == "${{ runner.temp }}/anchor-publication"
+    )
+    assert condition(anchor["if"], values) is bool(anchor_id)
     assert not job.get("continue-on-error", False)
     text = "\n".join(step.get("run", "") for step in job["steps"])
     assert "observe-browser-store" in text
@@ -201,6 +276,7 @@ def test_actions_are_pinned_and_artifacts_are_immutable(workflow):
         ("prepare", ["request"]),
         ("observe", ["receive", "observation"]),
         ("publish", ["receive", "publication"]),
+        ("publish-github-anchor", ["receive", "anchor-publication"]),
         ("verify-result", ["receive", "verification"]),
     ],
 )

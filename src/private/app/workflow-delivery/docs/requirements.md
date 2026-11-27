@@ -205,7 +205,11 @@ application must not claim isolation beyond that scope.
   always passes the native gate, even when already satisfied
   ([WD-REL-007](#release-delivery)). Because the Chrome identity is
   write-capable, a browser-store dry run acquires no store credential, including
-  the Chrome read-only token, and reports the store state as unobserved.
+  the Chrome read-only token, and reports the store state as unobserved. When an
+  Official package or browser-store unit also completes a GitHub Release anchor
+  under WD-RET-004, `contents: write` on the repository `GITHUB_TOKEN` is
+  held only by the dedicated post-destination anchor completion job; `prepare`
+  and `observe` retain read-only repository permissions.
 - **WD-REL-009:** Keep upload-command results and business request completion
   distinct. Record success, failure or ambiguity of the actual command accurately.
   While an execution remains active, bounded authoritative verification may
@@ -214,7 +218,11 @@ application must not claim isolation beyond that scope.
   destination conditions are established. Post-publication completion is the
   authoritative registry or platform observation of each exact intended
   coordinate together with downloaded served bytes equal to the qualified
-  originals; for GitHub Releases these are the downloaded release assets. The
+  originals; for GitHub Releases these are the downloaded release assets. For
+  adopted Official package and browser-store units under WD-RET-004, Official
+  completion requires both the primary destination's completion condition and
+  byte-equal observation of the `release/<unit>/v<version>` GitHub Release
+  anchor and its prepared assets at the selected commit. The
   Chrome Web Store, AMO and Edge Add-ons re-sign or repack submissions and do
   not serve them during review; for these three destinations completion is
   instead the store API reporting the submitted version as received, in review
@@ -406,9 +414,18 @@ application must not claim isolation beyond that scope.
 - **WD-RET-003:** Longer-lived source and publication information may use native
   package metadata, tags, destination records and platform releases or
   attestations where appropriate. No uniform capability is assumed.
-- **WD-RET-004:** No permanent external release ledger, global product-to-target
-  binding index or mandatory per-unit GitHub Release audit anchor is required.
-  A GitHub Release that is a unit's selected destination is ordinary publication.
+- **WD-RET-004:** No permanent external release ledger or global
+  product-to-target binding index is required. A GitHub Release that is a unit's
+  selected destination is ordinary publication. For adopted Official package and
+  browser-store units (`Python`, `npm`, `Ruby` and `BrowserStore`; `.NET`
+  `NuGet` retains its existing Official flow until Release Plan 2), Official
+  completion creates and verifies the `release/<unit>/v<version>` Git tag at the
+  selected commit and its corresponding GitHub Release page (using GitHub's
+  default latest-release selection), populated with the bounded 1–2 version
+  `CHANGELOG.md` release body and the request's prepared original files, only
+  after primary destination upload or submission is acknowledged or observed
+  satisfied. Buddy package and browser-store runs create neither tag nor GitHub
+  Release.
 - **WD-RET-005:** If required state cannot be established after record expiry,
   report that limitation and block the affected operation. Native current-state
   observation may suffice where its contract allows it; absent active state

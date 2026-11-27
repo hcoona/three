@@ -52,6 +52,7 @@ internal static class PythonPreparation
         ReleaseBuild? build = null;
         PythonDistribution[] originals = [];
         string name = "", version = "";
+        string? releaseNotes = null;
 
         await qualification.CheckAsync("native-input", async () =>
         {
@@ -82,6 +83,14 @@ internal static class PythonPreparation
                 ExecuteAsync, token);
             bool? publicRelease = QualifyNative(subject, unit, official, name, version,
                 pythonVersion, facts.RootElement);
+            if (official)
+            {
+                string changelogPath = directory + "/CHANGELOG.md";
+                string changelog = await bound.ReadOptionalTextAsync(changelogPath, token)
+                    ?? throw new InvalidDataException($"Missing committed {changelogPath}.");
+                releaseNotes = ReleaseChangelog.Extract(changelog, version, subject.Revision,
+                    changelogPath);
+            }
             native.Add("name", name);
             native.Add("version", version);
             native.Add("commit", subject.Revision);
@@ -116,7 +125,13 @@ internal static class PythonPreparation
             }
             return Task.CompletedTask;
         });
-        return new(new(request.Subject, [.. files], required.ToArray(), qualification.Checks),
+        PreparedGithubAnchor? anchor = releaseNotes is not null &&
+            qualification.Errors.Length == 0 && files.Count > 0
+                ? new([.. files.Select(file => file with { Name = Path.GetFileName(file.Path) })],
+                    releaseNotes)
+                : null;
+        return new(new(request.Subject, [.. files], required.ToArray(), qualification.Checks,
+                Anchor: anchor),
             native, qualification.Commands, qualification.Errors);
 
         Task<NativeCommandResult> ExecuteAsync(NativeCommand command,

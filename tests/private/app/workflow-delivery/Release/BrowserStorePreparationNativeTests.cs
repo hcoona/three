@@ -37,6 +37,22 @@ public sealed class BrowserStorePreparationNativeTests(TestContext context)
                 new Dictionary<string, string?> { ["GIT_LFS_SKIP_SMUDGE"] = "1" }),
                 context.CancellationToken);
             Assert.IsTrue(materialized.Succeeded, materialized.Stderr);
+            string changelogPath = Path.Combine(checkout,
+                BrowserStorePreparation.DefaultUnit.ProductDirectory, "CHANGELOG.md");
+            string changelog = await File.ReadAllTextAsync(changelogPath,
+                context.CancellationToken);
+            if (!changelog.Contains("## [Unreleased]", StringComparison.Ordinal))
+            {
+                await File.WriteAllTextAsync(changelogPath, changelog.Replace("# Changelog\n",
+                    "# Changelog\n\n## [Unreleased]\n\n- Native browser-store preparation check.\n",
+                    StringComparison.Ordinal), context.CancellationToken);
+                await NativeProcess.RunAsync("git", checkout,
+                    ["-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+                        "commit", "-am", "Seed unreleased changelog for native preparation"],
+                    context.CancellationToken);
+                revision = (await NativeProcess.RunAsync("git", checkout, ["rev-parse", "HEAD"],
+                    context.CancellationToken)).Trim();
+            }
             // The caller's prepare job installs the locked product graph without lifecycle
             // scripts before the unprivileged build.
             NativeCommandResult installed = await NativeProcess.ExecuteAsync(new("pnpm",

@@ -49,6 +49,7 @@ internal static class RubyPreparation
         ReleaseBuild? build = null;
         string[] required = Required;
         string entry = "", directory = "", projectDirectory = "", version = "";
+        string? releaseNotes = null;
 
         await qualification.CheckAsync("native-input", async () =>
         {
@@ -114,6 +115,14 @@ internal static class RubyPreparation
             if (source.Gem.Name != unit.Id ||
                 source.Gem.Version != version || source.Gem.Platform != "ruby")
                 throw new InvalidDataException("Unsupported native Ruby source identity.");
+            if (official)
+            {
+                string changelogPath = directory + "/CHANGELOG.md";
+                string changelog = await bound.ReadOptionalTextAsync(changelogPath, token)
+                    ?? throw new InvalidDataException($"Missing committed {changelogPath}.");
+                releaseNotes = ReleaseChangelog.Extract(changelog, version, subject.Revision,
+                    changelogPath);
+            }
             native.Add("name", source.Gem.Name);
             native.Add("version", version);
             native.Add("platform", source.Gem.Platform);
@@ -145,7 +154,13 @@ internal static class RubyPreparation
                 original.Sha256));
             return Task.CompletedTask;
         });
-        return new(new(request.Subject, [.. files], required.ToArray(), qualification.Checks),
+        PreparedGithubAnchor? anchor = releaseNotes is not null &&
+            qualification.Errors.Length == 0 && files.Count > 0
+                ? new([.. files.Select(file => file with
+                    { Name = $"{native["name"]}-{version}.gem" })], releaseNotes)
+                : null;
+        return new(new(request.Subject, [.. files], required.ToArray(), qualification.Checks,
+                Anchor: anchor),
             native, qualification.Commands, qualification.Errors);
 
         Task<NativeCommandResult> ExecuteAsync(NativeCommand command,

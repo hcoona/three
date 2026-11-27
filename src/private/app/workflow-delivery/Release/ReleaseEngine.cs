@@ -127,6 +127,52 @@ internal static class ReleaseEngine
     }
 
     internal static ReleaseDryRun Describe(IDestinationAdapter adapter,
+        ReleasePreparationResult preparation, ReleaseObservationResult observed,
+        ReleaseObservationResult? anchorObserved = null)
+    {
+        ReleaseDryRun primary = DescribePrimary(adapter, preparation, observed);
+        if (preparation.Prepared.Anchor is null)
+        {
+            if (anchorObserved is not null)
+                throw new InvalidDataException("Unexpected GitHub Release anchor observation.");
+            return primary;
+        }
+        if (anchorObserved is null)
+            throw new InvalidDataException(
+                "Missing GitHub Release anchor observation for dry run.");
+        ReleasePreparationResult anchorPrep = ReleaseAdapters.AnchorPreparation(preparation);
+        ReleaseAdapters.GithubAnchor.ValidatePreparation(anchorPrep);
+        ReleaseAdapters.GithubAnchor.ValidateObservation(anchorPrep, anchorObserved);
+        DestinationProfile anchorProfile = ReleaseAdapters.GithubAnchor.Profile(
+            anchorPrep.Prepared.Subject);
+        if (!ObservationProceeds(anchorProfile, anchorObserved.Observation))
+        {
+            ReleaseDryRun blocked = ReleaseCompletion.Describe(anchorPrep.Prepared,
+                anchorObserved.Observation, [], anchorProfile);
+            return new(primary.Subject, false, [],
+                [.. primary.Reasons,
+                    .. blocked.Reasons.Select(reason => "GitHub Release anchor: " + reason)],
+                HypotheticalAnchorWrites: []);
+        }
+        if (!primary.Ready)
+            return primary with { HypotheticalAnchorWrites = [] };
+        ReleaseFile[] missingAssets = [.. anchorPrep.Prepared.Files.Where(file =>
+            anchorObserved.Observation.Files.Single(actual => actual.Output == file.Output).State ==
+                ReleaseFileState.Absent)];
+        if (missingAssets.Length == 0)
+            return primary with { HypotheticalAnchorWrites = [] };
+        var anchorWrites = new List<string>();
+        if (anchorObserved.ReleaseId is null)
+            anchorWrites.Add("create release " + EcosystemTag(anchorPrep.Prepared));
+        anchorWrites.AddRange(missingAssets.Select(asset => "upload " + asset.Name));
+        return primary with { HypotheticalAnchorWrites = [.. anchorWrites] };
+    }
+
+    private static string EcosystemTag(PreparedRelease prepared) =>
+        WorkflowDelivery.Ecosystems.GithubReleaseUnit.Tag(prepared.Subject,
+            prepared.Files[0].Version);
+
+    private static ReleaseDryRun DescribePrimary(IDestinationAdapter adapter,
         ReleasePreparationResult preparation, ReleaseObservationResult observed)
     {
         adapter.ValidatePreparation(preparation);
@@ -313,7 +359,148 @@ internal static class ReleaseEngine
         return new(subject, before, [.. steps], after, [.. errors]);
     }
 
+    internal static bool AnchorAllowed(IDestinationAdapter primaryAdapter,
+        ReleasePreparationResult preparation, ReleaseObservationResult initial,
+        ReleasePublicationResult? primaryPublication)
+    {
+        primaryAdapter.ValidatePreparation(preparation);
+        DestinationProfile profile = primaryAdapter.Profile(preparation.Prepared.Subject);
+        primaryAdapter.ValidateObservation(preparation, initial);
+        if (AllSatisfied(profile, initial.Observation))
+            return primaryPublication is null;
+        if (!ObservationProceeds(profile, initial.Observation) || primaryPublication is null ||
+            primaryPublication.Errors.Length != 0)
+            return false;
+        if (profile.Verification == DestinationVerificationMode.StoreAccepted)
+        {
+            if (primaryPublication.Subject != preparation.Prepared.Subject ||
+                primaryPublication.After is not { } storeAfter)
+                return false;
+            primaryAdapter.ValidateObservation(preparation, storeAfter);
+            return AllSatisfied(profile, storeAfter.Observation);
+        }
+        string[] initialMissing = MissingOutputs(initial.Observation, profile.OrderedKinds,
+            preparation.Prepared);
+        ValidatePublication(primaryAdapter, profile, preparation, initialMissing,
+            primaryPublication);
+        if (primaryPublication.After is { } after && AllSatisfied(profile, after.Observation))
+            return true;
+        if (primaryPublication.After is { } observedAfter &&
+            !ObservationProceeds(profile, observedAfter.Observation))
+            return false;
+        if (AllSatisfied(profile, primaryPublication.Before.Observation))
+            return true;
+        string[] beforeMissing = MissingOutputs(primaryPublication.Before.Observation,
+            profile.OrderedKinds, preparation.Prepared);
+        return beforeMissing.Length != 0 && beforeMissing.All(output =>
+            primaryPublication.Steps.Any(step =>
+                step.Kind == "upload" && step.Target == output && step.Acknowledged));
+    }
+
+    internal static void RequireAnchorAllowed(IDestinationAdapter primaryAdapter,
+        ReleasePreparationResult preparation, ReleaseObservationResult initial,
+        ReleasePublicationResult? primaryPublication)
+    {
+        if (preparation.Prepared.Anchor is null)
+            throw new InvalidDataException("Release preparation carries no GitHub Release anchor.");
+        if (!AnchorAllowed(primaryAdapter, preparation, initial, primaryPublication))
+            throw new InvalidDataException(
+                "Primary destination is not satisfied; GitHub Release anchor cannot proceed.");
+    }
+
     internal static ReleaseCompletionResult Complete(IDestinationAdapter adapter,
+        ReleasePreparationResult preparation, ReleaseObservationResult initial,
+        ReleaseObservationResult? final, ReleasePublicationResult? publication,
+        ReleaseObservationResult? anchorInitial = null,
+        ReleaseObservationResult? anchorFinal = null,
+        ReleasePublicationResult? anchorPublication = null)
+    {
+        ReleaseCompletionResult primary = CompletePrimary(adapter, preparation, initial, final,
+            publication);
+        if (preparation.Prepared.Anchor is null)
+        {
+            if (anchorInitial is not null || anchorFinal is not null ||
+                anchorPublication is not null)
+                throw new InvalidDataException("Unexpected GitHub Release anchor input.");
+            return primary;
+        }
+        if (anchorInitial is null)
+            throw new InvalidDataException("Missing initial GitHub Release anchor observation.");
+        ReleasePreparationResult anchorPrep = ReleaseAdapters.AnchorPreparation(preparation);
+        ReleaseAdapters.GithubAnchor.ValidatePreparation(anchorPrep);
+        ReleaseAdapters.GithubAnchor.ValidateObservation(anchorPrep, anchorInitial);
+        DestinationProfile anchorProfile = ReleaseAdapters.GithubAnchor.Profile(
+            anchorPrep.Prepared.Subject);
+        if (!ObservationProceeds(anchorProfile, anchorInitial.Observation))
+        {
+            throw new InvalidDataException(
+                "Initial GitHub Release anchor observation could not proceed.");
+        }
+
+        ReleaseCompletionResult anchorResult;
+        if (anchorFinal is null)
+        {
+            var unknownAnchor = new ReleaseOutcome(anchorPrep.Prepared.Subject,
+                ReleaseBusinessState.Unknown, anchorPublication?.Uploads ?? [],
+                ["Required GitHub Release anchor observation is missing; effects remain unknown."]);
+            anchorResult = new(unknownAnchor, anchorPublication is null ? null
+                : anchorPublication.Steps.Length > 0, anchorPublication);
+        }
+        else if (anchorPublication is null &&
+            MissingOutputs(anchorInitial.Observation, null, anchorPrep.Prepared).Length != 0 &&
+            !AnchorAllowed(adapter, preparation, initial, publication))
+        {
+            ReleaseAdapters.GithubAnchor.ValidateObservation(anchorPrep, anchorFinal);
+            ReleaseOutcome skippedOutcome = ReleaseCompletion.Evaluate(anchorPrep.Prepared,
+                anchorFinal.Observation, [], anchorProfile);
+            if (skippedOutcome.State != ReleaseBusinessState.Satisfied)
+                skippedOutcome = skippedOutcome with
+                {
+                    Reasons =
+                    [
+                        .. skippedOutcome.Reasons,
+                        "GitHub Release anchor skipped: primary destination did not complete.",
+                    ],
+                };
+            anchorResult = new(skippedOutcome, false);
+        }
+        else
+        {
+            anchorResult = CompletePrimary(ReleaseAdapters.GithubAnchor, anchorPrep, anchorInitial,
+                anchorFinal, anchorPublication);
+        }
+
+        ReleaseBusinessState combinedState =
+            primary.Outcome.State == ReleaseBusinessState.Satisfied &&
+                anchorResult.Outcome.State == ReleaseBusinessState.Satisfied
+                    ? ReleaseBusinessState.Satisfied
+                    : primary.Outcome.State == ReleaseBusinessState.Unknown ||
+                        anchorResult.Outcome.State == ReleaseBusinessState.Unknown
+                            ? ReleaseBusinessState.Unknown
+                            : ReleaseBusinessState.Unsatisfied;
+        string[] combinedReasons = combinedState == ReleaseBusinessState.Satisfied ? []
+            : [.. primary.Outcome.Reasons,
+                .. anchorResult.Outcome.State == ReleaseBusinessState.Satisfied ? []
+                    : anchorResult.Outcome.Reasons.Select(reason =>
+                        "GitHub Release anchor: " + reason)];
+        bool? combinedAttempted =
+            primary.MutationAttempted == true || anchorResult.MutationAttempted == true ? true
+                : primary.MutationAttempted is null || anchorResult.MutationAttempted is null
+                    ? null : false;
+        return primary with
+        {
+            Outcome = primary.Outcome with
+            {
+                State = combinedState,
+                Reasons = combinedReasons,
+            },
+            MutationAttempted = combinedAttempted,
+            AnchorOutcome = anchorResult.Outcome,
+            AnchorPublication = anchorResult.Publication,
+        };
+    }
+
+    private static ReleaseCompletionResult CompletePrimary(IDestinationAdapter adapter,
         ReleasePreparationResult preparation, ReleaseObservationResult initial,
         ReleaseObservationResult? final, ReleasePublicationResult? publication)
     {

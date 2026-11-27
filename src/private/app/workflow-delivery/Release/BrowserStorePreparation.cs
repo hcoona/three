@@ -98,7 +98,9 @@ internal static class BrowserStorePreparation
                 registered.ProductDirectory + "/version.json"], token);
         string product = Path.Combine(checkout, registered.ProductDirectory);
         string output = Path.Combine(product, ".output");
+        bool official = request.Subject.Channel == "official";
         BrowserExtensionVersion projected = new("", "");
+        string? releaseNotes = null;
         await qualification.CheckAsync("native-input", async () =>
         {
             projected = version(checkout, bound.Revision, registered.ProductDirectory, token);
@@ -111,6 +113,14 @@ internal static class BrowserStorePreparation
                 await QueryAsync(new("pnpm", checkout, ["--version"], 30)));
             if (Directory.Exists(output) || File.Exists(output))
                 throw new InvalidDataException("Product output exists before the build.");
+            if (official)
+            {
+                string changelogPath = registered.ProductDirectory + "/CHANGELOG.md";
+                string changelog = await bound.ReadOptionalTextAsync(changelogPath, token)
+                    ?? throw new InvalidDataException($"Missing committed {changelogPath}.");
+                releaseNotes = ReleaseChangelog.Extract(changelog, projected.Npm,
+                    request.Subject.Revision, changelogPath);
+            }
         });
         string originals = Path.Combine(scratch, "original");
         Directory.CreateDirectory(originals);
@@ -156,9 +166,10 @@ internal static class BrowserStorePreparation
                     originalsByOutput[target.Output].Path), target.Manifest, expected);
             return Task.CompletedTask;
         });
+        string[] selectedOutputs = StoreOutputs(request.Subject.Destination);
         await qualification.CheckAsync("original-bytes", async () =>
         {
-            foreach (string selected in StoreOutputs(request.Subject.Destination))
+            foreach (string selected in selectedOutputs)
             {
                 (string path, long size, string sha256) = originalsByOutput[selected];
                 await OwnedFile.VerifyAsync(Path.Combine(scratch, path), size, sha256,
@@ -168,7 +179,22 @@ internal static class BrowserStorePreparation
                     sha256));
             }
         });
-        return new(new(request.Subject, [.. files], Required.ToArray(), qualification.Checks),
+        PreparedGithubAnchor? anchor = releaseNotes is not null &&
+            qualification.Errors.Length == 0 && files.Count > 0
+                ? new(
+                    [.. files.Select(file => file with
+                    {
+                        Name = Path.GetFileName(file.Path),
+                        Version = projected.Npm,
+                    })],
+                    releaseNotes,
+                    [.. Outputs.Where(target => !selectedOutputs.Contains(target.Output,
+                            StringComparer.Ordinal))
+                        .Select(target =>
+                            $"{registered.Id}-{projected.Npm}-{target.Suffix}.zip")])
+                : null;
+        return new(new(request.Subject, [.. files], Required.ToArray(), qualification.Checks,
+                Anchor: anchor),
             new(StringComparer.Ordinal), qualification.Commands, qualification.Errors, storeTarget);
 
         Task<NativeCommandResult> RunAsync(string check, NativeCommand command) =>

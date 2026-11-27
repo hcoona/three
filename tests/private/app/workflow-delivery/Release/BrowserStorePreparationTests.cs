@@ -62,6 +62,14 @@ public sealed class BrowserStorePreparationTests(TestContext context)
         Assert.IsTrue(result.Commands.All(command => !command.Command.InheritEnvironment &&
             command.Command.Environment!["HOME"] == Path.Combine(fixture.Scratch, "home") &&
             !command.Command.Environment.ContainsKey("GITHUB_TOKEN")));
+        Assert.IsNotNull(result.Prepared.Anchor);
+        Assert.Contains("Fixture browser-store release notes.",
+            result.Prepared.Anchor.ReleaseNotes);
+        Assert.AreEqual(4, result.Prepared.Anchor.Assets.Length +
+            result.Prepared.Anchor.AllowedSiblingAssets!.Length);
+        Assert.IsTrue(result.Prepared.Anchor.Assets.All(file => file.Version == "1.2.0-dev.7" &&
+            file.Name.StartsWith("steam-account-history-to-csv-1.2.0-dev.7-",
+                StringComparison.Ordinal)));
         ReleaseAdapters.BrowserStore.ValidatePreparation(result);
     }
 
@@ -172,6 +180,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
 
         Assert.IsEmpty(result.Errors);
         Assert.ContainsSingle(result.Prepared.Files);
+        Assert.IsNull(result.Prepared.Anchor);
     }
 
     internal sealed class Fixture : IDisposable
@@ -210,6 +219,13 @@ public sealed class BrowserStorePreparationTests(TestContext context)
                 """{"name":"steam-account-history-to-csv","version":"0.0.0-placeholder"}""");
             await repository.SetAsync(product + "version.json",
                 """{"version":"1.2.0-dev.{height}"}""");
+            await repository.SetAsync(product + "CHANGELOG.md", """
+                # Changelog
+
+                ## [Unreleased]
+
+                - Fixture browser-store release notes.
+                """);
             await repository.SetAsync(BrowserStorePreparation.DefaultUnit.Declaration, """
                 schema: workflow-delivery/v3/release-unit
                 release-unit: steam-account-history-to-csv

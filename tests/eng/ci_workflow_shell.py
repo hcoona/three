@@ -120,6 +120,13 @@ def assert_release_transfers(workflow: dict[str, Any]) -> None:
         "publish": publication,
         "verify-result": publication | {("publish", "publication")},
     }
+    if "publish-github-anchor" in jobs:
+        required["publish-github-anchor"] = publication | {
+            ("publish", "publication")
+        }
+        required["verify-result"] |= {
+            ("publish-github-anchor", "anchor-publication")
+        }
     retained = set()
     artifact_names = set()
     for job_name, job in jobs.items():
@@ -159,7 +166,7 @@ def assert_release_transfers(workflow: dict[str, Any]) -> None:
             transfer = (producer, download["path"])
             if transfer in payloads:
                 assert upload["with"]["path"] == download["path"]
-                if producer != "publish":
+                if producer not in ("publish", "publish-github-anchor"):
                     assert step.get("if") in (None, True, "success()")
                 received.add(transfer)
         assert payloads <= received, job_name
@@ -420,7 +427,13 @@ def selected_control_call(
             f"{tool}@{version}"
             for tool, version in committed.items()
             if tool not in {"dotnet", "dotnet-frameworks"}
-            and (job_name == "prepare" or tool in {"python", "uv"})
+            and (
+                job_name == "prepare"
+                or (
+                    job_name != "publish-github-anchor"
+                    and tool in {"python", "uv"}
+                )
+            )
         },
     }
     env.update(output_values(cwd / "github-env"))

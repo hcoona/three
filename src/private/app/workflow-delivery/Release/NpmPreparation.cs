@@ -67,7 +67,9 @@ internal static class NpmPreparation
             throw new InvalidDataException("Unsupported selected npm quality recipe.");
         await ReleasePreparationContext.RequireCommittedInputsAsync(bound,
             ["mise.toml", "mise.lock", "pnpm-lock.yaml", "pnpm-workspace.yaml"], token);
+        bool official = request.Subject.Channel == "official";
         string nativeVersion = "";
+        string? releaseNotes = null;
         await qualification.CheckAsync("native-input", async () =>
         {
             nativeVersion = version(checkout, bound.Revision, product, token);
@@ -99,6 +101,14 @@ internal static class NpmPreparation
                         "test", out JsonElement sourceTest) ||
                     sourceTest.ValueKind != JsonValueKind.String)
                     throw new InvalidDataException("Unsupported selected native npm recipe.");
+            }
+            if (official)
+            {
+                string changelogPath = product + "/CHANGELOG.md";
+                string changelog = await bound.ReadOptionalTextAsync(changelogPath, token)
+                    ?? throw new InvalidDataException($"Missing committed {changelogPath}.");
+                releaseNotes = ReleaseChangelog.Extract(changelog, nativeVersion,
+                    request.Subject.Revision, changelogPath);
             }
         });
         string originals = Path.Combine(scratch, "original");
@@ -151,7 +161,14 @@ internal static class NpmPreparation
         };
         foreach (string id in recipe.Required.Skip(1))
             await qualification.CheckAsync(id, actions[id]);
-        return new(new(request.Subject, [.. files], [.. recipe.Required], qualification.Checks),
+        PreparedGithubAnchor? anchor = releaseNotes is not null &&
+            qualification.Errors.Length == 0 && files.Count > 0
+                ? new([.. files.Select(file => file with
+                    { Name = $"{NpmReleaseUnit.UnscopedName(package)}-{nativeVersion}.tgz" })],
+                    releaseNotes)
+                : null;
+        return new(new(request.Subject, [.. files], [.. recipe.Required], qualification.Checks,
+                Anchor: anchor),
             new(StringComparer.Ordinal), qualification.Commands, qualification.Errors);
 
         Task<NativeCommandResult> RunAsync(string check, NativeCommand command) =>

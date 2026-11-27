@@ -54,11 +54,19 @@ internal static class ReleaseCli
             Write(output, result, TransferJson.Default.ReleasePreparationResult);
             if (result.Errors.Length != 0 || result.Prepared.Files.Length == 0) return 1;
             adapter.ValidatePreparation(result);
+            if (overrides?.Prepare is null &&
+                action is "prepare-npm" or "prepare-python" or "prepare-ruby" or
+                    "prepare-browser-store" &&
+                result.Prepared.Subject.Channel == "official" &&
+                result.Prepared.Anchor is null)
+                throw new InvalidDataException(
+                    "Official preparation omitted its GitHub Release anchor.");
             return 0;
         }
 
         if (action.StartsWith("describe-", StringComparison.Ordinal) &&
-            rest is [var describePreparedPath, var describeObservedPath])
+            rest is [var describePreparedPath, var describeObservedPath, .. var describeAnchor] &&
+            describeAnchor.Length <= 1)
         {
             (IDestinationAdapter? adapter, string? expectedDestination) =
                 ResolveTarget(action["describe-".Length..]);
@@ -66,23 +74,36 @@ internal static class ReleaseCli
             ReleasePreparationResult preparation = Preparation(describePreparedPath);
             RequireDestination(preparation.Prepared.Subject, expectedDestination);
             ReleaseObservationResult observed = Observation(describeObservedPath);
-            ReleaseDryRun result = ReleaseEngine.Describe(adapter, preparation, observed);
+            ReleaseObservationResult? anchorObserved = describeAnchor is [var anchorObsPath]
+                ? ReadOptional(anchorObsPath, TransferJson.Default.ReleaseObservationResult)
+                : null;
+            ReleaseDryRun result = ReleaseEngine.Describe(adapter, preparation, observed,
+                anchorObserved);
             Write(output, result, TransferJson.Default.ReleaseDryRun);
             return result.Ready ? 0 : 1;
         }
 
         if (action.StartsWith("complete-", StringComparison.Ordinal) &&
-            rest is [var completePreparedPath, var initialPath, var finalPath, var publishedPath])
+            rest is [var completePreparedPath, var initialPath, var finalPath, var publishedPath,
+                .. var completeAnchor] && completeAnchor.Length is 0 or 3)
         {
             (IDestinationAdapter? adapter, string? expectedDestination) =
                 ResolveTarget(action["complete-".Length..]);
             if (adapter is null) return null;
             ReleasePreparationResult preparation = Preparation(completePreparedPath);
             RequireDestination(preparation.Prepared.Subject, expectedDestination);
+            (ReleaseObservationResult? anchorInitial, ReleaseObservationResult? anchorFinal,
+                ReleasePublicationResult? anchorPublished) = completeAnchor is
+                [var aInit, var aFinal, var aPub]
+                    ? (ReadOptional(aInit, TransferJson.Default.ReleaseObservationResult),
+                        ReadOptional(aFinal, TransferJson.Default.ReleaseObservationResult),
+                        ReadOptional(aPub, TransferJson.Default.ReleasePublicationResult))
+                    : (null, null, null);
             ReleaseCompletionResult result = ReleaseEngine.Complete(adapter, preparation,
                 Observation(initialPath),
                 ReadOptional(finalPath, TransferJson.Default.ReleaseObservationResult),
-                ReadOptional(publishedPath, TransferJson.Default.ReleasePublicationResult));
+                ReadOptional(publishedPath, TransferJson.Default.ReleasePublicationResult),
+                anchorInitial, anchorFinal, anchorPublished);
             Write(output, result, TransferJson.Default.ReleaseCompletionResult);
             return result.Outcome.State == ReleaseBusinessState.Satisfied ? 0 : 1;
         }
@@ -118,6 +139,12 @@ internal static class ReleaseCli
                 ObserveGithubRelease(prepPath, originals, output, overrides),
             ("publish-github-release", [var prepPath, var originals, var initialObsPath]) =>
                 PublishGithubRelease(prepPath, originals, initialObsPath, output, overrides),
+            ("observe-github-anchor", [var prepPath, var originals, var anchorOutputPath]) =>
+                ObserveGithubAnchor(prepPath, originals, anchorOutputPath, overrides),
+            ("publish-github-anchor", [var prepPath, var originals, var primaryObsPath,
+                var anchorObsPath, var primaryPubPath]) =>
+                PublishGithubAnchor(prepPath, originals, primaryObsPath, anchorObsPath,
+                    primaryPubPath, output, overrides),
             ("observe-browser-store", [var prepPath, var originals]) =>
                 ObserveBrowserStore(prepPath, originals, output, overrides),
             ("publish-browser-store", [var prepPath, var originals, var initialObsPath]) =>
@@ -420,6 +447,59 @@ internal static class ReleaseCli
                 destination.UploadAsync, CancellationToken.None));
         return EmitPublication(result, output);
     }
+
+    private static int ObserveGithubAnchor(string preparationPath, string originals,
+        string anchorOutputPath, ReleaseCliOverrides? overrides)
+    {
+        ReleasePreparationResult preparation = Preparation(preparationPath);
+        if (preparation.Prepared.Anchor is not { } anchor) return 0;
+        ReleasePreparationResult anchorPrep = ReleaseAdapters.AnchorPreparation(preparation);
+        ReleaseAdapters.GithubAnchor.ValidatePreparation(anchorPrep);
+        ReleaseEngine.VerifyOriginals(anchorPrep.Prepared, originals);
+        ReleaseObservationResult result = WithGithubReleaseDestination(overrides, write: false,
+            destination => destination.ObserveAsync(anchorPrep.Prepared,
+                anchor.AllowedSiblingAssets, CancellationToken.None));
+        ReleaseAdapters.GithubAnchor.ValidateObservation(anchorPrep, result);
+        File.WriteAllText(anchorOutputPath, JsonSerializer.Serialize(result,
+            TransferJson.Default.ReleaseObservationResult) + "\n");
+        return ReleaseEngine.ObservationProceeds(
+            ReleaseAdapters.GithubAnchor.Profile(anchorPrep.Prepared.Subject),
+            result.Observation) ? 0 : 1;
+    }
+
+    private static int PublishGithubAnchor(string preparationPath, string originals,
+        string primaryObsPath, string anchorObsPath, string primaryPubPath,
+        TextWriter output, ReleaseCliOverrides? overrides)
+    {
+        ReleasePreparationResult preparation = Preparation(preparationPath);
+        IDestinationAdapter primaryAdapter = PrimaryAdapterFor(preparation.Prepared.Subject);
+        ReleaseObservationResult primaryInitial = Observation(primaryObsPath);
+        ReleasePublicationResult? primaryPublication = ReadOptional(primaryPubPath,
+            TransferJson.Default.ReleasePublicationResult);
+        ReleaseEngine.RequireAnchorAllowed(primaryAdapter, preparation, primaryInitial,
+            primaryPublication);
+        PreparedGithubAnchor anchor = preparation.Prepared.Anchor!;
+        ReleasePreparationResult anchorPrep = ReleaseAdapters.AnchorPreparation(preparation);
+        ReleaseObservationResult anchorInitial = Observation(anchorObsPath);
+        ReleasePublicationResult result = WithGithubReleaseDestination(overrides, write: true,
+            destination => ReleaseAdapters.GithubAnchor.PublishAsync(anchorPrep, originals,
+                anchorInitial, anchor.AllowedSiblingAssets, destination.ObserveAsync,
+                destination.CreateAsync, destination.UploadAsync, CancellationToken.None));
+        return EmitPublication(result, output);
+    }
+
+    private static IDestinationAdapter PrimaryAdapterFor(ReleaseSubject subject) =>
+        subject.Destination switch
+        {
+            "nugetorg" or "github-packages-nuget" => ReleaseAdapters.NuGet,
+            "npmjs" or "github-packages-npm" => ReleaseAdapters.Npm,
+            "pypi" or "testpypi" => ReleaseAdapters.Python,
+            "rubygems" or "github-packages-ruby" => ReleaseAdapters.Ruby,
+            BrowserStorePreparation.ChromeWebStore or BrowserStorePreparation.FirefoxAmo or
+                BrowserStorePreparation.EdgeAddons => ReleaseAdapters.BrowserStore,
+            _ => throw new InvalidDataException(
+                "Unsupported destination for GitHub Release anchor."),
+        };
 
     private static T WithGithubReleaseDestination<T>(ReleaseCliOverrides? overrides, bool write,
         Func<GithubReleaseDestination, Task<T>> action)

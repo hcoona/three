@@ -33,6 +33,7 @@ namespace WorkflowDelivery;
 [JsonSerializable(typeof(PythonCiCallerReadback))]
 [JsonSerializable(typeof(RubyCiCallerReadback))]
 [JsonSerializable(typeof(GithubNpmToolSelection))]
+[JsonSerializable(typeof(PreparedGithubAnchor))]
 [JsonSerializable(typeof(ReleasePreparationRequest))]
 [JsonSerializable(typeof(ReleasePreparationResult))]
 [JsonSerializable(typeof(ReleaseObservationResult))]

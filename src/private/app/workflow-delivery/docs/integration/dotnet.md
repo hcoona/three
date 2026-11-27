@@ -610,7 +610,9 @@ Unit and ref eligibility follow the
 [Official channel scope](common.md#official-channel-scope). The Buddy Environment
 `workflow-delivery-v3-nuget-github-packages` allows every branch and keeps its
 required reviewer; the Official Environment `workflow-delivery-v3-nuget-nugetorg`
-remains limited to `main`. This adds no other product or destination.
+remains limited to `main`. This adds no other product or destination; `.NET`
+`NuGet` units retain their existing `ReleaseNotes.md`/`ChangeLog.md` metadata
+and Official `nuget.org` flow until Release Plan 2 (`#1811`, `#1867`).
 
 [`ReleaseUnitCatalog`](../../Ecosystems/ReleaseUnitCatalog.cs) discovers each
 unit's committed `workflow-delivery.release-unit.yml` declaration (expected

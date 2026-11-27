@@ -168,16 +168,20 @@ jobs:
       - name: Observe store state and qualified originals
         env:
           CWS_ACCESS_TOKEN: ${{ steps.read-token.outputs.access_token }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-browser-store "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/observation/observation.json"
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-anchor "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/anchor-observation.json"
       - name: Expose required writes and describe dry run
         id: state
         run: |
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs browser-store state
           if [ "$DRY_RUN" = true ]; then
-            "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-browser-store "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" > "$RUNNER_TEMP/observation/dry-run.json"
+            anchor_observation=-
+            if [ -s "$RUNNER_TEMP/observation/anchor-observation.json" ]; then anchor_observation="$RUNNER_TEMP/observation/anchor-observation.json"; fi
+            "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-browser-store "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$anchor_observation" > "$RUNNER_TEMP/observation/dry-run.json"
             cat "$RUNNER_TEMP/observation/dry-run.json" >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Retain actual observation results
@@ -193,6 +197,7 @@ jobs:
     needs: prepare
     outputs:
       write-needed: ${{ steps.state.outputs.write-needed }}
+      anchor-write-needed: ${{ steps.state.outputs.anchor-write-needed }}
       observation-id: ${{ steps.retain.outputs.artifact-id }}
   publish:
     runs-on: ubuntu-24.04
@@ -255,6 +260,61 @@ jobs:
       name: ${{ format('workflow-delivery-v3-{0}', inputs.store) }}
     outputs:
       publication-id: ${{ steps.retain.outputs.artifact-id }}
+  publish-github-anchor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    concurrency:
+      group: workflow-delivery-github-release-steam-account-history-to-csv
+      cancel-in-progress: false
+    steps:
+      - *control
+      - *prepared
+      - name: Download observation by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.observe.outputs.observation-id }}
+          path: ${{ runner.temp }}/observation
+          digest-mismatch: error
+      - name: Download publication by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.publish.outputs.publication-id }}
+          path: ${{ runner.temp }}/publication
+          digest-mismatch: error
+        if: needs.publish.outputs.publication-id != ''
+      - *mise
+      - *dotnet
+      - name: Receive transferred preparation
+        run: |
+          set -Eeuo pipefail
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs browser-store receive anchor-publication
+      - name: Publish GitHub Release anchor after store submission succeeds
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          publication=-
+          if [ -s "$RUNNER_TEMP/publication/publication.json" ]; then publication="$RUNNER_TEMP/publication/publication.json"; fi
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-github-anchor "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/observation/anchor-observation.json" "$publication" > "$RUNNER_TEMP/anchor-publication/publication.json"
+      - name: Retain actual anchor publication results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-store-anchor-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/anchor-publication
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+    needs:
+      - prepare
+      - observe
+      - publish
+    if: always() && !cancelled() && inputs.channel == 'official' && inputs.dry-run == false && needs.prepare.result == 'success' && needs.observe.result == 'success' && needs.publish.result != 'failure' && needs.publish.result != 'cancelled' && needs.observe.outputs.anchor-write-needed == 'true'
+    outputs:
+      anchor-id: ${{ steps.retain.outputs.artifact-id }}
   verify-result:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -277,6 +337,13 @@ jobs:
           path: ${{ runner.temp }}/publication
           digest-mismatch: error
         if: needs.publish.outputs.publication-id != ''
+      - name: Download anchor publication by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.publish-github-anchor.outputs.anchor-id }}
+          path: ${{ runner.temp }}/anchor-publication
+          digest-mismatch: error
+        if: needs.publish-github-anchor.outputs.anchor-id != ''
       - *mise
       - *dotnet
       - name: Receive transferred preparation
@@ -287,6 +354,7 @@ jobs:
       - name: Verify the store-reported version state
         env:
           CWS_ACCESS_TOKEN: ${{ steps.read-token.outputs.access_token }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           # Only the Chrome Web Store is readable outside its publisher; the other stores
@@ -298,9 +366,18 @@ jobs:
             if [ "$status" -gt 1 ]; then exit "$status"; fi
             final="$RUNNER_TEMP/verification/final.json"
           fi
+          anchor_status=0
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-anchor "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/verification/anchor-final.json" || anchor_status=$?
+          if [ "$anchor_status" -gt 1 ]; then exit "$anchor_status"; fi
           publication=-
           if [ -s "$RUNNER_TEMP/publication/publication.json" ]; then publication="$RUNNER_TEMP/publication/publication.json"; fi
-          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-browser-store "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$final" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
+          anchor_initial=-
+          if [ -s "$RUNNER_TEMP/observation/anchor-observation.json" ]; then anchor_initial="$RUNNER_TEMP/observation/anchor-observation.json"; fi
+          anchor_final=-
+          if [ -s "$RUNNER_TEMP/verification/anchor-final.json" ]; then anchor_final="$RUNNER_TEMP/verification/anchor-final.json"; fi
+          anchor_publication=-
+          if [ -s "$RUNNER_TEMP/anchor-publication/publication.json" ]; then anchor_publication="$RUNNER_TEMP/anchor-publication/publication.json"; fi
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-browser-store "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$final" "$publication" "$anchor_initial" "$anchor_final" "$anchor_publication" > "$RUNNER_TEMP/verification/outcome.json"
       - name: Show actual available business result
         run: |
           set -Eeuo pipefail
@@ -324,4 +401,5 @@ jobs:
       - prepare
       - observe
       - publish
+      - publish-github-anchor
     if: always() && !cancelled() && inputs.dry-run == false && needs.prepare.result == 'success' && needs.observe.result == 'success'
