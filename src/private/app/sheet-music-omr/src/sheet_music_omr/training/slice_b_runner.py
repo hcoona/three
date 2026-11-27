@@ -84,6 +84,7 @@ from sheet_music_omr.training.decoding import (
     build_w7_sidecar_rows,
     emit_aligned_discrepancy_rows,
     fit_nested_calibrators,
+    fit_score_calibrator,
     validate_w7_sidecar_row,
 )
 from sheet_music_omr.training.ledgers import (
@@ -2226,7 +2227,7 @@ def run_w6_traindev_replay_and_preregister(  # noqa: C901, PLR0912, PLR0913, PLR
             else:
                 chosen_ckpt = selected_recognizer_checkpoint.resolve()
 
-            # Fit frozen production Platt calibrator on pooled out-of-fold sets
+            # Fit frozen production Platt calibrator directly on logit scores
             chosen_fold_preds = (
                 outer_repl_preds if replay_improves else synth_preds_by_fold
             )
@@ -2236,30 +2237,7 @@ def run_w6_traindev_replay_and_preregister(  # noqa: C901, PLR0912, PLR0913, PLR
                 for p in chosen_fold_preds[f]
                 if p.supervised
             ]
-            min_cal_support = 10
-            prod_cal: Calibrator
-            if len(all_sup) >= min_cal_support and min_cal_support <= sum(
-                p.has_error for p in all_sup
-            ) < len(all_sup):
-                platt_ab = stats.fit_monotone_platt(
-                    [p.score for p in all_sup],
-                    [not p.has_error for p in all_sup],
-                )
-                prod_cal = Calibrator(
-                    method="platt",
-                    status="fit",
-                    error_instances=sum(p.has_error for p in all_sup),
-                    fit_instances=len(all_sup),
-                    slope=float(platt_ab[0]),
-                    intercept=float(platt_ab[1]),
-                )
-            else:
-                prod_cal = Calibrator(
-                    method="platt",
-                    status="insufficient_support",
-                    error_instances=sum(p.has_error for p in all_sup),
-                    fit_instances=len(all_sup),
-                )
+            prod_cal = fit_score_calibrator(all_sup, "platt")
 
             report_dir = run / "report"
             report_dir.mkdir(parents=True, exist_ok=True)
@@ -2373,13 +2351,15 @@ def run_w6_pilot_final_test(  # noqa: C901, PLR0912, PLR0913, PLR0915
         msg = "formal W6-pilot-final TEST pass requires a clean git tree"
         raise StopConditionError(msg)
 
-    # Validate non-TEST metadata, overlays, REQ-012 manifest & T01 archive
-    # join BEFORE reserving or touching TEST!
+    # Metadata-only validation of manifest, REQ-012 & T01 archive join BEFORE
+    # reserving or hashing any TEST page PNG / MusicXML!
     t01_reports = desk_study_dir / "omr-finetune-research" / "reports"
     s0_pub_path = s0_dir / "report" / "s0-public.json"
+    s0_manifest_path = s0_dir / "alignment" / "manifest.json"
+    s0_overlay_qa_path = s0_dir / "alignment" / "overlay-qa.json"
     for req_p in (
-        s0_dir / "alignment" / "manifest.json",
-        s0_dir / "alignment" / "overlay-qa.json",
+        s0_manifest_path,
+        s0_overlay_qa_path,
         s0_pub_path,
         immich_dir / "batch-status.json",
         req012_manifest_path,
@@ -2397,8 +2377,19 @@ def run_w6_pilot_final_test(  # noqa: C901, PLR0912, PLR0913, PLR0915
     if not isinstance(s0_second_reader, dict):
         msg = "Stage S0 public report missing TEST second_reader summary"
         raise StopConditionError(msg)
-    manifest, _ = verify_approved_overlays(s0_dir)
-    all_pieces: list[dict[str, Any]] = manifest["pieces"]
+    pre_manifest = json.loads(s0_manifest_path.read_text("utf-8"))
+    pre_overlay_qa = json.loads(s0_overlay_qa_path.read_text("utf-8"))
+    if not isinstance(pre_manifest.get("pieces"), list) or not isinstance(
+        pre_overlay_qa.get("pages"), list
+    ):
+        msg = "invalid Stage S0 alignment manifest or overlay-qa JSON"
+        raise StopConditionError(msg)
+    all_pieces: list[dict[str, Any]] = pre_manifest["pieces"]
+    if len(pre_overlay_qa["pages"]) != sum(
+        len(p["pages"]) for p in all_pieces
+    ) or not all(pg.get("approved") is True for pg in pre_overlay_qa["pages"]):
+        msg = "Stage S0 overlay-qa JSON lacks full approval before TEST pass"
+        raise StopConditionError(msg)
     test_pieces = [p for p in all_pieces if p["split"] == "TEST"]
     if {str(p["gold_id"]) for p in test_pieces} != _TEST_GOLD_IDS:
         msg = "TEST piece set in manifest differs from frozen 7-piece TEST"
@@ -2422,7 +2413,7 @@ def run_w6_pilot_final_test(  # noqa: C901, PLR0912, PLR0913, PLR0915
     )
 
     # Atomically reserve and fsync Slice B ledger + w2-touch-log.jsonl
-    # BEFORE opening any TEST page or MusicXML!
+    # BEFORE hashing/opening any TEST page PNG or MusicXML!
     res_id, prereg, prereg_sha, env_info = reserve_w6_pilot_final_test_pass(
         downloads,
         run_id=run.name,
@@ -2436,6 +2427,9 @@ def run_w6_pilot_final_test(  # noqa: C901, PLR0912, PLR0913, PLR0915
     status: Literal["completed", "failed", "aborted"] = "failed"
     scratch = run / "scratch"
     try:
+        manifest, _ = verify_approved_overlays(s0_dir)
+        all_pieces = manifest["pieces"]
+        test_pieces = [p for p in all_pieces if p["split"] == "TEST"]
         arm = cast("Literal['arm-a', 'arm-b']", str(prereg["arm"]))
         model_repo = cast("str | None", prereg.get("model_repo"))
         rec_ckpt = Path(str(prereg["selected_recognizer_checkpoint"]))

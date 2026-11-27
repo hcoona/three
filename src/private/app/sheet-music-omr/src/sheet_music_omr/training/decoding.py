@@ -581,6 +581,14 @@ def _root(fn: Callable[[float], float], lo: float, hi: float) -> float:
     return (lo + hi) / 2
 
 
+def fit_score_calibrator(
+    rows: Sequence[CalibrationPrediction],
+    method: CalibrationMethod = "platt",
+) -> Calibrator:
+    """Fit a monotone logit-domain calibrator under the support rule."""
+    return _fit_score_map(rows, method)
+
+
 def _fit_score_map(
     rows: Sequence[CalibrationPrediction], method: CalibrationMethod
 ) -> Calibrator:

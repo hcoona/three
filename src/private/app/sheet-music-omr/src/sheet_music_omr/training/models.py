@@ -1225,6 +1225,16 @@ _DETECTOR_NAMES: dict[DetectorFamily, str] = {
 ARM_A_SEQUENCE_PACKING = False
 
 
+def _arm_a_lora_target_regex(*, include_vision: bool) -> str:
+    if not include_vision:
+        return r".*language_model.*\.(?:q_proj|k_proj|v_proj|o_proj)$"
+    return (
+        r".*(?:language_model.*\.(?:q_proj|k_proj|v_proj|o_proj)|"
+        r"visual.*(?:\.attn\.(?:qkv|proj)|"
+        r"\.self_attn\.(?:q_proj|k_proj|v_proj|out_proj)))$"
+    )
+
+
 def load_arm_a_processor(local_metadata_dir: Path) -> Any:  # noqa: ANN401
     """Load an already verified local processor without any remote code."""
     tr = import_module("transformers")
@@ -1318,16 +1328,13 @@ def load_pretrained_arm_a_and_processor(  # noqa: PLR0913
             model.gradient_checkpointing_enable()
         if hasattr(model, "enable_input_require_grads"):
             model.enable_input_require_grads()
-        scope = (
-            r".*(?:language_model|visual)"
-            if include_vision
-            else r".*language_model"
-        )
         adapter = peft.LoraConfig(
             r=rank,
             lora_alpha=2 * rank,
             task_type=peft.TaskType.CAUSAL_LM,
-            target_modules=scope + r".*\.(?:q_proj|k_proj|v_proj|o_proj)",
+            target_modules=_arm_a_lora_target_regex(
+                include_vision=include_vision
+            ),
         )
         model = peft.get_peft_model(model, adapter)
     return model, processor
@@ -1475,16 +1482,11 @@ def build_arm_a_lora_model(
 ) -> Any:  # noqa: ANN401
     """Make a native VLM with LoRA; no checkpoint or remote code is fetched."""
     peft = import_module("peft")
-    scope = (
-        r".*(?:language_model|visual)"
-        if include_vision
-        else r".*language_model"
-    )
     adapter = peft.LoraConfig(
         r=rank,
         lora_alpha=2 * rank,
         task_type=peft.TaskType.CAUSAL_LM,
-        target_modules=scope + r".*\.(?:q_proj|k_proj|v_proj|o_proj)",
+        target_modules=_arm_a_lora_target_regex(include_vision=include_vision),
     )
     return peft.get_peft_model(_arm_a_base(family, config), adapter)
 
