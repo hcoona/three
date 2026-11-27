@@ -421,19 +421,23 @@ unique source-measure coverage and per-measure repetition quantiles (`p50`,
 ### OMR-REQ-027: Clean permissive recognizer and page-detector model stack
 
 All W6 model definitions, metadata files and checkpoints in
-`DOWNLOADS/w6-model-meta` and Slice B model weights shall carry strictly
-`Apache-2.0`, `MIT` or `BSD-3-Clause` licenses (with `trust_remote_code=False`
-and zero remote Python code fetches), and supporting Python library wheels
+`DOWNLOADS/w6-model-meta` and `DOWNLOADS/w6-model-weights` shall carry strictly
+`Apache-2.0`, `MIT` or `BSD-3-Clause` licenses (with `trust_remote_code=False`,
+zero remote Python code fetches, and strictly `.safetensors` /
+`.safetensors.index.json` weight files), and supporting Python library wheels
 installed into isolated out-of-worktree `DOWNLOADS/w6-train-venv` (from PyPI
-and PyTorch's official CPU wheel index, covering the accepted Wave's named
-packages and required transitive wheels) shall carry permissive,
+and PyTorch's official CPU wheel index) or `DOWNLOADS/w6-gpu-venv` (from PyPI
+and PyTorch's official CUDA `cu132` wheel index for local non-redistributed
+RTX 4090 GPU execution) shall carry permissive,
 non-strong-copyleft, non-NC, non-revenue-restricted licenses (`Apache-2.0`,
 `MIT`, `MIT-CMU`, `BSD-2-Clause`, `BSD-3-Clause`, `PSF-2.0` / `Python-2.0`,
-`ISC`, `Unlicense`, unmodified transitive `MPL-2.0 AND MIT` on `tqdm`, plus
-PyTorch/SciPy dynamically linked runtime library notices, failing closed on
-`GPL`/`AGPL` wheel packages, `CC-BY-NC` or revenue-threshold external assets
-while keeping the first-party repository package under its existing license and
-leaving W4/W5 external CLI renderer rechecks under
+`ISC`, `Unlicense`, unmodified transitive `MPL-2.0 AND MIT` on `tqdm`, PyTorch
+CUDA `Apache-2.0` / `BSD` / `LLVM-exception` / `MIT` / `Zlib` third-party
+notices, and local non-redistributed `LicenseRef-NVIDIA-Proprietary` solely on
+`cuda-toolkit` and `nvidia-*` GPU runtime library wheels in `w6-gpu-venv`,
+failing closed on `GPL`/`AGPL` wheel packages, `CC-BY-NC` or revenue-threshold
+external assets while keeping the first-party repository package under its
+existing license and leaving W4/W5 external CLI renderer rechecks under
 [synthetic-protocol.md](synthetic-protocol.md)). The trainable
 matrix shall comprise: (a) **Arm A** small VLMs emitting `Text Score 2`
 (`Qwen/Qwen3-VL-2B-Instruct` control plus `4B` capacity option,
@@ -533,6 +537,43 @@ invocations charged regardless of purpose, page count, `--formal` flag or
 outcome), attesting the `TRAIN_DEV` input allowlist before opening files and
 keeping frozen `TEST` (`7` pieces, `111` systems) at strictly `0` touches
 throughout Slice A while preserving prior W1, W2/W3 and W4/W5 ledgers unchanged.
+
+### OMR-REQ-031: Slice B GPU training, replay and single TEST pass
+
+All W6 Slice B cross-host imports, CUDA wheel and `.safetensors` checkpoint
+provisioning (`setup-w6-slice-b`), `E0` zero-shot baselines, Arm A / Arm B /
+page-detector GPU training (`train-w6-gpu`), `4`-fold `TRAIN_DEV` evaluation
+(`eval-w6-traindev`), matched-step local `TRAIN_DEV` replay and production
+calibrator pre-registration (`run-w6-replay`), and the single frozen-`TEST`
+evaluation pass (`run-w6-pilot-final`) shall execute strictly locally inside
+WSL2 on the repository owner's RTX 4090 (`24 GB`, `local_gpu_only`) workstation
+under the accepted
+[W6 training, bulk-packaging and page-detector protocol](training-protocol.md)
+(keeping routine offline repository- and synthetic-fixture tests unconstrained).
+Slice B shall: (a) verify all `7` carried-forward W1 through Slice A campaign
+ledgers read-only by `SHA-256`, the packaged `w6-slice-a-package-formal-6`
+dataset digests (`w6-crops-20k` and `w6-crops-50k`), and the portable `102`-leaf
+`--traindev-root` allowlist (`EXPECTED_TRAINDEV_PORTABLE_SHA256`) without
+scanning mixed `23`-piece directories during setup or `TRAIN_DEV` runs; (b)
+reserve exact locked artifact payload bytes before HTTPS transfer in persistent
+`DOWNLOADS/w6-slice-b-download-ledger.json` within a `60,000,000,000`-byte
+(`60 GB`) ceiling (reusing verified cached wheels/metadata/weights at `0` new
+bytes and charging partial/failed payload reads); (c) enforce persistent
+append-only `DOWNLOADS/w6-slice-b-run-ledger.jsonl` pre-start reservations
+(`<= 40` GPU training starts at an `8`-hour timeout, `<= 30` offline
+`unshare -rn` `TRAIN_DEV` evaluation starts at a `300`-second per-page
+heartbeat timeout, and serialized local soft caps of `150,000,000,000` bytes
+across `RUNS/w6-slice-b-*` and `5,000` optional diagnostic synthetic pages); and
+(d) complete `E0` baselines, synthetic-only `4`-fold `TRAIN_DEV` selection,
+matched-step `TRAIN_DEV` replay (`open_reading_masks` loss masking and
+two-fold-held-out `{0, 1, 2, 3} \ {f, g}` inner replay calibration), out-of-fold
+production calibrator fitting, and pre-registration
+(`omr-w6-pilot-final-preregistration-v1`) before executing **at most `1`**
+offline `unshare -rn` `"W6-pilot-final"` pass on frozen `TEST`, atomically
+reserving and `fsync`ing both `w6-slice-b-run-ledger.jsonl` and line `7` of
+`w2-touch-log.jsonl` (`1 / 3` cumulative pilot `TEST` touches under
+[OMR-REQ-019](#omr-req-019-test-set-touch-governance-and-stage-s0-baselines))
+**before** opening any `TEST` file.
 
 ## Evidence and boundaries
 

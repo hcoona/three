@@ -3,7 +3,7 @@
 ## Authority, scope and evidence boundaries
 
 This record is the protocol that
-[OMR-REQ-026 through OMR-REQ-030](requirements.md#pilot-dataset-packaging-clean-training-stack-and-per-system-baseline)
+[OMR-REQ-026 through OMR-REQ-031](requirements.md#pilot-dataset-packaging-clean-training-stack-and-per-system-baseline)
 require for W6 ([Issue #1498](https://github.com/hcoona/three/issues/1498)) and
 the W4 bulk system-crop packaging milestones
 ([Issue #1491](https://github.com/hcoona/three/issues/1491), with sub-issues
@@ -24,11 +24,9 @@ This protocol does not itself grant work: execution requires an active
 [Delivery Wave](../../../../../docs/delivery-wave.md) entry covering the
 specific slice (W6 CPU Slice A is completed and retired; the
 [W6 Slice B Delivery Wave entry](../../../../../docs/delivery-wave.md#execute-omr-gpu-training-and-evaluation-on-local-rtx-4090-w6-slice-b)
-is active on the local RTX 4090 `24 GB` physical host, gating Slice B campaign
-execution on the accepted Slice B protocol amendments and CUDA/checkpoint locks).
-The `sheet_music_omr.training` modules, asset-lock manifest and CLI commands
-currently defined below implement the completed CPU Slice A controls pending
-the Slice B protocol and lock amendments.
+governs W6 GPU Slice B provisioning, training, `4`-fold selection/calibration/replay
+and the single `"W6-pilot-final"` frozen-`TEST` evaluation on the local RTX 4090
+`24 GB` physical host).
 
 When authorized by an accepted [Delivery Wave](../../../../../docs/delivery-wave.md)
 entry, this record governs:
@@ -164,12 +162,56 @@ sequenceDiagram
       `MonkeyOCRv2-S`'s `config.json` (`773` bytes) and
       `preprocessor_config.json` (`452` bytes). Zero `.safetensors`/`.bin`
       foundation checkpoints are downloaded in Slice A.
-    - **Phase 2 (bulk packaging, CPU smoke checks and `TRAIN_DEV` `copista-28m`
-      per-system execution):** runs strictly offline (`HF_HUB_OFFLINE=1`,
-      `TRANSFORMERS_OFFLINE=1`, `PIP_NO_INDEX=1`, `UV_OFFLINE=1`). Every run
-      records `RUN/environment.json` capturing resolved Python/package versions,
-      wheel lock `SHA-256`, metadata lock `SHA-256`, and host `MuseScore` +
-      `Verovio` version and binary `SHA-256` digests.
+    - **Slice B CUDA wheel & `.safetensors` checkpoint locks (`setup-w6-slice-b`,
+      [OMR-REQ-027](requirements.md#omr-req-027-clean-permissive-recognizer-and-page-detector-model-stack),
+      [OMR-REQ-031](requirements.md#omr-req-031-slice-b-gpu-training-replay-and-single-test-pass)):**
+      `asset_locks.py` additionally commits `W6_GPU_LINUX_X86_64_WHEELS` (`73`
+      hash-locked Python `3.14` `x86_64` wheels: the `52` shared permissive
+      non-PyTorch wheels from `W6_LINUX_X86_64_WHEELS` reused at `0` new bytes,
+      plus `torch==2.15.0+cu132`, `torchvision==0.29.2+cu132`, `triton==3.9.0`
+      `MIT`, `cuda-bindings==13.5.0` / `cuda-pathfinder==1.9.1` `Apache-2.0`,
+      and the `16` `cuda-toolkit==13.2.2` / `nvidia-*` CUDA `13.2` runtime
+      library wheels carrying `LicenseRef-NVIDIA-Proprietary` for local
+      non-redistributed GPU execution) and `W6_MODEL_WEIGHT_LOCKS` (exact byte
+      sizes, Git OIDs, and `SHA-256` digests for the `.safetensors` and
+      `model.safetensors.index.json` artifacts of all `8` pinned `Apache-2.0`
+      models, strictly rejecting `.py`, `.bin`, `.pt`, `.pth`, `.ckpt`, and
+      `.onnx` artifacts). `setup-w6-slice-b` verifies the `7` carried-forward
+      W1–Slice A campaign ledgers read-only by `SHA-256`, optional
+      `w6-slice-a-package-formal-6` dataset digests and portable `102`-leaf
+      `--traindev-root`, fetches uncached wheels and `.safetensors` files under
+      `DOWNLOADS/w6-slice-b-download-ledger.json` (`60 GB` payload cap), stages
+      verified metadata alongside `.safetensors` in
+      `DOWNLOADS/w6-model-weights/<slug>/`, installs `DOWNLOADS/w6-gpu-venv`
+      offline (`--no-index --no-deps`), and verifies exact package versions and
+      `torch.cuda.is_available() == True` on the local RTX 4090.
+    - **Native checkpoint loading and Arm A position-scoped BPE masking (source
+      findings):**
+        - `PaddlePaddle/PaddleOCR-VL-1.6@132c45f52c` strips `auto_map` entries in
+          memory and instantiates native `transformers==5.24.1`
+          `PaddleOCRVLConfig`, `PaddleOCRVLForConditionalGeneration` (which maps
+          `mlp_AR -> model.projector`, `visual -> model.visual` and `model ->
+model.language_model` via `conversion_mapping.py#L1066-L1073`), and
+          `PaddleOCRVLProcessor` with `trust_remote_code=False`.
+        - `zenosai/MonkeyOCRv2-S@8efa4f856a` loads all `88` tensors strictly
+          (`strict=True`) into first-party `MonkeyOCRv2VisionTrunk` (`models.py`,
+          matching upstream `Apache-2.0` `Yuliang-Liu/MonkeyOCRv2@da96afede9`
+          `modeling_monkeyocrv2_encoder.py`: CLIP mean/std normalization,
+          `patch_embed.patchifier.{proj,norm}`, `RMSNorm(eps=1e-5)`, `2D`
+          `VisionRotaryEmbedding` in `2x2` merge order, `SwiGLUFFN`
+          `fc1`/`fc2`/`fc3`, native PyTorch SDPA, `post_trunk_norm`, and
+          `unpermute_spatial_merge_2x2` to `[B, H/14, W/14, 384]`), and
+          `timm/convnext_tiny.fb_in22k_ft_in1k@bc48a87f11` loads via `timm`
+          `pretrained_cfg_overlay={"file": ...}` with ImageNet normalization.
+        - Because pretrained Arm A BPE vocabularies share `<` and `cle` across
+          header `clefs:` and mid-score `<clef`, Slice B Arm A training
+          (`allow_position_bpe_mask=True`) masks the first disambiguating BPE
+          continuations of Verovio's `5` disabled categories strictly at body/tag
+          positions outside quoted string literals (`apply_position_scoped_bpe_verovio_mask`),
+          so Arm A trains across both `MuseScore` and `Verovio` crops on
+          `w6-crops-20k` (`18,000` crops) and `w6-crops-50k` (`45,004` crops)
+          with balanced `MuseScore` interleaving and zero negative gradient on
+          disabled categories.
 2. **Pinned external model and license registry (source findings verified at
    immutable commits on `2026-11-24`):**
 
@@ -777,3 +819,111 @@ executable_sha256)` provenance at start/end without binary-hash allowlists),
   list while receiving **only** the candidate aggregate Markdown/JSON report
   text and zero `TEST` score XMLs or rasters) verifies `privacy.scan` across all
   `23` private gold identities before any public summary is written or posted.
+
+## W6 GPU Slice B execution, replay, pre-registration and single-pass TEST protocol
+
+Under the active
+[W6 Slice B Delivery Wave entry](../../../../../docs/delivery-wave.md#execute-omr-gpu-training-and-evaluation-on-local-rtx-4090-w6-slice-b)
+and [OMR-REQ-031](requirements.md#omr-req-031-slice-b-gpu-training-replay-and-single-test-pass),
+`sheet_music_omr.training` (`slice_b_ledgers.py`, `slice_b_worker.py`,
+`slice_b_runner.py`, and `cli.py`) executes strictly locally inside WSL2 on the
+RTX 4090 (`24 GB`) host in the following gated order:
+
+1. **Ordered `TRAIN_DEV`-only phases (`0` `TEST` touches):**
+    - **`E0` zero-shot baselines (`eval-w6-traindev --mode e0`):** runs offline
+      `unshare -rn` inference (`300`-second per-page heartbeat timeout) across
+      `Qwen/Qwen3-VL-2B-Instruct@89644892e4`, `Qwen/Qwen3.5-2B@15852e8c16`, and
+      `PaddlePaddle/PaddleOCR-VL-1.6@132c45f52c` on blind `14.0 px`-resampled
+      `comb_dp_blind` crops from the `69` `TRAIN_DEV` pages (`323` oracle
+      systems) using a deterministic non-private `Text Score 2` syntax header
+      guide (stripping optional outer Markdown code fences before strict
+      `decode_piece_systems_blind` validation), scoring alongside Slice A's
+      completed `copista-28m@44464d1` per-system baseline.
+    - **Synthetic GPU training (`train-w6-gpu`):** runs offline `bf16` CUDA
+      training (`28,800`-second = `8`-hour per-run timeout, streaming VLM
+      weights onto GPU with `low_cpu_mem_usage=True` and dropping sequential PNG
+      page cache via `POSIX_FADV_DONTNEED` to keep WSL2 host RAM bounded) across
+      Arm A (`bf16` LoRA `r=32, alpha=64` on `w6-crops-20k`, scaling the top
+      candidate to `w6-crops-50k` and optionally testing
+      `Qwen/Qwen3-VL-4B-Instruct@ebb281ec70`), Arm B (`convnext_tiny` `stride
+16` vs. `stride 8 + 16` and `MonkeyOCRv2-S` on `w6-crops-50k`), and the
+      2-class (`system`, `measure`) page detectors
+      (`ustc-community/dfine-small-coco` at `L = 1024` vs. `1280` and
+      `PekingU/rtdetr_v2_r18vd` on `w6-crops-50k` `page-boxes.jsonl`,
+      selecting `tau_system` and `tau_measure` on `synth_val`).
+    - **`4`-fold `TRAIN_DEV` evaluation and selection (`eval-w6-traindev --mode
+detector-cv | synthetic-cv`):** compares trained 2-class page detectors
+      side-by-side against `comb_dp_blind` across `TRAINDEV_FOLDS_4` (pure 2D
+      geometry `AP75` / `IoU >= 0.85` / ink-clipping / merged / split counts vs.
+      optional W5 two-staff predicate), evaluates synthetic-only recognizer
+      candidates on blind `14.0 px`-resampled crops across `TRAINDEV_FOLDS_4`
+      (`evidence_role = "cross_validated_selection"`), fits leak-free
+      `{0, 1, 2, 3} \ {f}` out-of-fold `platt` and `temperature` calibrators,
+      and emits schema-validated `omr-w7-sidecar-v1` and
+      `omr-discrepancy-log-v1`.
+    - **Matched-step `TRAIN_DEV` replay and pre-registration (`run-w6-replay`):**
+      from the selected synthetic-only recognizer checkpoint, reserves and
+      settles each worker start individually in `w6-slice-b-run-ledger.jsonl`
+      (checking `slice_b_disk_bytes < 150 GB` and start caps before every worker
+      start), trains matched-step `synthetic_continuation` vs.
+      `real_plus_synth_replay` (`1:1` interleaved `REAL_TRAIN` oracle `14.0 px`
+      crops + `synth_train` replay with `open_reading_masks` measure tokens
+      masked to `-100`) across all `4` folds plus the `6` unique
+      two-fold-held-out `{0, 1, 2, 3} \ {f, g}` inner replay models (`>= 154`
+      real systems each) feeding `_score_recognizer_on_traindev(...,
+replay_inner_predictions=...)` so calibration metrics, sidecar, and
+      discrepancy log all use leak-free two-fold-held-out calibrators; if
+      replay improves over synthetic continuation, trains `1` full-`TRAIN_DEV`
+      production replay checkpoint traversing all `323` `TRAIN_DEV` systems
+      (`16` pieces) + `synth_train` replay, refits the single frozen
+      out-of-fold production Platt calibrator on `TRAIN_DEV`, writes the
+      immutable `"W6-pilot-final"` freeze manifest
+      (`omr-w6-pilot-final-preregistration-v1`, binding `SHA-256` digests of
+      the selected recognizer checkpoint, optional detector checkpoint, and
+      production calibrator alongside the `3` completed `E0` VLM run IDs,
+      `synthetic_selection_run_id`, `replay_ablation_run_id`, and `0` prior
+      `TEST` touches), and anchors `preregistration_sha256` write-once in
+      `w6-slice-b-run-ledger.jsonl`.
+2. **Single-pass `"W6-pilot-final"` frozen-`TEST` evaluation (`run-w6-pilot-final`):**
+    - Requires a clean git tree, WSL2 + `RTX 4090` CUDA runtime verification,
+      a `SHA-256`-verified `omr-w6-pilot-final-preregistration-v1` manifest
+      matching the write-once ledger anchor and whose prerequisite `E0` (`3`
+      models), synthetic-selection, and `29+` replay-ablation subruns are all
+      settled `completed` in `w6-slice-b-run-ledger.jsonl` (permitting zero
+      `--no-formal`, model, detector, beam or threshold overrides), and
+      preflight verification of `w2-s0-formal-3` (including `s0-public.json`
+      `TEST` `second_reader`), `immich-20261031`, `desk-study` T01 reports, and
+      `req012-private-manifest.json` **before** acquiring locks or opening any
+      `TEST` file.
+    - Under exclusive locks on `.w6-slice-b-disk.lock`,
+      `.w6-slice-b-run-ledger.lock` and `.ledger.lock`, verifies `0` prior
+      `pilot_final_test` entries and `6` preserved lines in
+      `DOWNLOADS/w2-touch-log.jsonl`, then writes and `fsync`s **both** the
+      `started` reservation in `DOWNLOADS/w6-slice-b-run-ledger.jsonl` **and**
+      line `7` in `DOWNLOADS/w2-touch-log.jsonl` (`purpose: "W6-pilot-final"`,
+      `1 / 3` cumulative pilot touches; aborting before opening `TEST` if either
+      write fails).
+    - Runs offline `unshare -rn` blind detection and constrained decoding
+      (`300`-second per-page heartbeat across all `expected_pages`, including
+      any zero-crop page) across the `7` frozen `TEST` pieces (`23` pages,
+      `111` systems, `432` measures), applies the frozen `TRAIN_DEV` production
+      calibrator to blind prediction measure confidences before ranking `20%`
+      blind second-reader flags, scores drafter and second-reader comparisons
+      against Stage S0 `agent-build-01` and `copista-28m@44464d1` (including
+      `s0-public.json` `TEST` `second_reader` side-by-side), validates
+      `omr-w7-sidecar-v1` + `omr-discrepancy-log-v1` + post-run private-XML
+      `SHA-256` immutability + `OMR-REQ-015` `privacy.scan`, and settles
+      `w6-slice-b-run-ledger.jsonl`.
+3. **Persistent Slice B ledgers and soft local caps:**
+    - `DOWNLOADS/w6-slice-b-download-ledger.json`: `60,000,000,000`-byte (`60
+GB`) artifact-payload ceiling, reserving `expected_bytes` before transfer
+      and charging partial or failed payload reads.
+    - `DOWNLOADS/w6-slice-b-run-ledger.jsonl`: `<= 40` `train_gpu` starts (`8`h
+      timeout), `<= 30` `eval_traindev` starts (`300`s/page timeout), `<= 1`
+      `pilot_final_test` pass, and serialized soft local caps of
+      `150,000,000,000` bytes (`150 GB`) across `RUNS/w6-slice-b-*` and `5,000`
+      optional diagnostic synthetic pages (`<= 200` validated canonical
+      measures/job, charging `max(actual_pages, 1)`), checked before each
+      dispatch and settled serially before the next campaign run starts. All W1
+      through W6 Slice A and Slice B ledgers and `w2-touch-log.jsonl` are
+      retained permanently without reset or deletion.

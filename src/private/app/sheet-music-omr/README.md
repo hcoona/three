@@ -246,8 +246,9 @@ uv run --package sheet-music-omr python -m sheet_music_omr.training --help
 ```
 
 Use `setup-w6-slice-a`, `smoke-w6-stack`, `package-w6-crops`,
-`package-w6-musescore-supplement`, `run-copista-per-system`, and
-`scan-public-report` as specified in the
+`package-w6-musescore-supplement`, `run-copista-per-system`,
+`setup-w6-slice-b`, `train-w6-gpu`, `eval-w6-traindev`, `run-w6-replay`,
+`run-w6-pilot-final`, and `scan-public-report` as specified in the
 [training, bulk-packaging and page-detector protocol](docs/training-protocol.md).
 
 Each worker call has one 300-second bound, which includes starting a fresh

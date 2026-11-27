@@ -1559,6 +1559,7 @@ def _build_discrepancy_log_rows(  # noqa: C901, PLR0913
     flags_by_split: Mapping[str, Mapping[str, set[tuple[str, int]]]],
     t01_join: JsonMap,
     req012_post_by_m: Mapping[tuple[str, int], Counter[str]],
+    candidate_excluded_categories: Sequence[str] | None = None,
 ) -> list[JsonDict]:
     rows: list[JsonDict] = []
     pm_rounds: Mapping[tuple[str, int, int], Mapping[str, Counter[str]]] = (
@@ -1596,9 +1597,14 @@ def _build_discrepancy_log_rows(  # noqa: C901, PLR0913
         c_sc = copista_scores[gid]
         f20 = flags_by_split[split_name]["at_20pct"]
 
+        cand_excl = (
+            sorted(COPISTA_EXCLUDED_CATEGORIES)
+            if candidate_excluded_categories is None
+            else sorted(candidate_excluded_categories)
+        )
         for reader_id, r_sc, cap_excl in (
             ("agent-build-01", d_sc, []),
-            (copista_reader_id, c_sc, sorted(COPISTA_EXCLUDED_CATEGORIES)),
+            (copista_reader_id, c_sc, cand_excl),
         ):
             is_cop = reader_id == copista_reader_id
             for m_idx, ms in enumerate(r_sc.measures):
