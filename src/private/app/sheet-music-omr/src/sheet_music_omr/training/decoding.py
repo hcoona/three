@@ -6,6 +6,7 @@ import codecs
 import math
 import re
 from dataclasses import dataclass, replace
+from importlib import import_module
 from inspect import signature
 from itertools import pairwise
 from typing import TYPE_CHECKING, Literal, TypeGuard, cast
@@ -18,7 +19,6 @@ from sheet_music_omr.assembly import (
     validate_system_prefix,
 )
 from sheet_music_omr.diagnostics import TextScoreError
-from sheet_music_omr.evaluation.stats import calibration_metrics
 from sheet_music_omr.model import SystemDocument
 from sheet_music_omr.parser import parse_document
 from sheet_music_omr.semantics import carry_out, validate_document
@@ -658,6 +658,9 @@ def fit_nested_calibrators(
     | None = None,
 ) -> NestedCalibration:
     """Fit on proper fold complements and report only held-out predictions."""
+    calibration_metrics = import_module(
+        "sheet_music_omr.evaluation.stats"
+    ).calibration_metrics
     outer = predictions_by_fold if predictions_by_fold is not None else {}
     if method not in {"platt", "temperature"} or (
         outer and outer.keys() != _FOLDS
