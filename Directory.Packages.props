@@ -50,7 +50,7 @@
     <PackageVersion Include="NuGet.Protocol" Version="8.0.0" />
     <PackageVersion Include="NuGet.Versioning" Version="8.0.0" Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'" />
     <PackageVersion Include="Svg" Version="3.4.8" />
-    <PackageVersion Include="Svg.Skia" Version="5.2.3" />
+    <PackageVersion Include="Svg.Skia" Version="5.2.4" />
     <PackageVersion Include="System.IO.Compression.ZipFile" Version="4.3.0" />
     <PackageVersion Include="System.CommandLine" Version="3.0.0" />
     <PackageVersion Include="System.IO.Hashing" Version="10.0.14" />
