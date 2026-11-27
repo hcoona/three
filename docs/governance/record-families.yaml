@@ -114,3 +114,13 @@ bindings:
       state: current,
       path: 'src/public/lib/CircularList/docs/models/*.cfg',
     }
+  - {
+      id: phi-failure-detector-models,
+      namespace: src/public/lib/PhiFailureDetector,
+      path: 'src/public/lib/PhiFailureDetector/docs/models/*.tla',
+    }
+  - {
+      id: phi-failure-detector-model-configs,
+      namespace: src/public/lib/PhiFailureDetector,
+      path: 'src/public/lib/PhiFailureDetector/docs/models/*.cfg',
+    }
