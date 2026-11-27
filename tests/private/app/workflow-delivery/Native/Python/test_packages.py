@@ -331,27 +331,48 @@ def test_native_identity_uses_maintained_backend_without_version_engine(
 NBGV = "nbgv-python"
 NBGV_VERSION = "2.1.0.dev1"
 NBGV_STEM = "nbgv_python-" + NBGV_VERSION
-NBGV_MODULES = ["__init__.py", "cli.py", "hatch_plugin.py"]
+NBGV_MODULES = [
+    "__init__.py",
+    "cli.py",
+    "command.py",
+    "config.py",
+    "errors.py",
+    "hatch_plugin.py",
+    "models.py",
+    "py.typed",
+    "runner.py",
+    "templating.py",
+    "versioning.py",
+    "writer.py",
+]
 NBGV_IDENTITY = (
     f"Metadata-Version: 2.4\nName: {NBGV}\nVersion: {NBGV_VERSION}\n"
 ).encode()
 NBGV_METADATA = NBGV_IDENTITY + b"Requires-Dist: packaging>=24.0\n"
 
 
-def nbgv_wheel(directory, metadata=NBGV_METADATA):
+def nbgv_wheel(directory, metadata=NBGV_METADATA, *, omit=None):
     """Wheel carrying the registered nbgv-python payload."""
     path = directory / (NBGV_STEM + "-py3-none-any.whl")
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr(NBGV_STEM + ".dist-info/METADATA", metadata)
         for module in NBGV_MODULES:
-            archive.writestr("nbgv_python/" + module, b"product")
+            if module != omit:
+                archive.writestr("nbgv_python/" + module, b"product")
     return path
 
 
-def nbgv_sdist(directory, metadata=NBGV_METADATA):
+def nbgv_sdist(directory, metadata=NBGV_METADATA, *, omit=None):
     """Sdist carrying the registered nbgv-python payload."""
-    files = {"PKG-INFO": metadata, "pyproject.toml": b"p", "README.md": b"r"}
+    files = {
+        "PKG-INFO": metadata,
+        "pyproject.toml": b"p",
+        "README.md": b"r",
+        "CHANGELOG.md": b"c",
+    }
     files.update({"src/nbgv_python/" + module: b"m" for module in NBGV_MODULES})
+    if omit is not None:
+        files.pop(omit)
     return write_sdist(directory, NBGV_STEM, files)
 
 
@@ -363,8 +384,8 @@ def test_nbgv_originals_require_their_payload_and_declared_dependency(
     metadata = NBGV_METADATA if requires is None else NBGV_IDENTITY
     if requires:
         metadata += b"Requires-Dist: " + requires.encode()
-    nbgv_wheel(tmp_path, metadata)
-    nbgv_sdist(tmp_path, metadata)
+    wheel_path = nbgv_wheel(tmp_path, metadata)
+    sdist_path = nbgv_sdist(tmp_path, metadata)
     if requires is None:
         outputs = packages.inspect_outputs(
             tmp_path, NBGV, NBGV_VERSION, packages.QUALITY
@@ -373,11 +394,36 @@ def test_nbgv_originals_require_their_payload_and_declared_dependency(
             "python-sdist",
             "python-wheel",
         ]
+        packages.inspect_archive(
+            wheel_path, NBGV, NBGV_VERSION, packages.QUALITY
+        )
+        packages.inspect_archive(
+            sdist_path, NBGV, NBGV_VERSION, packages.QUALITY
+        )
     else:
         with pytest.raises(ValueError, match="identity"):
             packages.inspect_outputs(
                 tmp_path, NBGV, NBGV_VERSION, packages.QUALITY
             )
+
+
+@pytest.mark.parametrize(
+    ("kind", "omitted"),
+    [
+        ("wheel", "py.typed"),
+        ("sdist", "src/nbgv_python/py.typed"),
+        ("sdist", "CHANGELOG.md"),
+    ],
+)
+def test_nbgv_archives_require_py_typed_and_changelog(tmp_path, kind, omitted):
+    """Nbgv archives require py.typed and CHANGELOG.md."""
+    path = (
+        nbgv_wheel(tmp_path, omit=omitted)
+        if kind == "wheel"
+        else nbgv_sdist(tmp_path, omit=omitted)
+    )
+    with pytest.raises(ValueError, match="registered product payload"):
+        packages.inspect_archive(path, NBGV, NBGV_VERSION, packages.QUALITY)
 
 
 def test_unregistered_product_is_unsupported(tmp_path):

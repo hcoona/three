@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Ship a PEP 561 `py.typed` marker so downstream type checkers consume inline type annotations.
+- Declare Python 3.14 and `Typing :: Typed` PyPI classifiers, and include `CHANGELOG.md` in verified source distributions.
+
+### Changed
+
+- Point `Homepage` and `Repository` metadata URLs to `src/public/lib/nbgv-python` and focus `README.md` installation guidance on external package consumers.
+
 ### Fixed
 
 - Preserve NBGV command diagnostics while exposing a Hatchling-compatible runtime error.

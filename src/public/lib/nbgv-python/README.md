@@ -8,9 +8,23 @@
 
 ## Installation
 
-- Synchronize this package's monorepo environment using `uv sync --package nbgv-python`. In a consuming project, add `nbgv-python` to the build requirements as shown below.
-- Ensure the `nbgv` CLI is available either as a global .NET tool (`dotnet tool install -g nbgv`) or via a local tool manifest.
-- Optionally set `NBGV_PYTHON_COMMAND` when the executable lives outside of `PATH` or requires additional arguments.
+- Install from PyPI for programmatic use or CLI forwarding:
+
+    ```bash
+    pip install nbgv-python
+    ```
+
+    Or with `uv`:
+
+    ```bash
+    uv add --dev nbgv-python
+    # or install the CLI wrapper globally:
+    uv tool install nbgv-python
+    ```
+
+- For Hatch-managed projects, declare `nbgv-python` in `[build-system].requires` alongside `hatchling` (see [Hatch Integration](#hatch-integration)).
+- Ensure the `nbgv` CLI is available either as a global .NET tool (`dotnet tool install -g nbgv`) or via a local `.config/dotnet-tools.json` manifest.
+- Optionally set `NBGV_PYTHON_COMMAND` when the executable lives outside of `PATH` or requires custom arguments.
 
 ## Hatch Integration
 
@@ -127,16 +141,6 @@ nbgv-python get-version --format json
 ```
 
 The wrapper surfaces the same exit codes as the underlying tool and prints diagnostic guidance with exit code 127 when discovery raises `NbgvNotFoundError`.
-
-## Releasing
-
-Workflow Delivery releases this package to TestPyPI (Buddy) and PyPI (Official) through the
-manually dispatched `.github/workflows/workflow-delivery-v3-python-release.yml` caller with
-`unit: nbgv-python`, as declared by `workflow-delivery.release-unit.yml`. Live PyPI publication runs
-only from `main`. The package version in both channels is the static `[project].version` in
-`pyproject.toml`, not an NBGV projection. Preparation builds the wheel and
-sdist at the selected revision, checks their native metadata, installs each original in a clean
-environment with the runtime dependencies locked by the root `uv.lock`, and runs `tests/`.
 
 ## Project Records
 

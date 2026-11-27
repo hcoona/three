@@ -10,8 +10,13 @@ public sealed class PythonPreparationNativeTests(TestContext context)
 {
     private const string Product = "tests/private/app/workflow-delivery/" +
         "fixtures/products/hcoona-release-smoke-python";
-    private static readonly string[] NativeInputs = [Product + "/version.json",
-        "src/private/app/workflow-delivery/Native/Python/packages.py"];
+    private static readonly string[] NativeInputs =
+    [
+        Product + "/version.json",
+        Product + "/pyproject.toml",
+        Product + "/CHANGELOG.md",
+        "src/private/app/workflow-delivery/Native/Python/packages.py",
+    ];
 
     [TestMethod]
     [TestCategory("PythonNativePreparation")]

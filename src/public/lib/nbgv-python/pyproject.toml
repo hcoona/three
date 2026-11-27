@@ -16,13 +16,16 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)",
   "Operating System :: OS Independent",
   "Framework :: Hatch",
+  "Typing :: Typed",
 ]
 
 [project.urls]
-Repository = "https://github.com/hcoona/three"
+Homepage = "https://github.com/hcoona/three/tree/main/src/public/lib/nbgv-python"
+Repository = "https://github.com/hcoona/three/tree/main/src/public/lib/nbgv-python"
 Issues = "https://github.com/hcoona/three/issues"
 Documentation = "https://github.com/hcoona/three/blob/main/src/public/lib/nbgv-python/README.md"
 Changelog = "https://github.com/hcoona/three/blob/main/src/public/lib/nbgv-python/CHANGELOG.md"
