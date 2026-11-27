@@ -12,7 +12,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Mapping
-from contextlib import contextmanager, redirect_stdout
+from contextlib import contextmanager, redirect_stdout, suppress
 from dataclasses import asdict, dataclass, replace
 from functools import cache
 from importlib import import_module
@@ -440,6 +440,12 @@ def _manifest_dimension(row: Mapping[str, object], key: str) -> int:
     return value
 
 
+def _drop_file_page_cache(fd: int) -> None:
+    if hasattr(os, "posix_fadvise") and hasattr(os, "POSIX_FADV_DONTNEED"):
+        with suppress(OSError):
+            os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+
+
 def _packaged_png(
     root: Path, relative: object, sha256: object, size: tuple[int, int]
 ) -> Path:
@@ -462,6 +468,7 @@ def _packaged_png(
                 msg = f"packaged PNG format or dimensions mismatch: {relative}"
                 raise ValueError(msg)
             png.verify()
+        _drop_file_page_cache(stream.fileno())
     return path
 
 
@@ -788,9 +795,140 @@ def _raster_position(
 def _neural_arm_b_classes() -> dict[str, Any]:  # noqa: C901
     torch = import_module("torch")
     nn = torch.nn
+    fn = torch.nn.functional
+
+    class _MonkeyRMSNorm(nn.Module):
+        def __init__(self, dim: int, eps: float = 1e-5) -> None:
+            super().__init__()
+            self.weight = nn.Parameter(torch.ones(dim))
+            self.eps = eps
+
+        def forward(self, x: Any) -> Any:  # noqa: ANN401
+            xf = x.float()
+            normed = xf * torch.rsqrt(
+                xf.pow(2).mean(-1, keepdim=True) + self.eps
+            )
+            return normed.type_as(x) * self.weight
+
+    class _MonkeyRotaryEmbedding(nn.Module):
+        def __init__(self, dim: int, theta: float = 10000.0) -> None:
+            super().__init__()
+            exponents = torch.arange(0, dim, 2, dtype=torch.float32) / dim
+            self.register_buffer(
+                "inv_freq", 1.0 / (theta**exponents), persistent=False
+            )
+
+        def forward(self, seqlen: int) -> Any:  # noqa: ANN401
+            inv = cast("Any", self.inv_freq)
+            seq = torch.arange(seqlen, device=inv.device, dtype=inv.dtype)
+            return torch.outer(seq, inv)
+
+    def _apply_vision_rope(tensor: Any, freqs: Any) -> Any:  # noqa: ANN401
+        orig_dtype = tensor.dtype
+        tf = tensor.float()
+        half = tf.shape[-1] // 2
+        rotated = torch.cat((-tf[..., half:], tf[..., :half]), dim=-1)
+        cos = freqs.cos().repeat(1, 2)[None, None, :, :].float()
+        sin = freqs.sin().repeat(1, 2)[None, None, :, :].float()
+        return (tf * cos + rotated * sin).to(orig_dtype)
+
+    class _MonkeySwiGLU(nn.Module):
+        def __init__(
+            self, dim: int, intermediate_size: int, *, bias: bool = False
+        ) -> None:
+            super().__init__()
+            self.fc1 = nn.Linear(dim, intermediate_size, bias=bias)
+            self.fc2 = nn.Linear(intermediate_size, dim, bias=bias)
+            self.fc3 = nn.Linear(dim, intermediate_size, bias=bias)
+
+        def forward(self, x: Any) -> Any:  # noqa: ANN401
+            return self.fc2(fn.silu(self.fc1(x)) * self.fc3(x))
+
+    class _MonkeyPatchifier(nn.Module):
+        def __init__(
+            self, dim: int, patch_size: int, merge_size: int, eps: float
+        ) -> None:
+            super().__init__()
+            self.merge_size = merge_size
+            self.proj = nn.Conv2d(
+                3, dim, kernel_size=patch_size, stride=patch_size
+            )
+            self.norm = _MonkeyRMSNorm(dim, eps=eps)
+
+        def forward(self, pixels: Any) -> tuple[Any, int, int]:  # noqa: ANN401
+            feat = self.proj(pixels)
+            batch, channels, gh, gw = feat.shape
+            ms = self.merge_size
+            merged = (
+                feat.view(batch, channels, gh // ms, ms, gw // ms, ms)
+                .permute(0, 2, 4, 3, 5, 1)
+                .contiguous()
+                .view(batch, gh * gw, channels)
+            )
+            return self.norm(merged), gh, gw
+
+    class _MonkeyViTPreprocessor(nn.Module):
+        def __init__(
+            self, dim: int, patch_size: int, merge_size: int, eps: float
+        ) -> None:
+            super().__init__()
+            self.patchifier = _MonkeyPatchifier(
+                dim, patch_size, merge_size, eps
+            )
+
+        def forward(self, pixels: Any) -> tuple[Any, int, int]:  # noqa: ANN401
+            return self.patchifier(pixels)
+
+    class _MonkeyAttention(nn.Module):
+        def __init__(
+            self, dim: int, num_heads: int, *, bias: bool = False
+        ) -> None:
+            super().__init__()
+            self.num_heads = num_heads
+            self.head_dim = dim // num_heads
+            self.qkv = nn.Linear(dim, dim * 3, bias=bias)
+            self.proj = nn.Linear(dim, dim, bias=bias)
+
+        def forward(self, x: Any, rope_freqs: Any) -> Any:  # noqa: ANN401
+            batch, seq_len, dim = x.shape
+            q, k, v = (
+                self.qkv(x)
+                .view(batch, seq_len, 3, self.num_heads, self.head_dim)
+                .permute(2, 0, 3, 1, 4)
+                .unbind(0)
+            )
+            q = _apply_vision_rope(q, rope_freqs)
+            k = _apply_vision_rope(k, rope_freqs)
+            attn = fn.scaled_dot_product_attention(q, k, v, dropout_p=0.0)
+            return self.proj(attn.transpose(1, 2).reshape(batch, seq_len, dim))
+
+    class _MonkeyBlock(nn.Module):
+        def __init__(
+            self,
+            dim: int,
+            num_heads: int,
+            intermediate_size: int,
+            eps: float,
+            *,
+            bias: bool = False,
+        ) -> None:
+            super().__init__()
+            self.attn = _MonkeyAttention(dim, num_heads, bias=bias)
+            self.norm1 = _MonkeyRMSNorm(dim, eps=eps)
+            self.mlp = _MonkeySwiGLU(dim, intermediate_size, bias=bias)
+            self.norm2 = _MonkeyRMSNorm(dim, eps=eps)
+
+        def forward(self, x: Any, rope_freqs: Any) -> Any:  # noqa: ANN401
+            x = x + self.attn(self.norm1(x), rope_freqs)
+            return x + self.mlp(self.norm2(x))
 
     class MonkeyOCRv2VisionTrunk(nn.Module):
-        """Patch-14 vision Transformer exposing an unmerged raster grid."""
+        """Patch-14 ViT trunk matching zenosai/MonkeyOCRv2-S@8efa4f856a.
+
+        Architecture and parameter layout follow upstream Apache-2.0 source
+        ``Yuliang-Liu/MonkeyOCRv2@da96afede9`` (vision encoder module)
+        with native PyTorch SDPA and ``trust_remote_code=False``.
+        """
 
         def __init__(  # noqa: PLR0913
             self,
@@ -801,30 +939,87 @@ def _neural_arm_b_classes() -> dict[str, Any]:  # noqa: C901
             intermediate_size: int = 1536,
             patch_size: int = 14,
             spatial_merge_size: int = 2,
+            rms_norm_eps: float = 1e-5,
+            use_bias: bool = False,
+            normalize_clip: bool = False,
+            weights_path: Path | None = None,
         ) -> None:
             super().__init__()
-            if spatial_merge_size != _SPATIAL_MERGE or patch_size <= 0:
-                msg = "MonkeyOCRv2 requires positive patches and a 2x2 merge"
+            head_dim = embed_dim // max(1, num_attention_heads)
+            if (
+                spatial_merge_size != _SPATIAL_MERGE
+                or patch_size <= 0
+                or embed_dim % num_attention_heads != 0
+                or head_dim % 4 != 0
+            ):
+                msg = (
+                    "MonkeyOCRv2 requires positive patches, 2x2 merge,"
+                    " and head_dim divisible by 4"
+                )
                 raise ValueError(msg)
             self.patch_size = patch_size
+            self.spatial_merge_size = spatial_merge_size
             self.embed_dim = embed_dim
-            self.patch_embed = nn.Conv2d(
-                3, embed_dim, kernel_size=patch_size, stride=patch_size
+            self.normalize_clip = normalize_clip or (weights_path is not None)
+            self.patch_embed = _MonkeyViTPreprocessor(
+                embed_dim, patch_size, spatial_merge_size, rms_norm_eps
             )
-            layer = nn.TransformerEncoderLayer(
-                embed_dim,
-                num_attention_heads,
-                intermediate_size,
-                batch_first=True,
-                norm_first=True,
-                activation="gelu",
-                dropout=0.0,
+            self.rotary_pos_emb = _MonkeyRotaryEmbedding(head_dim // 2)
+            self.blocks = nn.ModuleList(
+                [
+                    _MonkeyBlock(
+                        embed_dim,
+                        num_attention_heads,
+                        intermediate_size,
+                        rms_norm_eps,
+                        bias=use_bias,
+                    )
+                    for _ in range(num_hidden_layers)
+                ]
             )
-            self.trunk = nn.TransformerEncoder(
-                layer,
-                num_hidden_layers,
-                norm=nn.LayerNorm(embed_dim),
-                enable_nested_tensor=False,
+            self.post_trunk_norm = _MonkeyRMSNorm(embed_dim, eps=rms_norm_eps)
+            if weights_path is not None:
+                self.load_safetensors(weights_path)
+
+        def load_safetensors(self, weights_path: Path) -> None:
+            """Load pinned MonkeyOCRv2-S safetensors checkpoint strictly."""
+            st_torch = import_module("safetensors.torch")
+            target = (
+                weights_path / "model.safetensors"
+                if weights_path.is_dir()
+                else weights_path
+            )
+            state_dict = st_torch.load_file(str(target))
+            self.load_state_dict(state_dict, strict=True)
+
+        def _grid_rope(
+            self,
+            gh: int,
+            gw: int,
+            device: Any,  # noqa: ANN401
+        ) -> Any:  # noqa: ANN401
+            ms = self.spatial_merge_size
+            hp = (
+                torch.arange(gh, device=device)
+                .unsqueeze(1)
+                .expand(-1, gw)
+                .reshape(gh // ms, ms, gw // ms, ms)
+                .permute(0, 2, 1, 3)
+                .flatten()
+            )
+            wp = (
+                torch.arange(gw, device=device)
+                .unsqueeze(0)
+                .expand(gh, -1)
+                .reshape(gh // ms, ms, gw // ms, ms)
+                .permute(0, 2, 1, 3)
+                .flatten()
+            )
+            pos_ids = torch.stack((hp, wp), dim=-1)
+            table = self.rotary_pos_emb(max(gh, gw))
+            emb = table[pos_ids]
+            return torch.stack((emb[:, 0], emb[:, 1]), dim=2).reshape(
+                gh * gw, -1
             )
 
         def forward(self, pixels: Any) -> Any:  # noqa: ANN401
@@ -834,14 +1029,22 @@ def _neural_arm_b_classes() -> dict[str, Any]:  # noqa: C901
             ):
                 msg = "MonkeyOCRv2 image dimensions must cover whole 2x2 blocks"
                 raise ValueError(msg)
-            grid = self.patch_embed(pixels).permute(0, 2, 3, 1)
-            batch, height, width, dim = grid.shape
-            grid = grid + _raster_position(height, width, dim, grid)
-            blocked = grid.reshape(batch, height // 2, 2, width // 2, 2, dim)
-            blocked = blocked.swapaxes(2, 3).reshape(batch, height * width, dim)
-            return unpermute_spatial_merge_2x2(
-                self.trunk(blocked), height, width
-            )
+            x = pixels
+            if self.normalize_clip:
+                mean = x.new_tensor((0.48145466, 0.4578275, 0.40821073))[
+                    None, :, None, None
+                ]
+                std = x.new_tensor((0.26862954, 0.26130258, 0.27577711))[
+                    None, :, None, None
+                ]
+                x = (x - mean) / std
+            param_dtype = self.patch_embed.patchifier.proj.weight.dtype
+            hidden, gh, gw = self.patch_embed(x.to(dtype=param_dtype))
+            rope = self._grid_rope(gh, gw, hidden.device)
+            for block in self.blocks:
+                hidden = block(hidden, rope)
+            hidden = self.post_trunk_norm(hidden)
+            return unpermute_spatial_merge_2x2(hidden, gh, gw)
 
     class _CausalDecoder(nn.Module):
         def __init__(self, spec: ArmBDecoderConfig) -> None:
@@ -889,14 +1092,31 @@ def _neural_arm_b_classes() -> dict[str, Any]:  # noqa: C901
             *,
             decoder: ArmBDecoderConfig = ArmBDecoderConfig(),
             fuse_stride8: bool = True,
+            weights_path: Path | None = None,
+            normalize_imagenet: bool | None = None,
         ) -> None:
             super().__init__()
             timm = import_module("timm")
+            target_file = None
+            if weights_path is not None:
+                target_file = str(
+                    weights_path / "model.safetensors"
+                    if weights_path.is_dir()
+                    else weights_path
+                )
+            self.normalize_imagenet = (
+                target_file is not None
+                if normalize_imagenet is None
+                else normalize_imagenet
+            )
             self.encoder = timm.create_model(
                 "convnext_tiny",
-                pretrained=False,
+                pretrained=target_file is not None,
                 features_only=True,
                 out_indices=(1, 2),
+                pretrained_cfg_overlay=(
+                    {"file": target_file} if target_file is not None else None
+                ),
             )
             stride8, stride16 = self.encoder.feature_info.channels()
             self.project = nn.Conv2d(stride16, decoder.d_model, kernel_size=1)
@@ -907,13 +1127,23 @@ def _neural_arm_b_classes() -> dict[str, Any]:  # noqa: C901
             )
             self.decoder = _CausalDecoder(decoder)
 
-        def forward(self, pixels: Any, tokens: Any) -> Any:  # noqa: ANN401
-            """Return [batch, tokens, vocabulary] logits."""
-            stride8, stride16 = self.encoder(pixels)
+        def encode_visual_memory(self, pixels: Any) -> Any:  # noqa: ANN401
+            """Encode BCHW crop once into [batch, h, w, d_model] memory."""
+            x = pixels
+            if self.normalize_imagenet:
+                mean = x.new_tensor((0.485, 0.456, 0.406))[None, :, None, None]
+                std = x.new_tensor((0.229, 0.224, 0.225))[None, :, None, None]
+                x = (x - mean) / std
+            param_dtype = next(self.encoder.parameters()).dtype
+            stride8, stride16 = self.encoder(x.to(dtype=param_dtype))
             memory = self.project(stride16)
             if self.lateral is not None:
                 memory = memory + self.lateral(stride8)
-            return self.decoder(tokens, memory.permute(0, 2, 3, 1))
+            return memory.permute(0, 2, 3, 1)
+
+        def forward(self, pixels: Any, tokens: Any) -> Any:  # noqa: ANN401
+            """Return [batch, tokens, vocabulary] logits."""
+            return self.decoder(tokens, self.encode_visual_memory(pixels))
 
     class MonkeyOCRv2EncoderDecoder(nn.Module):
         """MonkeyOCRv2 raster memory projected to the Arm B decoder width."""
@@ -931,9 +1161,13 @@ def _neural_arm_b_classes() -> dict[str, Any]:  # noqa: C901
             self.project = nn.Linear(self.encoder.embed_dim, decoder.d_model)
             self.decoder = _CausalDecoder(decoder)
 
+        def encode_visual_memory(self, pixels: Any) -> Any:  # noqa: ANN401
+            """Encode BCHW crop once into [batch, h, w, d_model] memory."""
+            return self.project(self.encoder(pixels))
+
         def forward(self, pixels: Any, tokens: Any) -> Any:  # noqa: ANN401
             """Return [batch, tokens, vocabulary] logits."""
-            return self.decoder(tokens, self.project(self.encoder(pixels)))
+            return self.decoder(tokens, self.encode_visual_memory(pixels))
 
     return {
         cls.__name__: cls
@@ -999,6 +1233,124 @@ def load_arm_a_processor(local_metadata_dir: Path) -> Any:  # noqa: ANN401
         raise ValueError(msg)
     return tr.AutoProcessor.from_pretrained(
         local_metadata_dir, local_files_only=True, trust_remote_code=False
+    )
+
+
+def _strip_auto_map(raw: Mapping[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for k, v in raw.items():
+        if k == "auto_map":
+            continue
+        out[k] = _strip_auto_map(v) if isinstance(v, Mapping) else v
+    return out
+
+
+def load_pretrained_arm_a_and_processor(  # noqa: PLR0913
+    family: ArmAFamily,
+    weights_dir: Path,
+    *,
+    rank: int = 32,
+    include_vision: bool = False,
+    lora: bool = True,
+    dtype: Any = None,  # noqa: ANN401
+    gradient_checkpointing: bool = True,
+) -> tuple[Any, Any]:
+    """Load a pinned local VLM checkpoint and processor without remote code."""
+    tr = import_module("transformers")
+    torch = import_module("torch")
+    if not weights_dir.is_dir():
+        msg = f"missing staged Arm A weights directory: {weights_dir}"
+        raise ValueError(msg)
+    stem = _ARM_A_NAMES[family]
+    cfg_raw = _strip_auto_map(
+        json.loads((weights_dir / "config.json").read_text(encoding="utf-8"))
+    )
+    cfg = getattr(tr, stem + "Config").from_dict(cfg_raw)
+    target_dtype = torch.bfloat16 if dtype is None else dtype
+    load_kwargs: dict[str, Any] = {
+        "config": cfg,
+        "dtype": target_dtype,
+        "low_cpu_mem_usage": True,
+        "local_files_only": True,
+        "trust_remote_code": False,
+    }
+    if torch.cuda.is_available():
+        load_kwargs["device_map"] = {"": 0}
+    model = getattr(tr, stem + "ForConditionalGeneration").from_pretrained(
+        weights_dir,
+        **load_kwargs,
+    )
+    try:
+        processor = load_arm_a_processor(weights_dir)
+    except ValueError:
+        preproc_raw = _strip_auto_map(
+            json.loads(
+                (weights_dir / "preprocessor_config.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+        )
+        img_proc = getattr(tr, stem + "ImageProcessor").from_dict(preproc_raw)
+        tok = tr.AutoTokenizer.from_pretrained(
+            weights_dir, local_files_only=True, trust_remote_code=False
+        )
+        chat_tpl = None
+        for tpl_name in ("chat_template.jinja", "chat_template.json"):
+            tpl_p = weights_dir / tpl_name
+            if tpl_p.is_file():
+                raw_tpl = tpl_p.read_text(encoding="utf-8")
+                chat_tpl = (
+                    json.loads(raw_tpl).get("chat_template")
+                    if tpl_name.endswith(".json")
+                    else raw_tpl
+                )
+                break
+        processor = getattr(tr, stem + "Processor")(
+            image_processor=img_proc,
+            tokenizer=tok,
+            chat_template=chat_tpl,
+        )
+    if lora:
+        peft = import_module("peft")
+        if gradient_checkpointing and hasattr(
+            model, "gradient_checkpointing_enable"
+        ):
+            model.gradient_checkpointing_enable()
+        if hasattr(model, "enable_input_require_grads"):
+            model.enable_input_require_grads()
+        scope = (
+            r".*(?:language_model|visual)"
+            if include_vision
+            else r".*language_model"
+        )
+        adapter = peft.LoraConfig(
+            r=rank,
+            lora_alpha=2 * rank,
+            task_type=peft.TaskType.CAUSAL_LM,
+            target_modules=scope + r".*\.(?:q_proj|k_proj|v_proj|o_proj)",
+        )
+        model = peft.get_peft_model(model, adapter)
+    return model, processor
+
+
+def load_pretrained_page_detector(
+    family: DetectorFamily,
+    weights_dir: Path,
+) -> Any:  # noqa: ANN401
+    """Load a pinned COCO detector resized cleanly to 2-class system/measure."""
+    tr = import_module("transformers")
+    if not weights_dir.is_dir():
+        msg = f"missing staged detector weights directory: {weights_dir}"
+        raise ValueError(msg)
+    stem = _DETECTOR_NAMES[family]
+    return getattr(tr, stem + "ForObjectDetection").from_pretrained(
+        weights_dir,
+        num_labels=len(DETECTOR_CLASSES),
+        id2label=dict(enumerate(DETECTOR_CLASSES)),
+        label2id={name: i for i, name in enumerate(DETECTOR_CLASSES)},
+        ignore_mismatched_sizes=True,
+        local_files_only=True,
+        trust_remote_code=False,
     )
 
 
@@ -1190,12 +1542,19 @@ def _tiny_detector_backbone(family: DetectorFamily) -> dict[str, object]:
     return {**common, "model_type": "rt_detr_resnet", "layer_type": "basic"}
 
 
-def _backward(loss: Any, model: Any) -> None:  # noqa: ANN401
+def _backward(
+    loss: Any,  # noqa: ANN401
+    model: Any,  # noqa: ANN401
+    *,
+    strict_grad_check: bool = True,
+) -> None:
     torch = import_module("torch")
     if not torch.isfinite(loss).item():
-        msg = "non-finite neural CPU smoke loss"
+        msg = "non-finite training loss"
         raise RuntimeError(msg)
     loss.backward()
+    if not strict_grad_check:
+        return
     grads = [p.grad for p in model.parameters() if p.grad is not None]
     if not grads or not all(torch.isfinite(g).all().item() for g in grads):
         msg = "neural CPU smoke produced missing or non-finite gradients"
@@ -1207,15 +1566,33 @@ def _backward(loss: Any, model: Any) -> None:  # noqa: ANN401
 
 def _read_crop(row: Mapping[str, object], dataset_root: Path) -> Image:
     image = import_module("PIL.Image")
-    with image.open(dataset_root / str(row["crop_relpath"])) as crop:
-        return crop.convert("RGB")
+    target = dataset_root / str(row["crop_relpath"])
+    with target.open("rb") as stream:
+        with image.open(stream) as crop:
+            rgb = crop.convert("RGB")
+        _drop_file_page_cache(stream.fileno())
+    return rgb
 
 
-def _crop_tensor(crop: Image, resize_hw: tuple[int, int] | None = None) -> Any:  # noqa: ANN401
+def _crop_tensor(
+    crop: Image,
+    resize_hw: tuple[int, int] | None = None,
+    *,
+    pad_to_multiple: int | None = None,
+) -> Any:  # noqa: ANN401
     torch = import_module("torch")
     if resize_hw is not None:
         height, width = resize_hw
         crop = crop.resize((width, height))
+    if pad_to_multiple is not None and pad_to_multiple > 1:
+        w, h = crop.size
+        pw = (pad_to_multiple - (w % pad_to_multiple)) % pad_to_multiple
+        ph = (pad_to_multiple - (h % pad_to_multiple)) % pad_to_multiple
+        if pw or ph:
+            image_ops = import_module("PIL.ImageOps")
+            crop = image_ops.expand(
+                crop, border=(0, 0, pw, ph), fill=(255, 255, 255)
+            )
     return torch.from_numpy(np.array(crop)).permute(2, 0, 1).float().div(255)
 
 
@@ -1305,6 +1682,226 @@ def _disabled_ids(
     )
 
 
+_MEASURE_HEADER_RE = re.compile(r"^m (\d+)\b")
+_IGNORE_LABEL = -100
+_BODY_FORBIDDEN_BY_CAT: dict[str, tuple[str, ...]] = {
+    "clef": ("<cle",),
+    "cross_staff": ("xs",),
+    "grace": ("gr",),
+    "hairpin": ("<cresc", "<dim(", "<hair", "rel=hair"),
+    "ottava": ("<8v", "<15m", "rel=ott"),
+}
+_ANY_FORBIDDEN_BY_CAT: dict[str, tuple[str, ...]] = {
+    "hairpin": ('"kind":"hair',),
+    "ottava": ('"kind":"ott',),
+}
+_BPE_AUTOMATON_CACHE: dict[
+    tuple[int, frozenset[str]],
+    tuple[
+        tuple[str, ...],
+        tuple[str, ...],
+        dict[str, tuple[int, ...]],
+        tuple[str, ...],
+        tuple[str, ...],
+    ],
+] = {}
+
+
+def masked_measure_token_flags(
+    pieces: Sequence[str],
+    masked_measure_ordinals: Iterable[int],
+) -> list[bool]:
+    """Flag assistant token steps belonging to open_reading_masks measures."""
+    masked = frozenset(masked_measure_ordinals)
+    if not masked:
+        return [False] * len(pieces)
+    text = "".join(pieces)
+    line_masked: list[bool] = []
+    active = False
+    for line in text.splitlines(keepends=True):
+        if m := _MEASURE_HEADER_RE.match(line):
+            active = int(m[1]) in masked
+        line_masked.extend([active] * len(line))
+    flags: list[bool] = []
+    pos = 0
+    for piece in pieces:
+        end = pos + len(piece)
+        span = line_masked[pos:end]
+        flags.append(bool(span and any(span)))
+        pos = end
+    return flags
+
+
+def _build_substring_prefix_map(
+    pieces: Sequence[str],
+    patterns: tuple[str, ...],
+) -> tuple[tuple[str, ...], dict[str, tuple[int, ...]]]:
+    if not patterns:
+        return (), {}
+    prefixes = sorted(
+        {pat[:k] for pat in patterns for k in range(len(pat))},
+        key=len,
+        reverse=True,
+    )
+    mapping: dict[str, list[int]] = {pfx: [] for pfx in prefixes}
+    for tid, piece in enumerate(pieces):
+        if not piece:
+            continue
+        for pfx in prefixes:
+            cand = pfx + piece
+            if any(pat in cand for pat in patterns):
+                mapping[pfx].append(tid)
+    return tuple(prefixes), {k: tuple(v) for k, v in mapping.items() if v}
+
+
+def _bpe_disabled_automaton(
+    tokenizer: Any,  # noqa: ANN401
+    disabled: frozenset[str],
+) -> tuple[
+    tuple[str, ...],
+    tuple[str, ...],
+    dict[str, tuple[int, ...]],
+    tuple[str, ...],
+    tuple[str, ...],
+]:
+    key = (id(tokenizer), disabled)
+    if key in _BPE_AUTOMATON_CACHE:
+        return _BPE_AUTOMATON_CACHE[key]
+    pieces = tuple(
+        str(tokenizer.decode([tid], clean_up_tokenization_spaces=False))
+        for tid in range(len(tokenizer))
+    )
+    body_pats = tuple(
+        pat
+        for cat in sorted(disabled)
+        for pat in _BODY_FORBIDDEN_BY_CAT.get(cat, ())
+    )
+    any_pats = tuple(
+        pat
+        for cat in sorted(disabled)
+        for pat in _ANY_FORBIDDEN_BY_CAT.get(cat, ())
+    )
+    all_pfxs, all_map = _build_substring_prefix_map(
+        pieces, (*body_pats, *any_pats)
+    )
+    res = (pieces, all_pfxs, all_map, body_pats, any_pats)
+    _BPE_AUTOMATON_CACHE[key] = res
+    return res
+
+
+def _matching_suffix_ids(
+    tail: str,
+    prefixes_desc: tuple[str, ...],
+    table: Mapping[str, tuple[int, ...]],
+) -> set[int]:
+    out: set[int] = set()
+    for pfx in prefixes_desc:
+        if tail.endswith(pfx) and pfx in table:
+            out.update(table[pfx])
+    return out
+
+
+def _in_unescaped_quotes(line: str) -> bool:
+    in_quotes = False
+    escaped = False
+    for ch in line:
+        if escaped:
+            escaped = False
+        elif ch == "\\":
+            escaped = True
+        elif ch == '"':
+            in_quotes = not in_quotes
+    return in_quotes
+
+
+def _completes_disabled_in_context(
+    acc: str,
+    piece: str,
+    *,
+    acc_has_body: bool,
+    body_pats: tuple[str, ...],
+    any_pats: tuple[str, ...],
+) -> bool:
+    tail = acc[-32:]
+    window = tail + piece
+    cut = len(tail)
+    for pat in any_pats:
+        start = max(0, cut - len(pat) + 1)
+        if window.find(pat, start) != -1:
+            return True
+    if not body_pats:
+        return False
+    full = acc + piece
+    base = len(acc) - cut
+    for pat in body_pats:
+        pos = max(0, cut - len(pat) + 1)
+        while (idx := window.find(pat, pos)) != -1:
+            abs_idx = base + idx
+            before = full[:abs_idx]
+            in_body_here = acc_has_body or ("\nm " in before)
+            in_quotes_here = _in_unescaped_quotes(before.rsplit("\n", 1)[-1])
+            if in_body_here and not in_quotes_here:
+                return True
+            pos = idx + 1
+    return False
+
+
+def apply_position_scoped_bpe_verovio_mask(
+    logits: Any,  # noqa: ANN401
+    assistant_ids: Sequence[int],
+    labels_shifted: Any,  # noqa: ANN401
+    mask: Mapping[str, bool],
+    tokenizer: Any,  # noqa: ANN401
+) -> Any:  # noqa: ANN401
+    """Mask disabled-category BPE continuations across arbitrary splits."""
+    disabled = frozenset(_disabled_categories(mask))
+    if not disabled:
+        return logits
+    pieces, all_pfxs, all_map, body_pats, any_pats = _bpe_disabled_automaton(
+        tokenizer, disabled
+    )
+    is_np = isinstance(logits, np.ndarray)
+    out = logits.copy() if is_np else logits.clone()
+    torch_mod = None if is_np else import_module("torch")
+    limit = out.shape[-1]
+    acc = ""
+    in_body = False
+    for step in range(out.shape[1]):
+        if step > 0 and step - 1 < len(assistant_ids):
+            acc += pieces[assistant_ids[step - 1]]
+            if not in_body and "\nm " in acc:
+                in_body = True
+        cands = _matching_suffix_ids(acc[-32:], all_pfxs, all_map)
+        if cands:
+            tgt = (
+                int(labels_shifted[0, step])
+                if is_np
+                else int(labels_shifted[0, step].item())
+            )
+            valid = sorted(
+                t
+                for t in cands
+                if 0 <= t < limit
+                and t != tgt
+                and _completes_disabled_in_context(
+                    acc,
+                    pieces[t],
+                    acc_has_body=in_body,
+                    body_pats=body_pats,
+                    any_pats=any_pats,
+                )
+            )
+            if valid:
+                if is_np:
+                    out[:, step, valid] = -np.inf
+                elif torch_mod is not None:
+                    idx = torch_mod.tensor(
+                        valid, dtype=torch_mod.long, device=out.device
+                    )
+                    out[:, step, idx] = -float("inf")
+    return out
+
+
 def _mask_category_targets(
     labels: Any,  # noqa: ANN401
     disabled: Sequence[int],
@@ -1324,15 +1921,21 @@ def run_arm_a_manifest_train_step(  # noqa: PLR0913
     *,
     exclusive_token_ids: Mapping[str, Iterable[int]] | None = None,
     shared_token_ids: Iterable[int] = (),
+    allow_position_bpe_mask: bool = False,
+    masked_measure_ordinals: Iterable[int] = (),
+    backward: bool = True,
+    grad_scale: float = 1.0,
+    strict_grad_check: bool = True,
 ) -> dict[str, object]:
     """Backpropagate assistant-only loss, skipping unsafe BPE supervision."""
     mask = cast("Mapping[str, bool]", row["category_supervision_mask"])
     assignments = {
         cat: tuple(ids) for cat, ids in (exclusive_token_ids or {}).items()
     }
-    if not verovio_row_eligible_for_bpe_loss(
+    eligible_static = verovio_row_eligible_for_bpe_loss(
         mask, assignments, shared_token_ids=shared_token_ids
-    ):
+    )
+    if not eligible_static and not allow_position_bpe_mask:
         return {"loss": None, "skipped": True, "reason": "unisolated_bpe"}
 
     torch = import_module("torch")
@@ -1360,6 +1963,20 @@ def run_arm_a_manifest_train_step(  # noqa: PLR0913
         raise ValueError(msg)
     labels = ids.masked_fill(batch["attention_mask"] == 0, -100)
     labels[:, :prefix_len] = -100
+    asst_ids = [int(t) for t in ids[0, prefix_len:].tolist()]
+    tok = getattr(processor, "tokenizer", None)
+    if masked_ordinals := tuple(masked_measure_ordinals):
+        pieces = [
+            str(tok.decode([t], clean_up_tokenization_spaces=False))
+            if tok is not None
+            else chr(t)
+            for t in asst_ids
+        ]
+        for idx, is_masked in enumerate(
+            masked_measure_token_flags(pieces, masked_ordinals)
+        ):
+            if is_masked:
+                labels[:, prefix_len + idx] = -100
     model.train()
     if disabled := _disabled_ids(mask, assignments):
         labels = _mask_category_targets(labels, disabled)
@@ -1370,11 +1987,31 @@ def run_arm_a_manifest_train_step(  # noqa: PLR0913
         loss = torch.nn.functional.cross_entropy(
             masked.transpose(1, 2), labels[:, 1:]
         )
+    elif not eligible_static and allow_position_bpe_mask and tok is not None:
+        logits = model(**batch, use_cache=False, return_dict=True).logits
+        start_step = prefix_len - 1
+        sub_logits = apply_position_scoped_bpe_verovio_mask(
+            logits[:, start_step:-1],
+            asst_ids,
+            labels[:, prefix_len:],
+            mask,
+            tok,
+        )
+        loss = torch.nn.functional.cross_entropy(
+            sub_logits.transpose(1, 2), labels[:, prefix_len:]
+        )
     else:
         loss = model(
             **batch, labels=labels, use_cache=False, return_dict=True
         ).loss
-    _backward(loss, model)
+    if backward:
+        if not (labels != _IGNORE_LABEL).any().item():
+            return {
+                "loss": None,
+                "skipped": True,
+                "reason": "all_tokens_masked",
+            }
+        _backward(loss * grad_scale, model, strict_grad_check=strict_grad_check)
     return {
         "loss": float(loss.detach()),
         "skipped": False,
@@ -1383,19 +2020,28 @@ def run_arm_a_manifest_train_step(  # noqa: PLR0913
     }
 
 
-def run_arm_b_manifest_train_step(
+def run_arm_b_manifest_train_step(  # noqa: PLR0913
     model: Any,  # noqa: ANN401
     tokenizer: TextScore2DomainTokenizer,
     row: Mapping[str, object],
     dataset_root: Path,
     *,
     resize_hw: tuple[int, int] | None = None,
+    pad_to_multiple: int | None = None,
+    masked_measure_ordinals: Iterable[int] = (),
+    backward: bool = True,
+    grad_scale: float = 1.0,
+    strict_grad_check: bool = True,
 ) -> dict[str, object]:
     """Backpropagate masked causal loss from one packaged RGB crop."""
     torch = import_module("torch")
     device = next(model.parameters()).device
     pixels = (
-        _crop_tensor(_read_crop(row, dataset_root), resize_hw)
+        _crop_tensor(
+            _read_crop(row, dataset_root),
+            resize_hw,
+            pad_to_multiple=pad_to_multiple,
+        )
         .unsqueeze(0)
         .to(device)
     )
@@ -1403,22 +2049,44 @@ def run_arm_b_manifest_train_step(
     sequence = torch.tensor([ids], device=device)
     labels = sequence[:, 1:].clone()
     labels[:, : prefix_len - 1] = -100
+    if masked_ordinals := tuple(masked_measure_ordinals):
+        target_ids = ids[prefix_len:-1]
+        pieces = list(tokenizer.pieces(target_ids))
+        for idx, is_masked in enumerate(
+            masked_measure_token_flags(pieces, masked_ordinals)
+        ):
+            if is_masked:
+                labels[:, prefix_len - 1 + idx] = -100
     model.train()
     logits = model(pixels, sequence[:, :-1])
     mask = cast("Mapping[str, bool]", row["category_supervision_mask"])
     masked = apply_category_supervision_logit_mask(logits, mask)
     disabled = _disabled_ids(mask, CATEGORY_EXCLUSIVE_TOKEN_IDS)
-    if disabled:
+    check_disabled_grad = bool(disabled and backward and strict_grad_check)
+    if check_disabled_grad:
         logits.retain_grad()
+    if disabled:
         labels = _mask_category_targets(labels, disabled)
     loss = torch.nn.functional.cross_entropy(masked.transpose(1, 2), labels)
-    _backward(loss, model)
-    if disabled and torch.count_nonzero(logits.grad[..., disabled]).item():
-        msg = "disabled Arm B category logits received a nonzero gradient"
-        raise RuntimeError(msg)
+    if backward:
+        if not (labels != _IGNORE_LABEL).any().item():
+            return {
+                "loss": None,
+                "skipped": True,
+                "reason": "all_tokens_masked",
+            }
+        _backward(loss * grad_scale, model, strict_grad_check=strict_grad_check)
+        if (
+            check_disabled_grad
+            and torch.count_nonzero(logits.grad[..., disabled]).item()
+        ):
+            msg = "disabled Arm B category logits received a nonzero gradient"
+            raise RuntimeError(msg)
     return {
         "loss": float(loss.detach()),
-        "disabled_category_gradients_zero": True if disabled else None,
+        "disabled_category_gradients_zero": (
+            True if check_disabled_grad else None
+        ),
     }
 
 

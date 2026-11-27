@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sheet_music_omr.evaluation.alignment import (
     atomic_write_text,
@@ -44,6 +45,13 @@ from sheet_music_omr.training.packaging import (
     run_musescore_supplement_and_package,
     validate_w6_packaging_minima,
     validate_w6_supplement_minima,
+)
+from sheet_music_omr.training.slice_b_ledgers import setup_w6_slice_b
+from sheet_music_omr.training.slice_b_runner import (
+    run_w6_gpu_train,
+    run_w6_pilot_final_test,
+    run_w6_traindev_eval,
+    run_w6_traindev_replay_and_preregister,
 )
 
 if TYPE_CHECKING:
@@ -173,7 +181,123 @@ def build_parser() -> argparse.ArgumentParser:
     )
     scan.add_argument("--report", type=Path, required=True)
     scan.add_argument("--mapping-json", type=Path, required=True)
+
+    _add_slice_b_subparsers(sub)
     return parser
+
+
+def _positive_float(raw: str) -> float:
+    try:
+        value = float(raw)
+        if value > 0 and math.isfinite(value):
+            return value
+    except ValueError:
+        pass
+    msg = f"expected a finite positive float, got {raw!r}"
+    raise argparse.ArgumentTypeError(msg)
+
+
+def _add_slice_b_subparsers(  # noqa: PLR0915
+    sub: Any,  # noqa: ANN401
+) -> None:
+    sb_setup = sub.add_parser(
+        "setup-w6-slice-b",
+        help="Verify cross-host ledgers and provision CUDA wheels + weights.",
+    )
+    sb_setup.add_argument("--downloads", type=Path, required=True)
+    sb_setup.add_argument("--package-run-dir", type=Path, default=None)
+    sb_setup.add_argument("--traindev-root", type=Path, default=None)
+    sb_setup.add_argument("--models", nargs="*", default=None)
+
+    sb_train = sub.add_parser(
+        "train-w6-gpu",
+        help="Run metered Slice B GPU training on w6-crops-20k or 50k.",
+    )
+    sb_train.add_argument("--downloads", type=Path, required=True)
+    sb_train.add_argument("--run-dir", type=Path, required=True)
+    sb_train.add_argument(
+        "--arm", choices=("arm-a", "arm-b", "detector"), required=True
+    )
+    sb_train.add_argument("--model-repo", type=str, required=True)
+    sb_train.add_argument("--dataset-dir", type=Path, required=True)
+    sb_train.add_argument("--package-run-dir", type=Path, default=None)
+    sb_train.add_argument(
+        "--fuse-stride8",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    sb_train.add_argument(
+        "--longest-edge", type=int, choices=(1024, 1280), default=1024
+    )
+    sb_train.add_argument("--include-vision-lora", action="store_true")
+    sb_train.add_argument("--lora-rank", type=_positive_int, default=32)
+    sb_train.add_argument("--max-steps", type=_positive_int, default=1500)
+    sb_train.add_argument("--grad-accum", type=_positive_int, default=8)
+    sb_train.add_argument("--lr", type=_positive_float, default=None)
+    sb_train.add_argument("--eval-every", type=_positive_int, default=None)
+    sb_train.add_argument("--seed", type=int, default=42)
+    sb_train.add_argument("--resume-from", type=Path, default=None)
+
+    sb_eval = sub.add_parser(
+        "eval-w6-traindev",
+        help="Run offline unshare -rn E0 or 4-fold evaluation on TRAIN_DEV.",
+    )
+    sb_eval.add_argument("--downloads", type=Path, required=True)
+    sb_eval.add_argument("--run-dir", type=Path, required=True)
+    sb_eval.add_argument("--traindev-root", type=Path, required=True)
+    sb_eval.add_argument(
+        "--mode",
+        choices=("e0", "detector-cv", "synthetic-cv"),
+        required=True,
+    )
+    sb_eval.add_argument("--arm", choices=("arm-a", "arm-b"), default="arm-a")
+    sb_eval.add_argument("--model-repo", type=str, default=None)
+    sb_eval.add_argument("--recognizer-checkpoint", type=Path, default=None)
+    sb_eval.add_argument("--detector-mode", type=str, default="comb_dp_blind")
+    sb_eval.add_argument("--detector-checkpoint", type=Path, default=None)
+    sb_eval.add_argument("--max-new-tokens", type=_positive_int, default=1536)
+    sb_eval.add_argument("--num-beams", type=_positive_int, default=3)
+
+    sb_rep = sub.add_parser(
+        "run-w6-replay",
+        help="Run 4-fold matched-step TRAIN_DEV replay and pre-register TEST.",
+    )
+    sb_rep.add_argument("--downloads", type=Path, required=True)
+    sb_rep.add_argument("--run-dir", type=Path, required=True)
+    sb_rep.add_argument("--traindev-root", type=Path, required=True)
+    sb_rep.add_argument("--synth-dataset-dir", type=Path, required=True)
+    sb_rep.add_argument("--arm", choices=("arm-a", "arm-b"), required=True)
+    sb_rep.add_argument("--model-repo", type=str, default=None)
+    sb_rep.add_argument(
+        "--selected-recognizer-checkpoint", type=Path, required=True
+    )
+    sb_rep.add_argument(
+        "--selected-detector-mode", type=str, default="comb_dp_blind"
+    )
+    sb_rep.add_argument(
+        "--selected-detector-checkpoint", type=Path, default=None
+    )
+    sb_rep.add_argument("--e0-run-ids", nargs="+", required=True)
+    sb_rep.add_argument("--synthetic-selection-run-id", type=str, required=True)
+    sb_rep.add_argument("--matched-steps", type=_positive_int, default=160)
+    sb_rep.add_argument("--grad-accum", type=_positive_int, default=4)
+    sb_rep.add_argument("--lr", type=_positive_float, default=5e-5)
+    sb_rep.add_argument("--max-new-tokens", type=_positive_int, default=1536)
+    sb_rep.add_argument("--num-beams", type=_positive_int, default=3)
+    sb_rep.add_argument("--seed", type=int, default=42)
+
+    sb_final = sub.add_parser(
+        "run-w6-pilot-final",
+        help="Execute the single pre-registered W6-pilot-final TEST pass.",
+    )
+    sb_final.add_argument("--downloads", type=Path, required=True)
+    sb_final.add_argument("--run-dir", type=Path, required=True)
+    sb_final.add_argument("--preregistration", type=Path, required=True)
+    sb_final.add_argument("--w2-s0-run-dir", type=Path, required=True)
+    sb_final.add_argument("--immich-dir", type=Path, required=True)
+    sb_final.add_argument("--desk-study-dir", type=Path, required=True)
+    sb_final.add_argument("--req012-manifest", type=Path, required=True)
+    sb_final.add_argument("--gold-cache-dir", type=Path, default=None)
 
 
 def _prepare_packaging_context(
@@ -333,8 +457,94 @@ def _run_command(args: argparse.Namespace) -> dict[str, object]:
         text = args.report.read_text(encoding="utf-8")
         scan_public_report(text, args.mapping_json)
         return {"status": "clean", "bytes_scanned": len(text.encode("utf-8"))}
+    if args.command in {
+        "setup-w6-slice-b",
+        "train-w6-gpu",
+        "eval-w6-traindev",
+        "run-w6-replay",
+        "run-w6-pilot-final",
+    }:
+        return _run_slice_b_command(args)
     msg = f"unknown W6 command: {args.command}"
     raise StopConditionError(msg)
+
+
+def _run_slice_b_command(args: argparse.Namespace) -> dict[str, object]:
+    if args.command == "setup-w6-slice-b":
+        return setup_w6_slice_b(
+            args.downloads,
+            package_run_dir=args.package_run_dir,
+            traindev_root=args.traindev_root,
+            model_repos=args.models if args.models else None,
+            formal=True,
+        )
+    if args.command == "train-w6-gpu":
+        return run_w6_gpu_train(
+            args.downloads,
+            args.run_dir,
+            arm=args.arm,
+            model_repo=args.model_repo,
+            dataset_dir=args.dataset_dir,
+            package_run_dir=args.package_run_dir,
+            fuse_stride8=args.fuse_stride8,
+            longest_edge=args.longest_edge,
+            include_vision_lora=args.include_vision_lora,
+            lora_rank=args.lora_rank,
+            max_steps=args.max_steps,
+            grad_accum=args.grad_accum,
+            lr=args.lr,
+            eval_every=args.eval_every,
+            seed=args.seed,
+            resume_from=args.resume_from,
+            formal=True,
+        )
+    if args.command == "eval-w6-traindev":
+        return run_w6_traindev_eval(
+            args.downloads,
+            args.run_dir,
+            traindev_root=args.traindev_root,
+            mode=args.mode,
+            arm=args.arm,
+            model_repo=args.model_repo,
+            recognizer_checkpoint=args.recognizer_checkpoint,
+            detector_mode=args.detector_mode,
+            detector_checkpoint=args.detector_checkpoint,
+            max_new_tokens=args.max_new_tokens,
+            num_beams=args.num_beams,
+            formal=True,
+        )
+    if args.command == "run-w6-replay":
+        return run_w6_traindev_replay_and_preregister(
+            args.downloads,
+            args.run_dir,
+            traindev_root=args.traindev_root,
+            synth_dataset_dir=args.synth_dataset_dir,
+            arm=args.arm,
+            model_repo=args.model_repo,
+            selected_recognizer_checkpoint=args.selected_recognizer_checkpoint,
+            selected_detector_mode=args.selected_detector_mode,
+            selected_detector_checkpoint=args.selected_detector_checkpoint,
+            e0_run_ids=args.e0_run_ids,
+            synthetic_selection_run_id=args.synthetic_selection_run_id,
+            matched_steps=args.matched_steps,
+            grad_accum=args.grad_accum,
+            lr=args.lr,
+            max_new_tokens=args.max_new_tokens,
+            num_beams=args.num_beams,
+            seed=args.seed,
+            formal=True,
+        )
+    return run_w6_pilot_final_test(
+        args.downloads,
+        args.run_dir,
+        preregistration_path=args.preregistration,
+        w2_s0_run_dir=args.w2_s0_run_dir,
+        immich_dir=args.immich_dir,
+        desk_study_dir=args.desk_study_dir,
+        req012_manifest_path=args.req012_manifest,
+        gold_cache_dir=args.gold_cache_dir,
+        formal=True,
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
