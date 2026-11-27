@@ -319,3 +319,57 @@ def test_detects_public_library_floor_and_cpm_isolation_violations(
         "WebHdfs.Extensions.FileProviders.csproj (Unisolated.Dep)" in err
         for err in errors
     )
+
+
+def test_ignores_installed_bundle_trees_while_enforcing_vendored_and_owned_ruby(
+    tmp_path: Path,
+) -> None:
+    """Installed .bundle and vendor/bundle gems are skipped."""
+    ws = _seed_workspace(tmp_path)
+    ruby_root = ws / "src/public/lib/asciidoctor-latexmath"
+    for installed_dir in (
+        ruby_root / ".bundle/ruby/4.0.0/gems/json_schemer-2.4.0",
+        ruby_root / "vendor/bundle/ruby/4.0.0/gems/json_schemer-2.4.0",
+    ):
+        installed_dir.mkdir(parents=True, exist_ok=True)
+        (installed_dir / "Gemfile").write_text(
+            'source "https://rubygems.org"\n',
+            encoding="utf-8",
+        )
+        (installed_dir / "json_schemer.gemspec").write_text(
+            "Gem::Specification.new do |s|\n"
+            '  s.name = "json_schemer"\n'
+            '  s.version = "2.4.0"\n'
+            '  s.summary = "third-party"\n'
+            '  s.authors = ["third-party"]\n'
+            "  s.files = []\n"
+            '  s.required_ruby_version = ">= 3.1"\n'
+            '  s.add_runtime_dependency "asciidoctor", "~> 2.0.26"\n'
+            "end\n",
+            encoding="utf-8",
+        )
+    assert (
+        CHECKER.check_repository(ws, ruby_inspector=_active_inspector()) == []
+    )
+
+    # Owned .bundle/config and non-bundle vendored source remain enforced.
+    (ruby_root / ".bundle/config").write_text(
+        '---\nBUNDLE_COOLDOWN: "1"\n',
+        encoding="utf-8",
+    )
+    vendored_tool = ruby_root / "vendor/internal-tool"
+    vendored_tool.mkdir(parents=True, exist_ok=True)
+    (vendored_tool / "Gemfile").write_text(
+        'source "https://rubygems.org"\n',
+        encoding="utf-8",
+    )
+    errors = CHECKER.check_repository(ws, ruby_inspector=_active_inspector())
+    assert any(
+        "asciidoctor-latexmath/.bundle/config: BUNDLE_COOLDOWN" in err
+        for err in errors
+    )
+    assert any(
+        "vendor/internal-tool/.bundle/config: missing active Bundler config"
+        in err
+        for err in errors
+    )

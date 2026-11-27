@@ -16,7 +16,7 @@ import subprocess
 import sys
 import tempfile
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -115,14 +115,34 @@ def _rel(root: Path, path: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
+IGNORED_DIRS = frozenset(
+    {".git", ".venv", ".bundle", "node_modules", "bin", "obj", "artifacts"},
+)
+
+
+def _walk_owned_files(base: Path) -> Iterator[Path]:
+    if not base.is_dir():
+        return
+    for current, dirs, files in os.walk(base):
+        current_path = Path(current)
+        is_vendor = current_path.name == "vendor"
+        dirs[:] = sorted(
+            d
+            for d in dirs
+            if d not in IGNORED_DIRS and not (is_vendor and d == "bundle")
+        )
+        for filename in sorted(files):
+            yield current_path / filename
+
+
 def _discover_files(root: Path, name: str) -> list[Path]:
-    ignored = {".git", ".venv", "node_modules", "bin", "obj", "artifacts"}
-    results: list[Path] = []
-    for current, dirs, files in os.walk(root):
-        dirs[:] = sorted(d for d in dirs if d not in ignored)
-        if name in files:
-            results.append(Path(current) / name)
-    return sorted(results)
+    return sorted(path for path in _walk_owned_files(root) if path.name == name)
+
+
+def _discover_suffix(base: Path, suffix: str) -> list[Path]:
+    return sorted(
+        path for path in _walk_owned_files(base) if path.name.endswith(suffix)
+    )
 
 
 def _check_mise(root: Path, errors: list[str]) -> None:
@@ -423,7 +443,7 @@ def _check_public_python_floors(root: Path, errors: list[str]) -> None:
     public_lib = root / "src/public/lib"
     if not public_lib.is_dir():
         return
-    for path in sorted(public_lib.rglob("pyproject.toml")):
+    for path in _discover_files(public_lib, "pyproject.toml"):
         rel = _rel(root, path)
         project = tomllib.loads(path.read_text(encoding="utf-8")).get("project")
         if not isinstance(project, dict):
@@ -682,11 +702,9 @@ def _check_ruby(
 ) -> None:
     lockfiles = _collect_active_ruby_lockfiles(root, errors)
     public_lib = root / "src/public/lib"
-    gemspecs = (
-        {_rel(root, p): str(p) for p in sorted(public_lib.rglob("*.gemspec"))}
-        if public_lib.is_dir()
-        else {}
-    )
+    gemspecs = {
+        _rel(root, p): str(p) for p in _discover_suffix(public_lib, ".gemspec")
+    }
     if not lockfiles and not gemspecs:
         return
     inspected = inspector(lockfiles, gemspecs)
@@ -872,7 +890,7 @@ def _check_public_nuget_floors(root: Path, errors: list[str]) -> None:
     if not public_lib.is_dir():
         return
     isolated_lower = _read_public_cpm_floors(root, errors)
-    for csproj in sorted(public_lib.rglob("*.csproj")):
+    for csproj in _discover_suffix(public_lib, ".csproj"):
         root_elem = ET.parse(csproj).getroot()  # noqa: S314
         if not _is_packable_csproj(root_elem):
             continue
