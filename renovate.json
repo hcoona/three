@@ -311,21 +311,6 @@
       "automerge": true
     },
     {
-      "description": "Keep public npm library runtime and peer ranges from chasing latest lower bounds.",
-      "matchManagers": ["npm"],
-      "matchFileNames": ["src/public/lib/**/package.json"],
-      "matchDepTypes": ["dependencies", "optionalDependencies", "peerDependencies"],
-      "rangeStrategy": "update-lockfile"
-    },
-    {
-      "description": "Group public npm library runtime and peer compatibility updates.",
-      "matchManagers": ["npm"],
-      "matchFileNames": ["src/public/lib/**/package.json"],
-      "matchDepTypes": ["dependencies", "optionalDependencies", "peerDependencies"],
-      "groupName": "Public npm Library Runtime Compatibility",
-      "automerge": true
-    },
-    {
       "description": "Group Hexo development tooling separately from public runtime ranges.",
       "matchManagers": ["npm"],
       "matchFileNames": ["src/public/lib/hexo-renderer-asciidoc/package.json"],
@@ -373,13 +358,6 @@
         "fileFilters": ["uv.lock"],
         "executionMode": "branch"
       }
-    },
-    {
-      "description": "Public Python library runtime minimums should not chase latest lower bounds; lock-file maintenance refreshes resolved versions.",
-      "matchManagers": ["pep621"],
-      "matchFileNames": ["src/public/lib/**/pyproject.toml"],
-      "matchDepTypes": ["project.dependencies", "project.optional-dependencies", "requires-python"],
-      "enabled": false
     },
     {
       "description": "Group publishable Python build backend minimum updates separately.",
@@ -454,27 +432,6 @@
       "automerge": true
     },
     {
-      "description": "Keep public Ruby runtime compatibility ranges from chasing latest lower bounds.",
-      "matchManagers": ["bundler"],
-      "matchFileNames": [
-        "src/public/lib/asciidoctor-latexmath/Gemfile",
-        "src/public/lib/asciidoctor-latexmath/asciidoctor-latexmath.gemspec"
-      ],
-      "matchPackageNames": ["asciidoctor"],
-      "rangeStrategy": "update-lockfile"
-    },
-    {
-      "description": "Group public Ruby runtime compatibility updates without changing compatibility ranges.",
-      "matchManagers": ["bundler"],
-      "matchFileNames": [
-        "src/public/lib/asciidoctor-latexmath/Gemfile",
-        "src/public/lib/asciidoctor-latexmath/asciidoctor-latexmath.gemspec"
-      ],
-      "matchPackageNames": ["asciidoctor"],
-      "groupName": "Ruby Runtime Dependencies",
-      "automerge": true
-    },
-    {
       "description": "Group Ruby development and test tooling updates.",
       "matchManagers": ["bundler"],
       "matchPackageNames": ["rake", "rspec", "standard"],
@@ -530,43 +487,6 @@
         "/^xunit\\.v3($|\\.)/"
       ],
       "groupName": ".NET Test Stack"
-    },
-    {
-      "description": "Group public NuGet library dependency minimum updates.",
-      "matchManagers": ["nuget"],
-      "matchFileNames": ["src/public/lib/Directory.Packages.props"],
-      "groupName": "Public NuGet Library Minimum Dependency Versions",
-      "automerge": true
-    },
-    {
-      "description": "Title public NuGet library lock-file maintenance distinctly.",
-      "matchManagers": ["nuget"],
-      "matchFileNames": ["src/public/lib/Directory.Packages.props"],
-      "matchUpdateTypes": ["lockFileMaintenance"],
-      "commitMessageTopic": "Public NuGet Library Minimum Dependency Versions Lock Files"
-    },
-    {
-      "description": "Group root NuGet versions used as public library minimums.",
-      "matchManagers": ["nuget"],
-      "matchFileNames": ["Directory.Packages.props"],
-      "matchPackageNames": ["System.Net.Http", "System.Text.Json"],
-      "groupName": "Public NuGet Library Minimum Dependency Versions",
-      "automerge": true
-    },
-    {
-      "description": "Update public transitive lower bounds with SourceLink when restore requires it.",
-      "matchManagers": ["nuget"],
-      "matchFileNames": ["src/public/lib/Directory.Packages.props"],
-      "matchPackageNames": ["System.Memory", "System.Runtime.CompilerServices.Unsafe"],
-      "rangeStrategy": "bump",
-      "groupName": "MSBuild and Repository Build Tooling",
-      "postUpgradeTasks": {
-        "commands": [
-          "pwsh -NoLogo -NoProfile -NonInteractive -File eng/scripts/Update-RenovateGlobalJsonArtifacts.ps1"
-        ],
-        "fileFilters": ["mise.lock", "global.json", "**/packages.lock.json"],
-        "executionMode": "branch"
-      }
     },
     {
       "description": "Group MSBuild and repository build tooling.",
@@ -715,19 +635,15 @@
     },
     {
       "description": "Automerge all Renovate dependency PRs through GitHub after required checks pass.",
-      "matchManagers": ["bundler", "github-actions", "mise", "npm", "nuget", "pep621", "pep723"],
+      "matchManagers": ["bundler", "devcontainer", "github-actions", "mise", "npm", "nuget", "pep621", "pep723"],
       "automerge": true
-    },
-    {
-      "description": "Review Dev Container dependency updates manually.",
-      "matchManagers": ["devcontainer"],
-      "automerge": false
     },
     {
       "description": "Allow Dev Container PRs when MCR and GHCR do not supply Docker release timestamps.",
       "matchManagers": ["devcontainer"],
       "matchDatasources": ["docker"],
-      "minimumReleaseAgeBehaviour": "timestamp-optional"
+      "minimumReleaseAgeBehaviour": "timestamp-optional",
+      "automerge": true
     },
     {
       "description": "Review Node major updates manually. They can change the planned CI matrix, which Workflow Delivery derives from declared engines and eng/node-release-schedule.json.",
@@ -751,12 +667,12 @@
       "enabled": false
     },
     {
-      "description": "Refresh the pinned nodejs/Release schedule monthly and review it manually because it can change the planned CI matrix.",
+      "description": "Refresh the pinned nodejs/Release schedule monthly and automerge after required checks qualify the matrix.",
       "matchManagers": ["custom.regex"],
       "matchDepNames": ["nodejs/Release"],
       "schedule": ["* 0-3 1 * *"],
       "minimumReleaseAge": null,
-      "automerge": false,
+      "automerge": true,
       "postUpgradeTasks": {
         "commands": ["uv run --no-project python eng/scripts/update_node_release_schedule.py"],
         "fileFilters": ["eng/node-release-schedule.json"],
@@ -779,6 +695,61 @@
       "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true,
       "automerge": false
+    },
+    {
+      "description": "Preserve historical Bundler compatibility fixture lockfiles.",
+      "matchManagers": ["bundler"],
+      "matchFileNames": ["tests/private/app/workflow-delivery/Native/Ruby/contexts/**"],
+      "enabled": false
+    },
+    {
+      "description": "Preserve intentional minimum runtime, optional, peer, and engine compatibility floors in public npm libraries; lock-file maintenance refreshes resolved versions.",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["src/public/lib/**/package.json", "!src/public/lib/**/examples/**"],
+      "matchDepTypes": ["dependencies", "optionalDependencies", "peerDependencies", "engines"],
+      "enabled": false
+    },
+    {
+      "description": "Public Python library runtime minimums should not chase latest lower bounds; lock-file maintenance refreshes resolved versions.",
+      "matchManagers": ["pep621"],
+      "matchFileNames": ["src/public/lib/**/pyproject.toml"],
+      "matchDepTypes": ["project.dependencies", "project.optional-dependencies", "requires-python"],
+      "enabled": false
+    },
+    {
+      "description": "Preserve intentional minimum runtime and Ruby compatibility floors in public Ruby libraries; lock-file maintenance refreshes resolved versions.",
+      "matchManagers": ["bundler"],
+      "matchFileNames": ["src/public/lib/**"],
+      "matchUpdateTypes": ["!lockFileMaintenance"],
+      "enabled": false
+    },
+    {
+      "description": "Allow development and test gem updates in public Ruby libraries.",
+      "matchManagers": ["bundler"],
+      "matchFileNames": ["src/public/lib/**"],
+      "matchDepTypes": ["development", "test"],
+      "enabled": true
+    },
+    {
+      "description": "Preserve intentional runtime and Ruby compatibility floors in public Ruby gemspecs if gemspec extraction is enabled.",
+      "matchManagers": ["gemspec"],
+      "matchFileNames": ["src/public/lib/**"],
+      "matchDepTypes": ["runtime", "required_ruby_version"],
+      "enabled": false
+    },
+    {
+      "description": "Preserve intentional minimum dependency floors in public NuGet libraries; lock-file maintenance refreshes resolved versions.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["src/public/lib/Directory.Packages.props"],
+      "matchDepTypes": ["nuget"],
+      "enabled": false
+    },
+    {
+      "description": "Title public NuGet library lock-file maintenance distinctly.",
+      "matchManagers": ["nuget"],
+      "matchFileNames": ["src/public/lib/Directory.Packages.props"],
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "commitMessageTopic": "Public NuGet Library Minimum Dependency Versions Lock Files"
     }
   ]
 }
