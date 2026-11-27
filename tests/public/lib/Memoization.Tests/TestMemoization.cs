@@ -23,7 +23,8 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace Memoization.Tests
 {
     [TestClass]
-    public class TestMemoization
+    [DoNotParallelize]
+    public sealed class TestMemoization
     {
         static TestMemoization()
         {
@@ -31,7 +32,7 @@ namespace Memoization.Tests
         }
 
         [TestMethod]
-        public void Test1()
+        public void RecursiveFibonacci_WithoutMemoization_RecomputesSubtrees()
         {
             var counter = 0;
             var fib = YCombinator<int>.Fix(f => x =>
@@ -41,16 +42,16 @@ namespace Memoization.Tests
             });
 
             counter = 0;
-            fib(7);
+            Assert.AreEqual(21, fib(7));
             Assert.AreEqual(41, counter);
 
             counter = 0;
-            fib(7);
+            Assert.AreEqual(21, fib(7));
             Assert.AreEqual(41, counter);
         }
 
         [TestMethod]
-        public void Test2()
+        public void RecursiveFibonacci_WithDefaultCacheMemoization_CachesTopLevelResult()
         {
             var counter = 0;
             var fib = YCombinator<int>.Fix(f => x =>
@@ -58,26 +59,26 @@ namespace Memoization.Tests
                 counter++;
                 return x < 2 ? 1 : f(x - 1) + f(x - 2);
             });
-            var m_fib = Memoization.Create(fib);
+            var memoizedFib = Memoization.Create(fib);
 
             counter = 0;
-            m_fib(7);
+            Assert.AreEqual(21, memoizedFib(7));
             Assert.AreEqual(41, counter);
 
             counter = 0;
-            m_fib(7);
+            Assert.AreEqual(21, memoizedFib(7));
             Assert.AreEqual(0, counter);
         }
 
         internal static class YCombinator<T>
         {
-            private static Func<Func<Func<T, T>, Func<T, T>>, Func<T, T>> fix =
+            private static Func<Func<Func<T, T>, Func<T, T>>, Func<T, T>> s_fix =
                 f => ((Recursive)(g =>
                     f(x => g(g)(x))))((Recursive)(g => f(x => g(g)(x))));
 
             private delegate Func<T, T> Recursive(Recursive recursive);
 
-            public static Func<Func<Func<T, T>, Func<T, T>>, Func<T, T>> Fix { get => fix; set => fix = value; }
+            public static Func<Func<Func<T, T>, Func<T, T>>, Func<T, T>> Fix { get => s_fix; set => s_fix = value; }
         }
     }
 }

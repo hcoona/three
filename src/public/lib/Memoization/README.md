@@ -34,11 +34,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Memoization;
 
 // Set up the default cache (typically done once at application startup)
-Memoization.DefaultCache = new MemoryCache(new MemoryCacheOptions
-{
-    SizeLimit = 1000,
-    CompactionPercentage = 0.25
-});
+Memoization.DefaultCache = new MemoryCache(new MemoryCacheOptions());
 ```
 
 ### 2. Create Memoized Functions
@@ -103,7 +99,9 @@ var result = memoized(3.14, 2.71, 1000);
 
 ### Cache Key Generation
 
-The library uses tuples of input parameters as cache keys. For best performance:
+Cache keys include the input parameters and are scoped to the delegate returned
+by each `Create` call. Different memoized delegates can share an `IMemoryCache`
+without sharing their cached results. For best performance:
 
 - Ensure parameter types implement efficient `GetHashCode()` and `Equals()` methods
 - Avoid using mutable objects as parameters
@@ -111,20 +109,25 @@ The library uses tuples of input parameters as cache keys. For best performance:
 
 ### Memory Management
 
+When `SizeLimit` is configured on `MemoryCacheOptions`, `MemoryCache` requires every entry to declare a `Size`:
+
 ```csharp
-// Configure cache with size limits to prevent memory issues
-var options = new MemoryCacheOptions
+// Configure cache with size limits to prevent unbounded growth
+var cache = new MemoryCache(new MemoryCacheOptions
 {
     SizeLimit = 1000,
     CompactionPercentage = 0.20
-};
+});
 
-var cache = new MemoryCache(options);
+var memoized = Memoization.Create(
+    expensiveFunction,
+    cache,
+    new MemoryCacheEntryOptions { Size = 1 });
 ```
 
 ### Exception Handling
 
-Failed function calls do not pollute the cache:
+Failed function calls do not pollute the cache or disrupt `TrackLinkedCacheEntries` expiration propagation on outer cache entries:
 
 ```csharp
 var memoized = Memoization.Create<int, string>(x =>
@@ -179,10 +182,10 @@ var cachedQuery = Memoization.Create<int, User>(userId =>
 ### Computational Results
 
 ```csharp
-// Cache complex mathematical computations
-var cachedCompute = Memoization.Create<double[], double>(weights =>
+// Cache mathematical computations over value-equatable parameters
+var cachedCompute = Memoization.Create<double, double, int, double>((x, y, degree) =>
 {
-    return weights.Select((w, i) => w * Math.Pow(i, 2)).Sum();
+    return Enumerable.Range(1, degree).Sum(i => Math.Pow(x, i) + Math.Pow(y, i));
 });
 ```
 

@@ -23,6 +23,4 @@
 
 using System.Diagnostics.CodeAnalysis;
 
-[assembly: SuppressMessage("StyleCop.CSharp.MaintainabilityRules", "SA1119:Statement should not use unnecessary parenthesis", Justification = "<挂起>", Scope = "member", Target = "~M:Memoization.Memoization.Create``2(System.Func{``0,``1},Microsoft.Extensions.Caching.Memory.IMemoryCache,Microsoft.Extensions.Caching.Memory.MemoryCacheEntryOptions)~System.Func{``0,``1}")]
-[assembly: SuppressMessage("StyleCop.CSharp.MaintainabilityRules", "SA1119:Statement should not use unnecessary parenthesis", Justification = "<挂起>", Scope = "member", Target = "~M:Memoization.Memoization.Create``2(System.Func{``0,``1},Microsoft.Extensions.Caching.Memory.IMemoryCache)~System.Func{``0,``1}")]
 [assembly: SuppressMessage("StyleCop.CSharp.DocumentationRules", "SA1636:File header copyright text should match", Justification = "Reviewed")]
