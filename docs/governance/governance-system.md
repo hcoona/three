@@ -8,6 +8,18 @@ created, changed, deferred, enforced, and retired.
 It does not define product behavior. Product requirements, architecture, security,
 research, and release records retain authority within their own scopes.
 
+A maintainer taking over without the original conversation needs three answers:
+what applies and who may change it; what this actor may do next; and what the
+available evidence supports. Work comes full circle when a successor can find
+the decision, act or escalate, and interpret the outcome. Governance comes full
+circle when a rule that blocks legitimate work, permits the wrong action or
+outlives its consumer can itself be corrected or retired.
+
+**Removal test:** Without this mechanism, which real consumer would allow or
+block the wrong action, believe an unsupported claim, or lose the basis for a
+decision? If a cheaper route serves the same decision, keep the capability,
+not the file. This is a design question, not a PR checklist.
+
 ## Trust Base
 
 The governance system relies on:
@@ -147,9 +159,10 @@ already deterministic and well exercised.
 A normal policy or control change uses a reviewable pull request and the review procedure
 applicable to the affected scope.
 
-The accepted target-branch versions of `AGENTS.md`, this policy, the record-system
-policy, and the applicable review Skill govern review of a proposed
-governance amendment. Proposed versions are review subjects before merge. They may impose
+The versions of `AGENTS.md`, this policy, the record-system policy, and the
+applicable review Skill accepted on `main` govern a proposed amendment. A
+stacked parent is a comparison or integration base, not accepted authority.
+Proposed versions are review subjects before merge. They may impose
 additional validation on the proposal, but they cannot waive or weaken an accepted
 obligation during their own review. If an accepted authority needed for review is
 unavailable or ambiguous, stop and request repository-owner disposition.

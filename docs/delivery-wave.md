@@ -1,20 +1,8 @@
 # Current Delivery Wave
 
-This record is the sole positive work-authorization authority for feature or
-capability advancements, architectural or public-contract changes, and
-non-routine external or risk-bearing operations under the
-[repository record policy](governance/record-system.md#work-authorization-and-concurrency);
-contract-preserving routine maintenance and owner-governed release operations
-defined there execute without a Wave entry. Only `main`'s accepted version
-grants Wave authorization. Within an authorized workstream, routine local
-editing, builds, lint, tests, scratch harnesses, read-only inspection,
-independent review, and ordinary Issue/PR/CI validation (including failed-job
-reruns) are permitted by default with no attempt quota, and implementation may
-evolve concurrently with its owning records so long as each merge into `main`
-stays self-consistent. Entries declare bounded scope and outcome, exclusions,
-and any explicitly permitted external or risk-bearing effects. Merge changes
-authorization; deletion ends a grant. Git and the proposing PR retain the reason
-and history.
+Current bounded work grants accepted on `main`. See
+[work authorization](governance/record-system.md#work-authorization-and-concurrency)
+for when a grant is needed and how it ends.
 
 ## Authorized Advancements
 

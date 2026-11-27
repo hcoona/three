@@ -6,12 +6,10 @@ than product scope.
 
 ## Before Starting
 
-Read target-branch [`governance-system.md`](docs/governance/governance-system.md),
-[`record-system.md`](docs/governance/record-system.md), and
-[`docs/delivery-wave.md`](docs/delivery-wave.md). Confirm whether the change
-uses the Wave-free ordinary PR path or requires an accepted Delivery Wave entry
-under [work authorization](docs/governance/record-system.md#work-authorization-and-concurrency),
-and apply [shared engineering principles](docs/engineering/engineering-principles.md)
+Start with [work authorization](docs/governance/record-system.md#work-authorization-and-concurrency)
+as accepted on `main` and check the [Wave](docs/delivery-wave.md) for bounds
+applicable to your workstream. Use the ordinary route when standing authority
+covers the action. Apply [shared engineering principles](docs/engineering/engineering-principles.md)
 with the owning project's records for design, security, and test decisions.
 
 ## Local Checks
