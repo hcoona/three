@@ -123,3 +123,15 @@ bindings:
       state: current,
       path: tests/private/app/workflow-delivery/Native/Ruby/README.md,
     }
+  - {
+      id: workflow-delivery-design-models,
+      namespace: src/private/app/workflow-delivery,
+      state: current,
+      path: 'src/private/app/workflow-delivery/docs/design/models/*.tla',
+    }
+  - {
+      id: workflow-delivery-design-model-configs,
+      namespace: src/private/app/workflow-delivery,
+      state: current,
+      path: 'src/private/app/workflow-delivery/docs/design/models/*.cfg',
+    }

@@ -22,6 +22,11 @@ retain their actual evidence level; merge does not expand their environments or
 turn them into operation permission. Unsupported necessary native capabilities
 remain unsupported. Internal historical formats need no compatibility reader.
 
+For a nonnormative specification independent of the implementation, see
+[business decisions and finite TLA+ models](design/business-semantics.md).
+It covers the five CI and Release journeys and separates checked decisions
+from assumptions about native systems.
+
 ## Native Integration Evidence
 
 Read a record when changing or reviewing the integration it supports, or when a
