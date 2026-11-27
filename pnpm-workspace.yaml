@@ -23,6 +23,8 @@ catalog:
 
 linkWorkspacePackages: true
 
+minimumReleaseAge: 4320
+
 # @upstash/context7-mcp@4.7.3 combines @opentelemetry/*@^2.11.0 (peer @opentelemetry/api <1.10.0)
 # with @opentelemetry/api@^1.9.1; keep @opentelemetry/api on 1.9.x until its OpenTelemetry 3.x bump.
 overrides:

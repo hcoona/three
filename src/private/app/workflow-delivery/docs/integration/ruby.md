@@ -80,7 +80,7 @@ preset and recipe.
 An explicitly quality-adopted bundle-only RSpec carrier can own a native suite
 without a synthetic gemspec or publishable unit. The Ruby helper carrier consumes
 its specs, native helpers, static wire descriptions and concrete gem fixtures.
-Native Bundler locks own all test dependencies and both Bundler contexts. C# tests
+Native Bundler locks own all test dependencies and all three Bundler contexts. C# tests
 its producer/reader/result side plus actual integration; pytest does not drive Ruby
 helper behavior. Selected Latexmath checks alone require its external TeX tools.
 
@@ -126,8 +126,13 @@ structure. Retain the smoke gem's separate adopted distribution checks. The nati
 change with their corresponding reader, executor and caller.
 
 Public Bundler source exposes native evaluated Gemfile inputs and dependency
-closure, but the two committed locks select different versions and public method
-shapes. Native Path source and active local Git override identity also differ.
+closure, but the committed locks select different qualified versions (`2.4.20`,
+`2.7.2`, and `4.0.20`) and public method shapes. Bundler `4.0.20` (bundled with
+the locked Ruby `4.0` runtime and used by the active repository bundle roots
+with `.bundle/config` `BUNDLE_COOLDOWN: "3"`) retains the `2.7` `Definition` and
+two-argument `SpecSet#for(dependencies, platforms)` interface, while nested
+`2.7.2` and `2.4.20` context fixtures preserve compatibility across pre-4.0
+lockfiles. Native Path source and active local Git override identity also differ.
 Qualify the exact activated interfaces, frozen input invariance, nested Gemfiles,
 direct/transitive local sources and removed/missing owners when changing the dependent integration. Do not call private APIs, copy native
 selection logic or replace a missing answer with installed-name/path inference.

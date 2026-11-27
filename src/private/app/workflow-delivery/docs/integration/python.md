@@ -34,8 +34,9 @@ Never decode IDs or infer owners from URLs, prefixes or caches.
 
 The request uses the default index with sources enabled. A manifest in a native
 context or above the workspace root may configure `tool.uv` only with
-`workspace` and `sources`; any other setting, or a project `uv.toml` at or
-above the workspace root, is unsupported rather than ignored. The child process
+`workspace`, `sources` and string `exclude-newer`; any other setting, or a
+project `uv.toml` at or above the workspace root, is unsupported rather than
+ignored. The child process
 is credential-free, with owned HOME/XDG/cache/temp roots, an explicit
 interpreter, downloads disabled, `UV_NO_SYSTEM_CONFIG` set, no inherited
 UV/PIP/index/credential settings and an owned absent `UV_PROJECT_ENVIRONMENT`.
@@ -222,7 +223,7 @@ the same typed Python caller executes explicit full scope. No retired wrapper is
 fallback or compatibility path.
 
 Ruby helper behavior is owned by the quality-adopted bundle-only RSpec carrier.
-Its Gemfile and locks declare native test dependencies, including both actual
+Its Gemfile and locks declare native test dependencies, including all three actual
 Bundler contexts; no caller installation roster or Python test host remains.
 Managed contract tests and real C# native integration retain counterpart coverage.
 The existing one Python and one Ruby Linux managed preparation scenarios execute

@@ -24,8 +24,14 @@ def _guard_uv_configuration(document: dict) -> dict:
     if not isinstance(uv, dict):
         message = "The UV configuration must be a table."
         raise UnsupportedContextError(message)
-    if set(uv) - {"workspace", "sources"}:
+    if set(uv) - {"workspace", "sources", "exclude-newer"}:
         message = "The requested UV settings need native adaptation."
+        raise UnsupportedContextError(message)
+    if "exclude-newer" in uv and (
+        not isinstance(uv["exclude-newer"], str)
+        or not uv["exclude-newer"].strip()
+    ):
+        message = "The UV exclude-newer setting must be a non-empty string."
         raise UnsupportedContextError(message)
     return uv
 

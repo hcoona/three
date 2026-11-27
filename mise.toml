@@ -6,6 +6,7 @@ monorepo_root = true
 experimental = true
 # global.json is the .NET SDK authority; mise reads it as an idiomatic version file.
 idiomatic_version_file_enable_tools = ["dotnet"]
+minimum_release_age = "3d"
 
 [monorepo]
 config_roots = [
