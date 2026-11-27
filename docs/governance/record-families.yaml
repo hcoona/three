@@ -134,3 +134,13 @@ bindings:
       namespace: src/public/lib/nbgv-python,
       path: 'src/public/lib/nbgv-python/docs/design/models/*.cfg',
     }
+  - {
+      id: webhdfs-fileprovider-design-models,
+      namespace: src/public/lib/WebHdfs.Extensions.FileProviders,
+      path: 'src/public/lib/WebHdfs.Extensions.FileProviders/docs/design/models/*.tla',
+    }
+  - {
+      id: webhdfs-fileprovider-design-model-configs,
+      namespace: src/public/lib/WebHdfs.Extensions.FileProviders,
+      path: 'src/public/lib/WebHdfs.Extensions.FileProviders/docs/design/models/*.cfg',
+    }
