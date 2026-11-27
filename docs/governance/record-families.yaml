@@ -4,134 +4,101 @@
 schema_version: 4
 bindings:
   # Repository interfaces, governance, and shared engineering
-  - { id: public-landing, namespace: repository, state: current, path: README.md }
-  - { id: security-disclosure-policy, namespace: repository, state: current, path: SECURITY.md }
-  - { id: agent-interface, namespace: repository, state: current, path: AGENTS.md }
-  - { id: contributor-interface, namespace: repository, state: current, path: CONTRIBUTING.md }
-  - { id: pull-request-interface, namespace: repository, state: current, path: .github/pull_request_template.md }
-  - { id: human-record-portal, namespace: repository, state: current, path: docs/README.md }
-  - { id: delivery-wave, namespace: repository, state: current, path: docs/delivery-wave.md }
-  - { id: retired-projects-index, namespace: repository, state: current, path: docs/retired-projects.md }
-  - { id: governance-records, namespace: repository, state: current, path: 'docs/governance/*.md' }
-  - { id: record-family-catalog, namespace: repository, state: current, path: docs/governance/record-families.yaml }
-  - { id: reference-license, namespace: repository, state: current, path: docs/governance/reference-license.txt }
-  - { id: structured-record-schemas, namespace: repository, state: current, path: 'schemas/governance/*.schema.json' }
-  - { id: shared-engineering, namespace: repository, state: current, path: 'docs/engineering/*.md' }
-  - { id: governance-skills, namespace: repository, state: current, path: '.github/skills/**/*.md' }
-  - { id: apm-local-skills, namespace: '.apm/skills/*', state: current, path: '.apm/skills/*/**/*.md' }
+  - { id: public-landing, namespace: repository, path: README.md }
+  - { id: security-disclosure-policy, namespace: repository, path: SECURITY.md }
+  - { id: agent-interface, namespace: repository, path: AGENTS.md }
+  - { id: contributor-interface, namespace: repository, path: CONTRIBUTING.md }
+  - { id: pull-request-interface, namespace: repository, path: .github/pull_request_template.md }
+  - { id: human-record-portal, namespace: repository, path: docs/README.md }
+  - { id: delivery-wave, namespace: repository, path: docs/delivery-wave.md }
+  - { id: retired-projects-index, namespace: repository, path: docs/retired-projects.md }
+  - { id: governance-records, namespace: repository, path: 'docs/governance/*.md' }
+  - { id: record-family-catalog, namespace: repository, path: docs/governance/record-families.yaml }
+  - { id: reference-license, namespace: repository, path: docs/governance/reference-license.txt }
+  - { id: structured-record-schemas, namespace: repository, path: 'schemas/governance/*.schema.json' }
+  - { id: shared-engineering, namespace: repository, path: 'docs/engineering/*.md' }
+  - { id: governance-skills, namespace: repository, path: '.github/skills/**/*.md' }
+  - { id: apm-local-skills, namespace: '.apm/skills/*', path: '.apm/skills/*/**/*.md' }
 
   # Standard monorepo project, lab, and sample namespaces
-  - { id: public-project-interfaces, namespace: 'src/public/*/*', state: current, path: 'src/public/*/*/*.md' }
-  - {
-      id: public-project-notices,
-      namespace: 'src/public/*/*',
-      state: current,
-      path: 'src/public/*/*/THIRD-PARTY-NOTICES.txt',
-    }
-  - { id: public-project-records, namespace: 'src/public/*/*', state: current, path: 'src/public/*/*/docs/**/*.md' }
-  - {
-      id: public-project-schemas,
-      namespace: 'src/public/*/*',
-      state: current,
-      path: 'src/public/*/*/schemas/*.schema.json',
-    }
-  - { id: private-project-interfaces, namespace: 'src/private/*/*', state: current, path: 'src/private/*/*/*.md' }
-  - {
-      id: private-project-notices,
-      namespace: 'src/private/*/*',
-      state: current,
-      path: 'src/private/*/*/THIRD-PARTY-NOTICES.txt',
-    }
-  - { id: private-project-records, namespace: 'src/private/*/*', state: current, path: 'src/private/*/*/docs/**/*.md' }
-  - {
-      id: private-project-schemas,
-      namespace: 'src/private/*/*',
-      state: current,
-      path: 'src/private/*/*/schemas/*.schema.json',
-    }
-  - { id: lab-interfaces, namespace: 'src/lab/*', state: current, path: 'src/lab/*/*.md' }
-  - { id: lab-records, namespace: 'src/lab/*', state: current, path: 'src/lab/*/docs/**/*.md' }
-  - { id: sample-interfaces, namespace: 'src/sample/*', state: current, path: 'src/sample/*/*.md' }
-  - { id: sample-records, namespace: 'src/sample/*', state: current, path: 'src/sample/*/docs/**/*.md' }
+  - { id: public-project-interfaces, namespace: 'src/public/*/*', path: 'src/public/*/*/*.md' }
+  - { id: public-project-notices, namespace: 'src/public/*/*', path: 'src/public/*/*/THIRD-PARTY-NOTICES.txt' }
+  - { id: public-project-records, namespace: 'src/public/*/*', path: 'src/public/*/*/docs/**/*.md' }
+  - { id: public-project-schemas, namespace: 'src/public/*/*', path: 'src/public/*/*/schemas/*.schema.json' }
+  - { id: private-project-interfaces, namespace: 'src/private/*/*', path: 'src/private/*/*/*.md' }
+  - { id: private-project-notices, namespace: 'src/private/*/*', path: 'src/private/*/*/THIRD-PARTY-NOTICES.txt' }
+  - { id: private-project-records, namespace: 'src/private/*/*', path: 'src/private/*/*/docs/**/*.md' }
+  - { id: private-project-schemas, namespace: 'src/private/*/*', path: 'src/private/*/*/schemas/*.schema.json' }
+  - { id: lab-interfaces, namespace: 'src/lab/*', path: 'src/lab/*/*.md' }
+  - { id: lab-records, namespace: 'src/lab/*', path: 'src/lab/*/docs/**/*.md' }
+  - { id: sample-interfaces, namespace: 'src/sample/*', path: 'src/sample/*/*.md' }
+  - { id: sample-records, namespace: 'src/sample/*', path: 'src/sample/*/docs/**/*.md' }
 
   # Project-specific companion record paths outside standard docs/ roots
   - {
       id: azureauth-unofficial-packaging-interface,
       namespace: src/public/app/azureauth-unofficial,
-      state: current,
       path: src/public/app/azureauth-unofficial/packaging/windows/README.md,
     }
   - {
       id: azureauth-unofficial-operational-identities,
       namespace: src/public/app/azureauth-unofficial,
-      state: current,
       path: src/public/app/azureauth-unofficial/docs/operational-identities.yaml,
       schema: src/public/app/azureauth-unofficial/schemas/operational-identities.schema.json,
     }
   - {
       id: azureauth-unofficial-rechecks,
       namespace: src/public/app/azureauth-unofficial,
-      state: current,
       path: src/public/app/azureauth-unofficial/docs/research/rechecks.yaml,
       schema: src/public/app/azureauth-unofficial/schemas/rechecks.schema.json,
     }
   - {
       id: azureauth-python-interface,
       namespace: src/private/app/azureauth-credprovider,
-      state: current,
       path: src/private/app/azureauth-credprovider/python/README.md,
     }
   - {
       id: supermemo-knowledge,
       namespace: src/private/app/supermemo-mcp,
-      state: current,
       path: 'src/private/app/supermemo-mcp/knowledge_base/*.md',
     }
   - {
       id: supermemo-script-records,
       namespace: src/private/app/supermemo-mcp,
-      state: current,
       path: 'src/private/app/supermemo-mcp/scripts/*.md',
     }
   - {
       id: latexmath-contracts,
       namespace: src/public/lib/asciidoctor-latexmath,
-      state: current,
       path: 'src/public/lib/asciidoctor-latexmath/specs/**/*.md',
     }
   - {
       id: latexmath-processor-selection-input,
       namespace: src/public/lib/asciidoctor-latexmath,
-      state: current,
       path: src/public/lib/asciidoctor-latexmath/docs/research/processor-selection-input.txt,
     }
   - {
       id: hexo-example-interface,
       namespace: src/public/lib/hexo-renderer-asciidoc,
-      state: current,
       path: src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md,
     }
   - {
       id: workflow-delivery-smoke-interfaces,
       namespace: src/private/app/workflow-delivery,
-      state: current,
       path: 'tests/private/app/workflow-delivery/fixtures/products/*/README.md',
     }
   - {
       id: workflow-delivery-native-ruby-interface,
       namespace: src/private/app/workflow-delivery,
-      state: current,
       path: tests/private/app/workflow-delivery/Native/Ruby/README.md,
     }
   - {
       id: workflow-delivery-design-models,
       namespace: src/private/app/workflow-delivery,
-      state: current,
       path: 'src/private/app/workflow-delivery/docs/design/models/*.tla',
     }
   - {
       id: workflow-delivery-design-model-configs,
       namespace: src/private/app/workflow-delivery,
-      state: current,
       path: 'src/private/app/workflow-delivery/docs/design/models/*.cfg',
     }

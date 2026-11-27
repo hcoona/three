@@ -276,9 +276,11 @@ internal static partial class CiScope
         {
             if (item is not IDictionary<object, object?> binding ||
                 !binding.TryGetValue("id", out object? id) || id is not string name ||
-                !binding.TryGetValue("state", out object? state) || state is not string text ||
                 !binding.TryGetValue("path", out object? path) || path is not string pattern)
-                throw new InvalidDataException("A record binding lacks its id, state or path.");
+                throw new InvalidDataException("A record binding lacks its id or path.");
+            object? state = binding.TryGetValue("state", out object? raw) ? raw : "current";
+            if (state is not string text)
+                throw new InvalidDataException("A record binding has a non-string state.");
             // '**' outside a whole component differs between the two matchers; fail closed.
             if (pattern.Split('/').Any(part => part.Contains("**", StringComparison.Ordinal) &&
                     part != "**"))

@@ -306,15 +306,16 @@ public sealed class CiScopeTests
             unknown: ignored
             bindings:
               - {id: kept, state: current, path: "a/*.md", extra: ignored}
+              - {id: implicit, path: c.md}
               - {id: later, state: scheduled, path: b.md}
             """);
-        CollectionAssert.AreEqual(new[] { ("kept", "a/*.md") }, read);
+        CollectionAssert.AreEqual(new[] { ("kept", "a/*.md"), ("implicit", "c.md") }, read);
     }
 
     [TestMethod]
     [DataRow("{}")]
     [DataRow("bindings: {}")]
-    [DataRow("bindings: [{id: a, path: b.md}]")]
+    [DataRow("bindings: [{id: a, state: null, path: b.md}]")]
     [DataRow("bindings: [{id: a, state: current, path: [b.md]}]")]
     [DataRow("bindings: [")]
     [DataRow("bindings: [{id: a, state: scheduled, path: a/x**y}]")]

@@ -76,7 +76,8 @@ Record responsibility reads only `bindings[].{id,state,path}` from the endpoint'
 [record-binding catalog](../../../../../../docs/governance/record-families.yaml) with
 the application's YAML parser. It performs no schema validation; the record
 checker validates the catalog schema and wildcard namespace coverage, and a
-binding-pattern grammar change must update both readers. Current binding paths
+binding-format change must update both readers. Omitted and explicit `current`
+states give the same responsibility; `scheduled` gives none. Current binding paths
 use the component-aware star grammar from
 `eng/scripts/repository_path_patterns.py`; the application matches them with
 `Microsoft.Extensions.FileSystemGlobbing`, whose `*` and `**/` semantics agree
