@@ -124,3 +124,13 @@ bindings:
       namespace: src/public/lib/PhiFailureDetector,
       path: 'src/public/lib/PhiFailureDetector/docs/models/*.cfg',
     }
+  - {
+      id: nbgv-python-design-models,
+      namespace: src/public/lib/nbgv-python,
+      path: 'src/public/lib/nbgv-python/docs/design/models/*.tla',
+    }
+  - {
+      id: nbgv-python-design-model-configs,
+      namespace: src/public/lib/nbgv-python,
+      path: 'src/public/lib/nbgv-python/docs/design/models/*.cfg',
+    }
