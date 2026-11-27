@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [!NOTE]
 > Dates use the `YYYY-MM-DD` format and releases are listed from newest to oldest.
 
-## [Unreleased]
+## [4.0.0] - 2026-11-27
 
 > [!WARNING]
 > Version `4.0.0` is a breaking major release over 3.x. Programmatic callers

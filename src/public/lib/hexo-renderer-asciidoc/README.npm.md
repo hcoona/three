@@ -22,7 +22,7 @@ npm install hexo-renderer-asciidoc --save
 pnpm add hexo-renderer-asciidoc
 ```
 
-To check which release lines are currently published to `latest` and `beta` (for example, while `4.0.0-beta.*` prereleases precede stable `4.0.0` on `latest`):
+To check which release lines are currently published to `latest` and `beta`:
 
 ```bash
 npm view hexo-renderer-asciidoc dist-tags
