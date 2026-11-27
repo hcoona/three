@@ -166,6 +166,10 @@ run = "uv run --script src/public/lib/Nanopass/scripts/verify_formal_spec.py"
 description = "Run the Z3 BitVec(32) formal specification checks for CircularList"
 run = "uv run --script src/public/lib/CircularList/scripts/verify_formal_spec.py"
 
+[tasks."phi-failure-detector:verify-formal-spec"]
+description = "Run the Z3 Real and IEEE-754 Float64 formal specification checks for PhiFailureDetector"
+run = "uv run --script src/public/lib/PhiFailureDetector/scripts/verify_formal_spec.py"
+
 [tasks."tla:tlc"]
 description = "Run TLC finite-state model checking with an isolated temporary -metadir"
 run = "python eng/scripts/tla.py tlc"
