@@ -1,3 +1,8 @@
+/**
+ * SPDX-FileCopyrightText: 2017 Shuai Zhang
+ * SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+ */
+
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFile, rm } from 'node:fs/promises';

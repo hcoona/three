@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2025 Shuai Zhang
+# SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+
 """Runtime helpers that execute the `nbgv` CLI and parse its output."""
 
 from __future__ import annotations
