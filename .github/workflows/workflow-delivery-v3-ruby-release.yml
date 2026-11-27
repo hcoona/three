@@ -171,12 +171,15 @@ jobs:
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby source-config initial-observation-scratch
           mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/source-tools.json" > "$RUNNER_TEMP/observation/observation.json"
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-anchor "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/anchor-observation.json"
       - name: Expose required write and describe dry run
         run: |-
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby state
           if [ "$DRY_RUN" = true ]; then
-            mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" > "$RUNNER_TEMP/observation/dry-run.json"
+            anchor_observation=-
+            if [ -s "$RUNNER_TEMP/observation/anchor-observation.json" ]; then anchor_observation="$RUNNER_TEMP/observation/anchor-observation.json"; fi
+            mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$anchor_observation" > "$RUNNER_TEMP/observation/dry-run.json"
             cat "$RUNNER_TEMP/observation/dry-run.json" >> "$GITHUB_STEP_SUMMARY"
           fi
         id: state
@@ -195,6 +198,7 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
     outputs:
       write-needed: ${{ steps.state.outputs.write-needed }}
+      anchor-write-needed: ${{ steps.state.outputs.anchor-write-needed }}
       observation-id: ${{ steps.retain.outputs.artifact-id }}
   publish-ruby-github-packages:
     runs-on: ubuntu-24.04
@@ -369,6 +373,92 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
     outputs:
       publication-id: ${{ steps.retain.outputs.artifact-id }}
+  publish-github-anchor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    concurrency:
+      group: ${{ format('workflow-delivery-github-release-{0}', inputs.unit) }}
+      cancel-in-progress: false
+    steps:
+      - name: Download control by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.control-id }}
+          path: ${{ runner.temp }}/control
+          digest-mismatch: error
+      - name: Download prepared by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.preparation-id }}
+          path: ${{ runner.temp }}/prepared
+          digest-mismatch: error
+      - name: Download observation by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.observe.outputs.observation-id }}
+          path: ${{ runner.temp }}/observation
+          digest-mismatch: error
+      - name: Download publication by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.publish-ruby-rubygems.outputs.publication-id }}
+          path: ${{ runner.temp }}/publication
+          digest-mismatch: error
+        if: needs.publish-ruby-rubygems.outputs.publication-id != ''
+      - name: Prepare selected runtime without product execution
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
+        with:
+          version: 2026.11.13
+          install: false
+          working_directory: ${{ runner.temp }}
+      - name: Install selected control runtime
+        env:
+          DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          DOTNET_FRAMEWORKS_VERSION: ${{ needs.prepare.outputs.dotnet-frameworks }}
+        run: |
+          set -Eeuo pipefail
+          mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION"
+          {
+            printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)"
+          } >> "$GITHUB_ENV"
+          printf '%s\n' "$(dirname "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)")" >> "$GITHUB_PATH"
+        working-directory: ${{ runner.temp }}
+      - name: Receive transferred preparation
+        run: |-
+          set -Eeuo pipefail
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby receive anchor-publication
+      - name: Publish GitHub Release anchor after primary destination succeeds
+        run: |-
+          set -Eeuo pipefail
+          publication=-
+          if [ -s "$RUNNER_TEMP/publication/publication.json" ]; then publication="$RUNNER_TEMP/publication/publication.json"; fi
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-github-anchor "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/observation/anchor-observation.json" "$publication" > "$RUNNER_TEMP/anchor-publication/publication.json"
+      - name: Retain actual anchor publication results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ruby-anchor-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/anchor-publication
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+    needs:
+      - prepare
+      - observe
+      - publish-ruby-rubygems
+    if: >-
+      always() && !cancelled() && inputs.destination == 'rubygems' && inputs.dry-run == false &&
+      needs.prepare.result == 'success' && needs.observe.result == 'success' &&
+      needs.publish-ruby-rubygems.result != 'failure' && needs.publish-ruby-rubygems.result != 'cancelled' &&
+      needs.observe.outputs.anchor-write-needed == 'true'
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+    outputs:
+      anchor-id: ${{ steps.retain.outputs.artifact-id }}
   verify-result:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -431,6 +521,13 @@ jobs:
         if:
           needs.publish-ruby-github-packages.outputs.publication-id != '' || needs.publish-ruby-rubygems.outputs.publication-id
           != ''
+      - name: Download anchor publication by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.publish-github-anchor.outputs.anchor-id }}
+          path: ${{ runner.temp }}/anchor-publication
+          digest-mismatch: error
+        if: needs.publish-github-anchor.outputs.anchor-id != ''
       - name: Verify native source original and complete final native state
         run: |-
           set -Eeuo pipefail
@@ -439,9 +536,18 @@ jobs:
           status=0
           mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/source-tools.json" > "$RUNNER_TEMP/verification/final.json" || status=$?
           if [ "$status" -gt 1 ]; then exit "$status"; fi
+          anchor_status=0
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-anchor "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/verification/anchor-final.json" || anchor_status=$?
+          if [ "$anchor_status" -gt 1 ]; then exit "$anchor_status"; fi
           publication=-
           if [ -s "$RUNNER_TEMP/publication/publication.json" ]; then publication="$RUNNER_TEMP/publication/publication.json"; fi
-          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/verification/final.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
+          anchor_initial=-
+          if [ -s "$RUNNER_TEMP/observation/anchor-observation.json" ]; then anchor_initial="$RUNNER_TEMP/observation/anchor-observation.json"; fi
+          anchor_final=-
+          if [ -s "$RUNNER_TEMP/verification/anchor-final.json" ]; then anchor_final="$RUNNER_TEMP/verification/anchor-final.json"; fi
+          anchor_publication=-
+          if [ -s "$RUNNER_TEMP/anchor-publication/publication.json" ]; then anchor_publication="$RUNNER_TEMP/anchor-publication/publication.json"; fi
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/verification/final.json" "$publication" "$anchor_initial" "$anchor_final" "$anchor_publication" > "$RUNNER_TEMP/verification/outcome.json"
       - name: Show actual available business result
         run: |-
           set -Eeuo pipefail
@@ -466,6 +572,7 @@ jobs:
       - observe
       - publish-ruby-github-packages
       - publish-ruby-rubygems
+      - publish-github-anchor
     env:
       GITHUB_TOKEN: ${{ github.token }}
     if:

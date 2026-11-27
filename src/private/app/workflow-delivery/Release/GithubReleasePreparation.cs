@@ -55,6 +55,7 @@ internal static class GithubReleasePreparation
         string product = "";
         ReleaseBuild? build = null;
         string version = "", publish = "", installer = "", portable = "";
+        string? releaseNotes = null;
 
         await qualification.CheckAsync("native-input", async () =>
         {
@@ -76,6 +77,10 @@ internal static class GithubReleasePreparation
                 product, ["nbgv", "get-version", "--format", "json"], 180))).Stdout);
             (version, bool publicRelease) = QualifyNative(subject, official,
                 projection.RootElement);
+            string changelogPath = admitted.ProductDirectory + "/CHANGELOG.md";
+            if (await bound.ReadOptionalTextAsync(changelogPath, token) is { } changelog)
+                releaseNotes = ReleaseChangelog.Extract(changelog, version, subject.Revision,
+                    changelogPath);
             native.Add("name", subject.Unit);
             native.Add("version", version);
             native.Add("commit", subject.Revision);
@@ -157,7 +162,9 @@ internal static class GithubReleasePreparation
             }
             return Task.CompletedTask;
         });
-        return new(new(request.Subject, [.. files], Required.ToArray(), qualification.Checks),
+        return new(new(request.Subject, [.. files], Required.ToArray(), qualification.Checks,
+                ReleaseNotes: qualification.Errors.Length == 0 && files.Count > 0
+                    ? releaseNotes : null),
             native, qualification.Commands, qualification.Errors);
 
         Task<NativeCommandResult> RunAsync(NativeCommand command) =>

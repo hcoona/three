@@ -147,10 +147,13 @@ internal static class ReleaseJobInputs
                     File.Copy(source, target, overwrite: false);
                 }
                 break;
-            case ["receive",
-                var phase] when phase is "observation" or "publication" or "verification":
+            case ["receive", var phase] when phase is "observation" or "publication" or
+                "anchor-publication" or "verification":
                 ReleasePreparationResult transferred = Preparation();
                 route.Adapter.ValidatePreparation(transferred);
+                if (phase == "anchor-publication" && transferred.Prepared.Anchor is null)
+                    throw new InvalidDataException(
+                        "Release preparation carries no GitHub Release anchor.");
                 if (store is not null && transferred.Target != store)
                     throw new InvalidDataException("Transferred store target mismatch.");
                 Fresh(phase);
@@ -159,10 +162,28 @@ internal static class ReleaseJobInputs
                 ReleaseObservationResult observed = Read(At("observation/observation.json"),
                     TransferJson.Default.ReleaseObservationResult);
                 Same(observed.Observation.Subject);
-                if (store is not null) route.Adapter.ValidateObservation(Preparation(), observed);
+                ReleasePreparationResult? statePrep = File.Exists(
+                    Path.Combine(prepared, "preparation.json")) ? Preparation() : null;
+                if (store is not null)
+                    route.Adapter.ValidateObservation(statePrep ?? Preparation(), observed);
                 bool needed = ReleaseEngine.WriteNeeded(observed.Observation);
-                File.AppendAllText(Env("GITHUB_OUTPUT"), "write-needed=" + (
-                    needed ? "true" : "false") + "\n");
+                string outputLines = "write-needed=" + (needed ? "true" : "false") + "\n";
+                string anchorObsPath = At("observation/anchor-observation.json");
+                if (statePrep?.Prepared.Anchor is not null)
+                {
+                    ReleaseObservationResult anchorObserved = Read(anchorObsPath,
+                        TransferJson.Default.ReleaseObservationResult);
+                    Same(anchorObserved.Observation.Subject);
+                    ReleaseAdapters.GithubAnchor.ValidateObservation(
+                        ReleaseAdapters.AnchorPreparation(statePrep), anchorObserved);
+                    bool anchorNeeded = ReleaseEngine.WriteNeeded(anchorObserved.Observation);
+                    outputLines += "anchor-write-needed=" +
+                        (anchorNeeded ? "true" : "false") + "\n";
+                }
+                else if (File.Exists(anchorObsPath))
+                    throw new InvalidDataException(
+                        "Unexpected GitHub Release anchor observation.");
+                File.AppendAllText(Env("GITHUB_OUTPUT"), outputLines);
                 break;
             case ["source-config", var directory] when ecosystem == "ruby":
                 Write(At("source-tools.json"), new RubySourceTools(Env("RUBY_EXECUTABLE"),

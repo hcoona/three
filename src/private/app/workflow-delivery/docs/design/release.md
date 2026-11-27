@@ -105,6 +105,28 @@ destination and maximum intended operations before the native gate. The publishe
 can remove a now-unnecessary operation after observation but cannot enlarge that
 reviewed request.
 
+During unprivileged preparation, [`ReleaseChangelog`](../../Release/ReleaseChangelog.cs)
+extracts the bounded 1–2 version release-notes excerpt from the bound Git
+revision's product `CHANGELOG.md` followed by a canonical link to the commit's
+full `CHANGELOG.md` (`https://github.com/hcoona/three/blob/<revision>/<path>`).
+Stable versions require an explicit non-empty `## [<version>]` section;
+prereleases accept `## [<version>]` and fall back to a non-empty
+`## [Unreleased]` section, appending at most one immediately preceding released
+version section when present. Across the adopted Official package and
+browser-store ecosystems (`Python`, `npm`, `Ruby` and `BrowserStore`), Official
+preparation (including `dry-run`) fails closed when a public product's
+`CHANGELOG.md` is missing or lacks the required section, and binds a
+`PreparedGithubAnchor` (`release/<unit>/v<version>` at the selected commit,
+title `<unit> v<version>`, bounded release body and prepared original assets;
+browser-store units use the NBGV npm version for the shared tag and allow the
+other storefronts' prepared zip names for that same version as sibling assets).
+Buddy package and browser-store preparations keep `Anchor` null. On
+`GithubReleaseDestination`, both Official and Buddy extract the same bounded
+`CHANGELOG.md` body when `CHANGELOG.md` is present and retain the deterministic
+summary fallback while `image-occlusion-editor`'s `CHANGELOG.md` remains
+scheduled for Release Plan 2 (`#1818`). `.NET` `NuGet` units likewise retain
+their existing Official flow until Release Plan 2 (`#1811`, `#1867`).
+
 Inside one invocation these are ordinary values. Persist preparation only for its
 actual review, job transfer and operation-window consumers. Separate Execution,
 Attempt, Approval Bundle, Authorization and marker aggregates are unnecessary.
@@ -303,6 +325,21 @@ It does not prove that a stock client's credentials, feed or index routing,
 source mapping or dependency resolution select and install the published
 package; Release does not claim those properties. The observation remains
 bounded, and unknown or conflicting state blocks completion.
+
+For Official `Python`, `npm`, `Ruby` and `BrowserStore` requests carrying a
+`PreparedGithubAnchor`, completion requires both the primary destination's
+completion predicate above and byte-equal observation of the
+`release/<unit>/v<version>` tag at the selected commit and its non-draft,
+non-prerelease GitHub Release assets. Anchor publication runs only when the
+initial primary observation is already satisfied or the primary publication step
+acknowledged upload/submission without error; if primary publication succeeded
+and anchor creation or asset upload failed, a fresh same-revision dispatch
+observes the satisfied primary destination without repeating primary writes and
+completes the missing tag, GitHub Release or asset. Same-commit Official runs
+across the three browser stores converge on the shared
+`release/steam-account-history-to-csv/v<npmVersion>` release by permitting that
+version's sibling store archive names while still failing closed on any foreign
+asset name, mismatched byte digest or tag pointing to another commit.
 
 Historical campaigns retain all their original consumer requirements, evidence
 and terminal outcomes. A later change of completion conditions cannot rewrite an

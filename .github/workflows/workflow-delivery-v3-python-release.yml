@@ -160,16 +160,21 @@ jobs:
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python tool-request
           mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python-index-tools "$RUNNER_TEMP/index-tool-request.json" > "$RUNNER_TEMP/index-tool-result.json"
       - name: Observe public destination and qualified originals
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python index-config initial-observation-scratch
           mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/index-tools.json" > "$RUNNER_TEMP/observation/observation.json"
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-anchor "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/anchor-observation.json"
       - name: Expose required writes and describe dry run
         run: |
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python state
           if [ "$DRY_RUN" = true ]; then
-            mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" > "$RUNNER_TEMP/observation/dry-run.json"
+            anchor_observation=-
+            if [ -s "$RUNNER_TEMP/observation/anchor-observation.json" ]; then anchor_observation="$RUNNER_TEMP/observation/anchor-observation.json"; fi
+            mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release describe-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$anchor_observation" > "$RUNNER_TEMP/observation/dry-run.json"
             cat "$RUNNER_TEMP/observation/dry-run.json" >> "$GITHUB_STEP_SUMMARY"
           fi
         id: state
@@ -186,6 +191,7 @@ jobs:
     needs: prepare
     outputs:
       write-needed: ${{ steps.state.outputs.write-needed }}
+      anchor-write-needed: ${{ steps.state.outputs.anchor-write-needed }}
       observation-id: ${{ steps.retain.outputs.artifact-id }}
   publish:
     runs-on: ubuntu-24.04
@@ -258,6 +264,78 @@ jobs:
       name: ${{ inputs.registry == 'testpypi' && 'workflow-delivery-v3-python-testpypi' || 'workflow-delivery-v3-python-pypi' }}
     outputs:
       publication-id: ${{ steps.retain.outputs.artifact-id }}
+  publish-github-anchor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    concurrency:
+      group: ${{ format('workflow-delivery-github-release-{0}', inputs.unit) }}
+      cancel-in-progress: false
+    steps:
+      - *id001
+      - *id002
+      - name: Download observation by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.observe.outputs.observation-id }}
+          path: ${{ runner.temp }}/observation
+          digest-mismatch: error
+      - name: Download publication by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.publish.outputs.publication-id }}
+          path: ${{ runner.temp }}/publication
+          digest-mismatch: error
+        if: needs.publish.outputs.publication-id != ''
+      - name: Prepare runtime without product execution
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
+        with:
+          version: 2026.11.13
+          install: false
+          working_directory: ${{ runner.temp }}
+      - name: Install selected control runtime
+        env:
+          DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+          DOTNET_FRAMEWORKS_VERSION: ${{ needs.prepare.outputs.dotnet-frameworks }}
+        run: |
+          set -Eeuo pipefail
+          mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION"
+          {
+            printf 'DOTNET_VERSION=%s\n' "$DOTNET_VERSION"
+            printf 'DOTNET_EXECUTABLE=%s\n' "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)"
+          } >> "$GITHUB_ENV"
+          printf '%s\n' "$(dirname "$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)")" >> "$GITHUB_PATH"
+        working-directory: ${{ runner.temp }}
+      - name: Receive transferred preparation
+        run: |
+          set -Eeuo pipefail
+          "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python receive anchor-publication
+      - name: Publish GitHub Release anchor after primary destination succeeds
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          publication=-
+          if [ -s "$RUNNER_TEMP/publication/publication.json" ]; then publication="$RUNNER_TEMP/publication/publication.json"; fi
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-github-anchor "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/observation/anchor-observation.json" "$publication" > "$RUNNER_TEMP/anchor-publication/publication.json"
+      - name: Retain actual anchor publication results
+        id: retain
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: python-anchor-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/anchor-publication
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+    needs:
+      - prepare
+      - observe
+      - publish
+    if: always() && !cancelled() && inputs.registry == 'pypi' && inputs.dry-run == false && needs.prepare.result == 'success' && needs.observe.result == 'success' && needs.publish.result != 'failure' && needs.publish.result != 'cancelled' && needs.observe.outputs.anchor-write-needed == 'true'
+    outputs:
+      anchor-id: ${{ steps.retain.outputs.artifact-id }}
   verify-result:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -279,6 +357,13 @@ jobs:
           path: ${{ runner.temp }}/publication
           digest-mismatch: error
         if: needs.publish.outputs.publication-id != ''
+      - name: Download anchor publication by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.publish-github-anchor.outputs.anchor-id }}
+          path: ${{ runner.temp }}/anchor-publication
+          digest-mismatch: error
+        if: needs.publish-github-anchor.outputs.anchor-id != ''
       - name: Prepare runtime without product execution
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
         with:
@@ -312,6 +397,8 @@ jobs:
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python tool-request
           mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release prepare-python-index-tools "$RUNNER_TEMP/index-tool-request.json" > "$RUNNER_TEMP/index-tool-result.json"
       - name: Verify both index files and original bytes in final public state
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs python index-config final-observation-scratch
@@ -319,9 +406,18 @@ jobs:
           status=0
           mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/index-tools.json" > "$RUNNER_TEMP/verification/final.json" || status=$?
           if [ "$status" -gt 1 ]; then exit "$status"; fi
+          anchor_status=0
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-anchor "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/verification/anchor-final.json" || anchor_status=$?
+          if [ "$anchor_status" -gt 1 ]; then exit "$anchor_status"; fi
           publication=-
           if [ -s "$RUNNER_TEMP/publication/publication.json" ]; then publication="$RUNNER_TEMP/publication/publication.json"; fi
-          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/verification/final.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
+          anchor_initial=-
+          if [ -s "$RUNNER_TEMP/observation/anchor-observation.json" ]; then anchor_initial="$RUNNER_TEMP/observation/anchor-observation.json"; fi
+          anchor_final=-
+          if [ -s "$RUNNER_TEMP/verification/anchor-final.json" ]; then anchor_final="$RUNNER_TEMP/verification/anchor-final.json"; fi
+          anchor_publication=-
+          if [ -s "$RUNNER_TEMP/anchor-publication/publication.json" ]; then anchor_publication="$RUNNER_TEMP/anchor-publication/publication.json"; fi
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-python "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/verification/final.json" "$publication" "$anchor_initial" "$anchor_final" "$anchor_publication" > "$RUNNER_TEMP/verification/outcome.json"
       - name: Show actual available business result
         run: |
           set -Eeuo pipefail
@@ -345,4 +441,5 @@ jobs:
       - prepare
       - observe
       - publish
+      - publish-github-anchor
     if: always() && !cancelled() && inputs.dry-run == false && needs.prepare.result == 'success' && needs.observe.result == 'success'

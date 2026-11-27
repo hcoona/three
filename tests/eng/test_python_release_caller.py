@@ -46,11 +46,13 @@ def test_workflow_publisher_owns_write_identity_and_environment(
     assert workflow["permissions"] == {}
     assert "secrets." not in json.dumps(workflow["env"])
     for name, job in jobs.items():
-        assert job["permissions"] == (
-            {"contents": "read", "id-token": "write"}
-            if name == "publish"
-            else {"contents": "read"}
-        )
+        if name == "publish":
+            expected_permissions = {"contents": "read", "id-token": "write"}
+        elif name == "publish-github-anchor":
+            expected_permissions = {"contents": "write"}
+        else:
+            expected_permissions = {"contents": "read"}
+        assert job["permissions"] == expected_permissions
         assert ("environment" in job) == (name == "publish")
         for checkout in action_steps(job, "actions/checkout"):
             assert checkout["with"]["persist-credentials"] is False
@@ -58,6 +60,14 @@ def test_workflow_publisher_owns_write_identity_and_environment(
             assert "secrets." not in json.dumps(job)
             for publisher_only in ("publisher-config", "publish-python"):
                 assert publisher_only not in scripts(job)
+        if name != "publish-github-anchor":
+            assert "publish-github-anchor" not in scripts(job)
+    anchor_concurrency = jobs["publish-github-anchor"]["concurrency"]
+    assert anchor_concurrency["cancel-in-progress"] is False
+    assert (
+        anchor_concurrency["group"]
+        == "${{ format('workflow-delivery-github-release-{0}', inputs.unit) }}"
+    )
     environment = jobs["publish"]["environment"]["name"]
     assert "inputs.registry" in environment
     assert "workflow-delivery-v3-python-testpypi" in environment
@@ -102,15 +112,61 @@ def test_workflow_publisher_gate_excludes_dry_and_initial_exact(
 
 
 @pytest.mark.parametrize(
-    ("publish_result", "publication_id"),
-    [("success", "42"), ("failure", "42"), ("failure", ""), ("skipped", "")],
+    ("case", "allowed"),
+    [
+        (("pypi", False, "success", True), True),
+        (("pypi", False, "skipped", True), True),
+        (("pypi", False, "failure", True), False),
+        (("pypi", False, "cancelled", True), False),
+        (("pypi", False, "success", False), False),
+        (("pypi", True, "skipped", True), False),
+        (("testpypi", False, "success", True), False),
+    ],
+)
+def test_workflow_anchor_gate_requires_official_primary_success_or_skip(
+    workflow, case, allowed
+):
+    """Anchor publisher runs only for Official non-dry primary pass or skip."""
+    registry, dry, publish_result, anchor_needed = case
+    job = workflow["jobs"]["publish-github-anchor"]
+    assert {"prepare", "observe", "publish"} <= set(dependencies(job))
+    assert (
+        condition(
+            job["if"],
+            {
+                "cancelled": False,
+                "inputs.registry": registry,
+                "inputs.dry-run": dry,
+                "needs.prepare.result": "success",
+                "needs.observe.result": "success",
+                "needs.publish.result": publish_result,
+                "needs.observe.outputs.anchor-write-needed": str(
+                    anchor_needed
+                ).lower(),
+            },
+            success=publish_result == "success",
+        )
+        is allowed
+    )
+
+
+@pytest.mark.parametrize(
+    ("publish_result", "publication_id", "anchor_id"),
+    [
+        ("success", "42", "84"),
+        ("failure", "42", ""),
+        ("failure", "", ""),
+        ("skipped", "", "84"),
+    ],
 )
 def test_workflow_verification_runs_after_handled_failure_or_missing_result(
-    workflow, publish_result, publication_id
+    workflow, publish_result, publication_id, anchor_id
 ):
     """Workflow verification runs after handled failure or missing result."""
     job = workflow["jobs"]["verify-result"]
-    assert {"prepare", "observe", "publish"} <= set(dependencies(job))
+    assert {"prepare", "observe", "publish", "publish-github-anchor"} <= set(
+        dependencies(job)
+    )
     values = {
         "cancelled": False,
         "inputs.dry-run": False,
@@ -118,6 +174,7 @@ def test_workflow_verification_runs_after_handled_failure_or_missing_result(
         "needs.observe.result": "success",
         "needs.publish.result": publish_result,
         "needs.publish.outputs.publication-id": publication_id,
+        "needs.publish-github-anchor.outputs.anchor-id": anchor_id,
     }
     assert condition(job["if"], values, success=publish_result == "success")
     publication = next(
@@ -126,6 +183,12 @@ def test_workflow_verification_runs_after_handled_failure_or_missing_result(
         if "publication-id" in step["with"]["artifact-ids"]
     )
     assert condition(publication["if"], values) is bool(publication_id)
+    anchor = next(
+        step
+        for step in action_steps(job, "actions/download-artifact")
+        if "anchor-id" in step["with"]["artifact-ids"]
+    )
+    assert condition(anchor["if"], values) is bool(anchor_id)
     assert not condition(job["if"], {**values, "cancelled": True})
     assert not condition(job["if"], {**values, "inputs.dry-run": True})
     assert not condition(
@@ -191,6 +254,7 @@ def test_workflow_frozen_recipe_and_registry_package_concurrency(
         ("prepare", ["request"]),
         ("observe", ["receive", "observation"]),
         ("publish", ["receive", "publication"]),
+        ("publish-github-anchor", ["receive", "anchor-publication"]),
         ("verify-result", ["receive", "verification"]),
     ],
 )

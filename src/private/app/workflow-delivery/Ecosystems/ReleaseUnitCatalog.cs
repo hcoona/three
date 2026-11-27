@@ -25,6 +25,10 @@ internal sealed record NpmReleaseUnit(string Id, string Declaration, string Sour
     internal string PackageName(ReleaseSubject subject) =>
         subject.Channel == "buddy" ? BuddyName : OfficialName;
 
+    internal static string UnscopedName(string package) =>
+        package.StartsWith('@') && package.IndexOf('/') is var slash and > 1
+            ? package[(slash + 1)..] : package;
+
     internal NativeCommand Import(string directory, string package, int deadlineSeconds = 60) =>
         new("node", Path.Combine(directory, "consumer"),
             ["--input-type=module", "--eval",

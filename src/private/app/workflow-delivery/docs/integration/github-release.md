@@ -62,8 +62,11 @@ the first failure:
 
 1. `native-input`: subject admission, exact Git materialization, the committed
    declaration and inputs, complete Git history, the `global.json` SDK with
-   `rollForward: disable` equal to the actual SDK, `dotnet tool restore` and the
-   NBGV projection.
+   `rollForward: disable` equal to the actual SDK, `dotnet tool restore`, the
+   NBGV projection and, when a product `CHANGELOG.md` is committed, bounded 1–2
+   version release-notes extraction via `ReleaseChangelog` (retaining the
+   deterministic summary fallback until `image-occlusion-editor`'s
+   `CHANGELOG.md` lands under `#1818`).
 2. `build`: the product's own scripts, each run once:
    `Update-LocalSvgEditor.ps1 -Force`, `Publish-ImageOcclusionEditor.ps1` and
    `Build-InnoInstaller.ps1`, into fresh owned scratch. The application copies
@@ -109,8 +112,9 @@ required check `release-identity`.
 - An existing release must not be a draft, and its prerelease flag must match
   the channel.
 - Every listed asset must be one of the prepared names in the `uploaded`
-  state, with the prepared size. Another name is a conflict; another state is
-  unknown.
+  state, with the prepared size (or an allowed same-version sibling store
+  archive name when observing a shared browser-store Official anchor). Another
+  name is a conflict; another state is unknown.
 - Each listed asset is downloaded and compared byte for byte with its original
   (WD-REL-009). Read-only downloads can follow storage redirects. Equal bytes
   are exact; other bytes are a conflict.

@@ -657,8 +657,14 @@ yet visible. A later fresh request confirms it by observing exact state and
 needs no write. Conflicting bytes remain unsatisfied.
 
 The ordinary Python entry and actual Release caller compose qualified components.
-They use prepare, observe, gated publish and separate
-verify/result jobs on the supported Linux runner. Build/retain complete control
+They use prepare, observe, gated publish, Official `publish-github-anchor` and separate
+verify/result jobs on the supported Linux runner. Official preparation of public
+units fails closed unless `CHANGELOG.md` contains the required version section
+and binds `PreparedGithubAnchor` (`release/<unit>/v<version>` with the wheel and
+sdist assets); `publish-github-anchor` holds `contents: write` only after
+primary PyPI upload is acknowledged or initially exact, and `verify-result`
+requires both PyPI and anchor completion on Official while Buddy creates neither
+tag nor GitHub Release. Build/retain complete control
 before product execution. Transfer control, preparation and original artifacts
 by same-run immutable artifact ID with the native download digest check;
 `job-inputs python receive <phase>` binds the received preparation's

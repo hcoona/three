@@ -84,6 +84,7 @@ public sealed class PythonPreparationTests(TestContext context)
         Assert.Contains("--no-build-isolation", conversion.Command.Arguments);
         Assert.Contains("build-dependency-check", conversion.Command.Arguments);
         Assert.AreEqual(fixture.Subject.Revision, result.Native["commit"]);
+        Assert.IsNull(result.Prepared.Anchor);
         Assert.IsFalse(result.Native.Values.Any(value => value.Contains(fixture.Repo.Directory,
             StringComparison.Ordinal)));
     }
@@ -370,6 +371,11 @@ public sealed class PythonPreparationTests(TestContext context)
             file.Version == "2.1.0.dev1"));
         Assert.AreEqual(Fixture.Nbgv, result.Native["name"]);
         Assert.IsFalse(result.Native.ContainsKey("public-release"));
+        Assert.IsNotNull(result.Prepared.Anchor);
+        Assert.Contains("Fixture Python prerelease notes.", result.Prepared.Anchor.ReleaseNotes);
+        Assert.HasCount(2, result.Prepared.Anchor.Assets);
+        Assert.AreEqual(2, result.Prepared.Anchor.Assets.Select(file => file.Name)
+            .Distinct(StringComparer.Ordinal).Count());
         Assert.IsFalse(result.Commands.Any(command =>
             command.Command.Arguments.Contains("version-facts")));
         // Each consumer installs the hash-checked locked closure, then the original alone.
@@ -502,6 +508,17 @@ public sealed class PythonPreparationTests(TestContext context)
             string unit)
         {
             files.Add(directory + "/pyproject.toml", "fixture");
+            files.Add(directory + "/CHANGELOG.md", """
+                # Changelog
+
+                ## [Unreleased]
+
+                - Fixture Python prerelease notes.
+
+                ## [2.1.0] - 2026-04-20
+
+                - Fixture Python stable notes.
+                """);
             files.Add(directory + "/workflow-delivery.quality.yml", """
                 schema: workflow-delivery/v3/quality-selection
                 ecosystems:

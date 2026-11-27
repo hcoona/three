@@ -128,6 +128,7 @@ public sealed class GithubReleaseTests(TestContext context)
             Version, github.Release!.Tag);
         Assert.AreEqual(!official, github.Release!.Prerelease);
         Assert.AreEqual("image-occlusion-editor v" + Version, github.Release.Name);
+        Assert.AreEqual("### Added\n\n- Prepared release notes.", github.Release.Body);
         Assert.AreEqual(official ? null : "false", github.Release.MakeLatest);
 
         var (final, finalPath) = Execute("verify", ["release", "observe-github-release",
@@ -185,6 +186,241 @@ public sealed class GithubReleaseTests(TestContext context)
         // Served asset bytes are downloaded, not trusted from metadata.
         Assert.HasCount(2, github.Requests.Where(request =>
             request.Headers.Accept.Any(value => value.MediaType == "application/octet-stream")));
+    }
+
+    private static readonly string[] ExpectedChromeWrite = ["upload chrome-zip", "publish"];
+    private static readonly string[] ExpectedChromeAnchorWrites =
+    [
+        "create release release/steam-account-history-to-csv/v1.2.0",
+        "upload steam-account-history-to-csv-1.2.0-chrome.zip",
+    ];
+
+    [TestMethod]
+    [DoNotParallelize]
+    public void OfficialAnchorOrdersPrimaryFirstSharesMultiStoreReleaseAndFoldsCompletion()
+    {
+        using var github = new FakeGithub();
+        using var root = new Originals();
+        const string StoreVersion = "1.2.0.7";
+        const string SemVer = "1.2.0";
+        const string Tag = "release/steam-account-history-to-csv/v" + SemVer;
+        const string Notes = "### Added\n\n- Store changelog.";
+        byte[] chromeBytes = "PK chrome"u8.ToArray();
+        byte[] firefoxBytes = "PK firefox"u8.ToArray();
+        byte[] sourcesBytes = "PK sources"u8.ToArray();
+        File.WriteAllBytes(Path.Combine(root.Root, "originals/chrome.zip"), chromeBytes);
+        File.WriteAllBytes(Path.Combine(root.Root, "originals/firefox.zip"), firefoxBytes);
+        File.WriteAllBytes(Path.Combine(root.Root, "originals/sources.zip"), sourcesBytes);
+
+        // 1. Dry-run reports both the primary store write and the GitHub Release anchor.
+        ReleasePreparationResult chromeDry = StorePrep("chrome-web-store", dryRun: true,
+            [StoreFile("chrome-zip", "chrome-extension-zip", StoreVersion,
+                "originals/chrome.zip", chromeBytes)],
+            [AnchorFile("chrome-zip", "chrome-extension-zip", "chrome.zip",
+                "originals/chrome.zip", chromeBytes)],
+            ["steam-account-history-to-csv-1.2.0-firefox.zip",
+                "steam-account-history-to-csv-1.2.0-sources.zip",
+                "steam-account-history-to-csv-1.2.0-edge.zip"]);
+        string chromeDryPath = root.Save("chrome-dry.json", chromeDry,
+            TransferJson.Default.ReleasePreparationResult);
+        string chromeDryObs = root.Save("chrome-dry-obs.json",
+            BrowserStoreDestinationAdapter.Unobserved(chromeDry),
+            TransferJson.Default.ReleaseObservationResult);
+        string chromeDryAnchorObs = Path.Combine(root.Root, "chrome-dry-anchor.json");
+        Assert.AreEqual(0, RunCli(["release", "observe-github-anchor", chromeDryPath,
+            root.Root, chromeDryAnchorObs]));
+        ReleaseDryRun dry = RunJson(["release", "describe-browser-store", chromeDryPath,
+            chromeDryObs, chromeDryAnchorObs], TransferJson.Default.ReleaseDryRun);
+        Assert.IsTrue(dry.Ready);
+        CollectionAssert.AreEqual(ExpectedChromeWrite, dry.HypotheticalWrites);
+        CollectionAssert.AreEqual(ExpectedChromeAnchorWrites, dry.HypotheticalAnchorWrites);
+
+        // 2. Primary-before-anchor: absent/unacknowledged primary blocks anchor writes completely.
+        ReleasePreparationResult chromeLive = chromeDry with
+        {
+            Prepared = chromeDry.Prepared with
+            {
+                Subject = chromeDry.Prepared.Subject with { DryRun = false }
+            }
+        };
+        string chromePrepPath = root.Save("chrome-prep.json", chromeLive,
+            TransferJson.Default.ReleasePreparationResult);
+        ReleaseObservationResult chromeInitial = StoreObserved(chromeLive, StoreState.Absent);
+        string chromeInitialPath = root.Save("chrome-initial.json", chromeInitial,
+            TransferJson.Default.ReleaseObservationResult);
+        string chromeAnchorInitialPath = Path.Combine(root.Root, "chrome-anchor-initial.json");
+        Assert.AreEqual(0, RunCli(["release", "observe-github-anchor", chromePrepPath,
+            root.Root, chromeAnchorInitialPath]));
+        Assert.ThrowsExactly<InvalidDataException>(() => RunCli(
+            ["release", "publish-github-anchor", chromePrepPath, root.Root, chromeInitialPath,
+                chromeAnchorInitialPath, "-"]));
+        Assert.IsFalse(github.Requests.Any(request => request.Method == HttpMethod.Post));
+
+        // 3. After store submission is acknowledged (InReview), anchor publishes once with notes.
+        ReleaseObservationResult chromePending = StoreObserved(chromeLive, StoreState.InReview);
+        string chromePendingPath = root.Save("chrome-pending.json", chromePending,
+            TransferJson.Default.ReleaseObservationResult);
+        string chromePubPath = root.Save("chrome-pub.json", new ReleasePublicationResult(
+            chromeLive.Prepared.Subject, chromeInitial,
+            [ReleaseWriteStep.FromStore("submit", true, "Submitted.")],
+            chromePending, []), TransferJson.Default.ReleasePublicationResult);
+
+        // Missing anchor publication record when anchor writes were needed leaves Unknown (exit 1).
+        ReleaseCompletionResult missingAnchor = RunJson(["release", "complete-browser-store",
+            chromePrepPath, chromeInitialPath, chromePendingPath, chromePubPath,
+            chromeAnchorInitialPath, chromeAnchorInitialPath, "-"],
+            TransferJson.Default.ReleaseCompletionResult, expectedExit: 1);
+        Assert.AreEqual(ReleaseBusinessState.Unknown, missingAnchor.Outcome.State);
+
+        ReleasePublicationResult chromeAnchorPub = RunJson(["release", "publish-github-anchor",
+            chromePrepPath, root.Root, chromeInitialPath, chromeAnchorInitialPath, chromePubPath],
+            TransferJson.Default.ReleasePublicationResult);
+        Assert.IsEmpty(chromeAnchorPub.Errors);
+        Assert.AreEqual(Tag, github.Release!.Tag);
+        Assert.AreEqual(Revision, github.TagCommit);
+        Assert.IsFalse(github.Release.Prerelease);
+        Assert.AreEqual(Notes, github.Release.Body);
+        string chromeAnchorPubPath = root.Save("chrome-anchor-pub.json", chromeAnchorPub,
+            TransferJson.Default.ReleasePublicationResult);
+        string chromeAnchorFinalPath = Path.Combine(root.Root, "chrome-anchor-final.json");
+        Assert.AreEqual(0, RunCli(["release", "observe-github-anchor", chromePrepPath,
+            root.Root, chromeAnchorFinalPath]));
+        ReleaseCompletionResult chromeCompleted = RunJson(["release", "complete-browser-store",
+            chromePrepPath, chromeInitialPath, chromePendingPath, chromePubPath,
+            chromeAnchorInitialPath, chromeAnchorFinalPath, chromeAnchorPubPath],
+            TransferJson.Default.ReleaseCompletionResult);
+        Assert.AreEqual(ReleaseBusinessState.Satisfied, chromeCompleted.Outcome.State);
+
+        // 4. Sibling store (Firefox) on anchor-repair rerun (primary already Published inside
+        // publisher with no store writes) tolerates Chrome's existing asset and uploads only
+        // Firefox's two zips to the shared release.
+        ReleasePreparationResult firefoxLive = StorePrep("firefox-amo", dryRun: false,
+            [StoreFile("firefox-zip", "firefox-extension-zip", StoreVersion,
+                "originals/firefox.zip", firefoxBytes),
+                StoreFile("firefox-sources", "firefox-source-zip", StoreVersion,
+                    "originals/sources.zip", sourcesBytes)],
+            [AnchorFile("firefox-zip", "firefox-extension-zip", "firefox.zip",
+                "originals/firefox.zip", firefoxBytes),
+                AnchorFile("firefox-sources", "firefox-source-zip", "sources.zip",
+                    "originals/sources.zip", sourcesBytes)],
+            ["steam-account-history-to-csv-1.2.0-chrome.zip",
+                "steam-account-history-to-csv-1.2.0-edge.zip"]);
+        string firefoxPrepPath = root.Save("firefox-prep.json", firefoxLive,
+            TransferJson.Default.ReleasePreparationResult);
+        ReleaseObservationResult firefoxInitial =
+            BrowserStoreDestinationAdapter.Unobserved(firefoxLive);
+        string firefoxInitialPath = root.Save("firefox-initial.json", firefoxInitial,
+            TransferJson.Default.ReleaseObservationResult);
+        ReleaseObservationResult firefoxPublished = StoreObserved(firefoxLive,
+            StoreState.Published);
+        string firefoxPubPath = root.Save("firefox-pub.json", new ReleasePublicationResult(
+            firefoxLive.Prepared.Subject, firefoxPublished, [], firefoxPublished, []),
+            TransferJson.Default.ReleasePublicationResult);
+        string firefoxAnchorInitialPath = Path.Combine(root.Root, "firefox-anchor-initial.json");
+        Assert.AreEqual(0, RunCli(["release", "observe-github-anchor", firefoxPrepPath,
+            root.Root, firefoxAnchorInitialPath]));
+        int releaseCreatesBefore = github.Requests.Count(request =>
+            request.Method == HttpMethod.Post &&
+            request.Uri.AbsolutePath == "/repos/hcoona/three/releases");
+
+        ReleasePublicationResult firefoxAnchorPub = RunJson(["release", "publish-github-anchor",
+            firefoxPrepPath, root.Root, firefoxInitialPath, firefoxAnchorInitialPath,
+            firefoxPubPath],
+            TransferJson.Default.ReleasePublicationResult);
+        Assert.IsEmpty(firefoxAnchorPub.Errors);
+        Assert.AreEqual(releaseCreatesBefore, github.Requests.Count(request =>
+            request.Method == HttpMethod.Post &&
+            request.Uri.AbsolutePath == "/repos/hcoona/three/releases"));
+        Assert.HasCount(3, github.Release.Assets);
+        string firefoxAnchorPubPath = root.Save("firefox-anchor-pub.json", firefoxAnchorPub,
+            TransferJson.Default.ReleasePublicationResult);
+        string firefoxAnchorFinalPath = Path.Combine(root.Root, "firefox-anchor-final.json");
+        Assert.AreEqual(0, RunCli(["release", "observe-github-anchor", firefoxPrepPath,
+            root.Root, firefoxAnchorFinalPath]));
+        ReleaseCompletionResult firefoxCompleted = RunJson(["release", "complete-browser-store",
+            firefoxPrepPath, firefoxInitialPath, "-", firefoxPubPath,
+            firefoxAnchorInitialPath, firefoxAnchorFinalPath, firefoxAnchorPubPath],
+            TransferJson.Default.ReleaseCompletionResult);
+        Assert.AreEqual(ReleaseBusinessState.Satisfied, firefoxCompleted.Outcome.State);
+
+        // 5. Foreign non-sibling asset still triggers Conflict.
+        github.AddAsset("notes.txt", "uploaded", [9]);
+        string conflictAnchorPath = Path.Combine(root.Root, "firefox-anchor-conflict.json");
+        Assert.AreEqual(1, RunCli(["release", "observe-github-anchor", firefoxPrepPath,
+            root.Root, conflictAnchorPath]));
+        ReleaseObservationResult conflictObs = ReleaseCli.Read(conflictAnchorPath,
+            TransferJson.Default.ReleaseObservationResult);
+        Assert.IsTrue(conflictObs.Observation.Files.All(file =>
+            file.State == ReleaseFileState.Conflict));
+
+        static ReleaseFile StoreFile(string output, string kind, string version, string path,
+            byte[] bytes) =>
+            new("browser-extensions", output, kind, "steam-account-history-to-csv", version, path,
+                bytes.LongLength, Convert.ToHexStringLower(SHA256.HashData(bytes)));
+
+        static ReleaseFile AnchorFile(string output, string kind, string suffix, string path,
+            byte[] bytes) =>
+            new("browser-extensions", output, kind,
+                "steam-account-history-to-csv-" + SemVer + "-" + suffix, SemVer, path,
+                bytes.LongLength, Convert.ToHexStringLower(SHA256.HashData(bytes)));
+
+        ReleasePreparationResult StorePrep(string store, bool dryRun, ReleaseFile[] files,
+            ReleaseFile[] anchorFiles, string[] siblings)
+        {
+            string[] required = ["native-input", "build", "contents", "consumer",
+                "original-bytes"];
+            var subject = new ReleaseSubject(Revision, "refs/heads/main",
+                "steam-account-history-to-csv",
+                BrowserStorePreparation.DefaultUnit.Declaration, "official", store, dryRun);
+            var target = new BrowserStoreTarget(store, "item-id",
+                store == "chrome-web-store" ? "publisher-id" : null);
+            return new(new(subject, files, required,
+                [.. required.Select(id => new ReleaseCheck(id, ReleaseCheckStatus.Passed))],
+                Anchor: new(anchorFiles, Notes, siblings),
+                ReleaseNotes: Notes),
+                new(StringComparer.Ordinal),
+                [new("build", new("pnpm", root.Root, ["run", "zip"], 600),
+                    new(NativeTermination.Exited, 0, "", "", 0.1, null))],
+                [], Target: target);
+        }
+
+        static ReleaseObservationResult StoreObserved(ReleasePreparationResult preparation,
+            StoreState state) =>
+            StoreHttp.Observation(preparation.Prepared.Subject, preparation.Target!, StoreVersion,
+                state, [], []);
+
+        int RunCli(string[] arguments)
+        {
+            string? previous = Environment.GetEnvironmentVariable("GITHUB_TOKEN");
+            try
+            {
+                Environment.SetEnvironmentVariable("GITHUB_TOKEN", "controlled-token");
+                using var output = new StringWriter();
+                return ReleaseCli.Run(arguments, output,
+                    new(HttpClientFactory: github.CreateClient))!.Value;
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("GITHUB_TOKEN", previous);
+            }
+        }
+
+        T RunJson<T>(string[] arguments, JsonTypeInfo<T> type, int expectedExit = 0)
+        {
+            string? previous = Environment.GetEnvironmentVariable("GITHUB_TOKEN");
+            try
+            {
+                Environment.SetEnvironmentVariable("GITHUB_TOKEN", "controlled-token");
+                using var output = new StringWriter();
+                Assert.AreEqual(expectedExit, ReleaseCli.Run(arguments, output,
+                    new(HttpClientFactory: github.CreateClient)));
+                return JsonSerializer.Deserialize(output.ToString(), type)!;
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("GITHUB_TOKEN", previous);
+            }
+        }
     }
 
     [TestMethod]
@@ -440,7 +676,8 @@ public sealed class GithubReleaseTests(TestContext context)
         return new(new(subject, [File("installer", "inno-installer", Setup, "originals/setup.exe"),
                 File("portable", "portable-zip", Portable, "originals/portable.zip")],
                 GithubReleasePreparation.Required, [.. GithubReleasePreparation.Required
-                    .Select(id => new ReleaseCheck(id, ReleaseCheckStatus.Passed))]),
+                    .Select(id => new ReleaseCheck(id, ReleaseCheckStatus.Passed))],
+                ReleaseNotes: "### Added\n\n- Prepared release notes."),
             new()
             {
                 ["name"] = subject.Unit,
@@ -481,8 +718,8 @@ public sealed class GithubReleaseTests(TestContext context)
     private sealed class FakeGithub : IDisposable
     {
         internal sealed record Asset(long Id, string Name, string State, byte[] Bytes);
-        internal sealed record Hosted(long Id, string Tag, string Name, bool Prerelease,
-            string? MakeLatest, List<Asset> Assets);
+        internal sealed record Hosted(long Id, string Tag, string Name, string Body,
+            bool Prerelease, string? MakeLatest, List<Asset> Assets);
 
         private const string Repo = "/repos/hcoona/three";
         private long next = 100;
@@ -518,7 +755,7 @@ public sealed class GithubReleaseTests(TestContext context)
                 Version;
             tags[tag] = commit;
             Release = releases[tag] = new(next++, tag, "image-occlusion-editor v" + Version,
-                prerelease, null, []);
+                "existing body", prerelease, null, []);
             foreach ((string kind, byte[] bytes) in assets)
                 AddAsset(Name(kind == "setup" ? "inno-installer" : "portable-zip"), "uploaded",
                     bytes);
@@ -588,7 +825,8 @@ public sealed class GithubReleaseTests(TestContext context)
                 { Content = new StringContent("{}") };
                 tags.TryAdd(tag, (string)body["target_commitish"]!);
                 Release = releases[tag] = new(next++, tag, (string)body["name"]!,
-                    (bool)body["prerelease"]!, (string?)body["make_latest"], []);
+                    (string)body["body"]!, (bool)body["prerelease"]!,
+                    (string?)body["make_latest"], []);
                 return Json(new JsonObject { ["id"] = CreatedId ?? Release.Id },
                     HttpStatusCode.Created);
             }

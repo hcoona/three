@@ -11,7 +11,33 @@ internal static class ReleaseAdapters
     internal static readonly PythonDestinationAdapter Python = new();
     internal static readonly RubyDestinationAdapter Ruby = new();
     internal static readonly GithubReleaseDestinationAdapter GithubRelease = new();
+    internal static readonly GithubAnchorDestinationAdapter GithubAnchor = new();
     internal static readonly BrowserStoreDestinationAdapter BrowserStore = new();
+
+    internal static ReleasePreparationResult AnchorPreparation(
+        ReleasePreparationResult preparation)
+    {
+        PreparedGithubAnchor anchor = preparation.Prepared.Anchor
+            ?? throw new InvalidDataException(
+                "Release preparation carries no GitHub Release anchor.");
+        var anchorPrepared = new PreparedRelease(
+            preparation.Prepared.Subject,
+            anchor.Assets,
+            [GithubReleaseDestination.Check],
+            [new(GithubReleaseDestination.Check, ReleaseCheckStatus.Passed)],
+            ReleaseNotes: anchor.ReleaseNotes);
+        return new(anchorPrepared, preparation.Native, preparation.Commands, preparation.Errors,
+            preparation.Target);
+    }
+
+    internal static void ValidateOptionalAnchor(ReleasePreparationResult preparation)
+    {
+        if (preparation.Prepared.Anchor is null) return;
+        if (preparation.Prepared.Subject.Channel != "official")
+            throw new InvalidDataException(
+                "Buddy release preparation cannot carry an Official GitHub Release anchor.");
+        GithubAnchor.ValidatePreparation(AnchorPreparation(preparation));
+    }
 
     internal static IDestinationAdapter ForEcosystem(string ecosystem) => ecosystem switch
     {
@@ -128,6 +154,7 @@ internal sealed class NpmDestinationAdapter : IDestinationAdapter
             prepared.Subject.Destination is not ("npmjs" or "github-packages-npm") ||
             prepared.Files is not [{ Kind: "npm-tarball" }])
             throw new InvalidDataException("Unqualified or unsupported npm preparation.");
+        ReleaseAdapters.ValidateOptionalAnchor(preparation);
     }
 
     public void ValidateObservation(ReleasePreparationResult preparation,
@@ -173,6 +200,7 @@ internal sealed class PythonDestinationAdapter : IDestinationAdapter
                 (!preparation.Native.TryGetValue("public-release", out string? release) ||
                     release != "true"))
             throw new InvalidDataException("Incomplete or unsupported Python preparation.");
+        ReleaseAdapters.ValidateOptionalAnchor(preparation);
     }
 
     public void VerifyOriginals(ReleasePreparationResult preparation, string originalsDirectory)
@@ -230,6 +258,7 @@ internal sealed class RubyDestinationAdapter : IDestinationAdapter
             official && !subject.DryRun && (!preparation.Native.TryGetValue("public-release",
                 out string? release) || release != "true"))
             throw new InvalidDataException("Incomplete or unsupported Ruby preparation.");
+        ReleaseAdapters.ValidateOptionalAnchor(preparation);
     }
 
     public void VerifyOriginals(ReleasePreparationResult preparation, string originalsDirectory)
@@ -333,6 +362,77 @@ internal sealed class GithubReleaseDestinationAdapter : IDestinationAdapter
         preparation.Native.TryGetValue(key, out string? value) && value == expected;
 }
 
+internal sealed class GithubAnchorDestinationAdapter : IDestinationAdapter
+{
+    private static readonly DestinationProfile DefaultProfile = new(
+        DestinationVerificationMode.ExactBytes,
+        OrderedKinds: null,
+        AllowsContainer: true);
+
+    public DestinationProfile Profile(ReleaseSubject subject) => DefaultProfile;
+
+    public void ValidatePreparation(ReleasePreparationResult preparation)
+    {
+        PreparedRelease prepared = preparation.Prepared;
+        ReleaseCompletion.Validate(prepared);
+        if (prepared.Subject.Channel != "official" ||
+            string.IsNullOrWhiteSpace(prepared.ReleaseNotes) ||
+            preparation.Errors.Length != 0 ||
+            prepared.Files.Any(file => file.Version != prepared.Files[0].Version) ||
+            prepared.Files.Select(file => file.Name).Distinct(StringComparer.Ordinal).Count() !=
+                prepared.Files.Length)
+            throw new InvalidDataException(
+                "Incomplete or unsupported GitHub Release anchor preparation.");
+    }
+
+    public void ValidateObservation(ReleasePreparationResult preparation,
+        ReleaseObservationResult result)
+    {
+        if (!result.Observation.RequiredChecks.SequenceEqual([GithubReleaseDestination.Check]) ||
+            result.ReleaseId is null && result.Observation.Files.Any(file =>
+                file.State == ReleaseFileState.Exact))
+            throw new InvalidDataException("Incomplete GitHub Release anchor observation.");
+        ReleaseCompletion.ValidateObservation(preparation.Prepared, result.Observation,
+            DefaultProfile);
+    }
+
+    internal Task<ReleasePublicationResult> PublishAsync(ReleasePreparationResult anchorPreparation,
+        string originals, ReleaseObservationResult initial,
+        IReadOnlyCollection<string>? allowedSiblingAssets,
+        Func<PreparedRelease, IReadOnlyCollection<string>?, CancellationToken,
+            Task<ReleaseObservationResult>> observe,
+        Func<PreparedRelease, CancellationToken, Task<(NativeCommandResult, long?)>> create,
+        Func<long, ReleaseFile, string, CancellationToken, Task<NativeCommandResult>> upload,
+        CancellationToken token)
+    {
+        long? releaseId = null;
+        return ReleaseEngine.PublishAsync(this, anchorPreparation, originals, initial, new(
+            ObserveAsync: async (prepared, cancel) =>
+            {
+                ReleaseObservationResult before =
+                    await observe(prepared, allowedSiblingAssets, cancel);
+                releaseId = before.ReleaseId;
+                return before;
+            },
+            EnsureContainerAsync: async (prepared, before, cancel) =>
+            {
+                if (before.ReleaseId is not null) return null;
+                cancel.ThrowIfCancellationRequested();
+                (NativeCommandResult result, long? created) = await create(prepared, cancel);
+                releaseId = created;
+                return ReleaseWriteStep.FromContainer(result, created is not null);
+            },
+            WriteOutputAsync: async (file, cancel) =>
+            {
+                string path = OwnedPath.ResolveWithin(originals, file.Path,
+                    "Original GitHub Release anchor directory must be absolute.",
+                    "Original GitHub Release anchor path leaves its root.");
+                NativeCommandResult result = await upload(releaseId!.Value, file, path, cancel);
+                return ReleaseWriteStep.FromUpload(new(file.Output, result));
+            }), token);
+    }
+}
+
 internal sealed class BrowserStoreDestinationAdapter : IDestinationAdapter
 {
     public DestinationProfile Profile(ReleaseSubject subject) => new(
@@ -358,6 +458,7 @@ internal sealed class BrowserStoreDestinationAdapter : IDestinationAdapter
             prepared.Files.Any(file => file.Name != registered.Id ||
                 file.Version != version) || !StoreHttp.ManifestVersion(version))
             throw new InvalidDataException("Incomplete or unsupported browser preparation.");
+        ReleaseAdapters.ValidateOptionalAnchor(preparation);
     }
 
     public void ValidateObservation(ReleasePreparationResult preparation,

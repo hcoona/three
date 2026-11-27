@@ -578,9 +578,17 @@ obligation beyond the code it cites.
   ([NpmjsPublication `PublishAsync`, `DistTag`](../../Destinations/NpmjsPublication.cs)).
 - **Permissions.** In the caller, only `publish-github-packages`, behind the
   `workflow-delivery-v3-npm-github-packages` Environment, has `packages: write`,
-  and only `publish-npmjs`, behind the `workflow-delivery-v3-npm-npmjs`
-  Environment, has `id-token: write`. The observation and verification jobs
-  have `packages: read` and pass the job token only for GitHub Packages. The
+  only `publish-npmjs`, behind the `workflow-delivery-v3-npm-npmjs`
+  Environment, has `id-token: write`, and only Official `publish-github-anchor`
+  (serialized by `workflow-delivery-github-release-<unit>` after `publish-npmjs`
+  acknowledges upload or `observe` establishes `npmjs` already exact) has
+  `contents: write` to create `release/<unit>/v<version>` and attach
+  `<unscoped-name>-<version>.tgz` with the bounded `CHANGELOG.md` body; Official
+  preparation of public units fails closed when `CHANGELOG.md` lacks the
+  required section, while Buddy creates neither tag nor GitHub Release. The
+  observation and verification jobs
+  have `packages: read` and pass the job token only for GitHub Packages (plus
+  read-only `observe-github-anchor` on Official). The
   concurrency group is the registry/unit pair without cancellation. The npmjs
   trusted publisher must name this workflow file and Environment.
 - **Non-overwrite.** GitHub Packages' and npmjs' native non-overwrite and

@@ -113,6 +113,7 @@ jobs:
       packages: read
     outputs:
       write-needed: ${{ steps.state.outputs.write-needed }}
+      anchor-write-needed: ${{ steps.state.outputs.anchor-write-needed }}
       observation-id: ${{ steps.retain.outputs.artifact-id }}
     steps:
       - name: Download selected control by immutable artifact ID
@@ -146,6 +147,12 @@ jobs:
           if test "$DESTINATION" = npmjs; then registry=npmjs; fi
           mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release "observe-$registry" \
             "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/observation/observation.json"
+      - name: Observe GitHub Release anchor when Official
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-anchor \
+            "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/anchor-observation.json"
       - name: Describe native state
         id: state
         run: |
@@ -153,8 +160,10 @@ jobs:
           if test "$DESTINATION" = npmjs; then registry=npmjs; fi
           mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm state
           if test "$DRY_RUN" = true; then
+            anchor_observation=-
+            if test -s "$RUNNER_TEMP/observation/anchor-observation.json"; then anchor_observation="$RUNNER_TEMP/observation/anchor-observation.json"; fi
             mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release "describe-$registry" \
-              "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" \
+              "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$anchor_observation" \
               > "$RUNNER_TEMP/observation/dry-run.json"
           fi
       - name: Summarize dry-run and observation limits
@@ -333,13 +342,90 @@ jobs:
           retention-days: 45
           overwrite: false
 
+  publish-github-anchor:
+    if: >-
+      always() && !cancelled() && inputs.registry == 'npmjs' && inputs.dry-run == false &&
+      needs.prepare.result == 'success' && needs.observe.result == 'success' &&
+      needs.publish-npmjs.result != 'failure' && needs.publish-npmjs.result != 'cancelled' &&
+      needs.observe.outputs.anchor-write-needed == 'true'
+    needs: [prepare, observe, publish-npmjs]
+    runs-on: ubuntu-24.04
+    env:
+      DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
+      DOTNET_FRAMEWORKS_VERSION: ${{ needs.prepare.outputs.dotnet-frameworks }}
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    concurrency:
+      group: ${{ format('workflow-delivery-github-release-{0}', inputs.unit) }}
+      cancel-in-progress: false
+    outputs:
+      anchor-id: ${{ steps.retain.outputs.artifact-id }}
+    steps:
+      - name: Download selected control by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.control-id }}
+          path: ${{ runner.temp }}/control
+          digest-mismatch: error
+      - name: Prepare native runtime without product execution
+        uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+        with:
+          install: false
+          working_directory: ${{ runner.temp }}
+      - name: Install selected native runtime
+        working-directory: ${{ runner.temp }}
+        run: mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION"
+      - name: Download complete preparation by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.preparation-id }}
+          path: ${{ runner.temp }}/prepared
+          digest-mismatch: error
+      - name: Download initial observation by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ needs.observe.outputs.observation-id }}
+          path: ${{ runner.temp }}/observation
+          digest-mismatch: error
+      - name: Download primary publication result when available
+        if: needs.publish-npmjs.outputs.publication-id != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ needs.publish-npmjs.outputs.publication-id }}
+          path: ${{ runner.temp }}/publication
+          digest-mismatch: error
+      - name: Receive transferred preparation
+        run: |
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs npm receive anchor-publication
+      - name: Publish GitHub Release anchor after primary destination succeeds
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          publication=-
+          if test -s "$RUNNER_TEMP/publication/publication.json"; then publication="$RUNNER_TEMP/publication/publication.json"; fi
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-github-anchor \
+            "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" \
+            "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/observation/anchor-observation.json" \
+            "$publication" > "$RUNNER_TEMP/anchor-publication/publication.json"
+      - name: Retain actual anchor publication outcome
+        if: always()
+        id: retain
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: npm-anchor-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/anchor-publication
+          if-no-files-found: error
+          retention-days: 45
+          overwrite: false
+
   verify:
     if: >-
       always() && !cancelled() && inputs.dry-run == false &&
       needs.prepare.result == 'success' && needs.observe.result == 'success' &&
       (needs.publish-github-packages.result == 'success' || needs.publish-github-packages.result == 'skipped') &&
       (needs.publish-npmjs.result == 'success' || needs.publish-npmjs.result == 'skipped')
-    needs: [prepare, observe, publish-github-packages, publish-npmjs]
+    needs: [prepare, observe, publish-github-packages, publish-npmjs, publish-github-anchor]
     runs-on: ubuntu-24.04
     env:
       DOTNET_VERSION: ${{ needs.prepare.outputs.dotnet }}
@@ -385,9 +471,16 @@ jobs:
           artifact-ids: ${{ needs.publish-github-packages.outputs.publication-id || needs.publish-npmjs.outputs.publication-id }}
           path: ${{ runner.temp }}/publication
           digest-mismatch: error
+      - name: Download anchor publication result when available
+        if: needs.publish-github-anchor.outputs.anchor-id != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          artifact-ids: ${{ needs.publish-github-anchor.outputs.anchor-id }}
+          path: ${{ runner.temp }}/anchor-publication
+          digest-mismatch: error
       - name: Verify registry coordinate and original bytes
         env:
-          GITHUB_TOKEN: ${{ inputs.registry == 'github-packages' && github.token || '' }}
+          GITHUB_TOKEN: ${{ github.token }}
           WRITE_NEEDED: ${{ needs.observe.outputs.write-needed }}
         run: |
           control="$RUNNER_TEMP/control/WorkflowDelivery.dll"
@@ -399,11 +492,22 @@ jobs:
           mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$control" release "observe-$registry" \
             "$prepared" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/verification/final.json" || status=$?
           if [ "$status" -gt 1 ]; then exit "$status"; fi
+          anchor_status=0
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$control" release observe-github-anchor \
+            "$prepared" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/verification/anchor-final.json" || anchor_status=$?
+          if [ "$anchor_status" -gt 1 ]; then exit "$anchor_status"; fi
           publication=-
-          if test "$WRITE_NEEDED" = true; then publication="$RUNNER_TEMP/publication/publication.json"; fi
+          if test "$WRITE_NEEDED" = true && test -s "$RUNNER_TEMP/publication/publication.json"; then publication="$RUNNER_TEMP/publication/publication.json"; fi
+          anchor_initial=-
+          if test -s "$RUNNER_TEMP/observation/anchor-observation.json"; then anchor_initial="$RUNNER_TEMP/observation/anchor-observation.json"; fi
+          anchor_final=-
+          if test -s "$RUNNER_TEMP/verification/anchor-final.json"; then anchor_final="$RUNNER_TEMP/verification/anchor-final.json"; fi
+          anchor_publication=-
+          if test -s "$RUNNER_TEMP/anchor-publication/publication.json"; then anchor_publication="$RUNNER_TEMP/anchor-publication/publication.json"; fi
           mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$control" release "complete-$registry" \
             "$prepared" "$RUNNER_TEMP/observation/observation.json" \
-            "$RUNNER_TEMP/verification/final.json" "$publication" > "$RUNNER_TEMP/verification/outcome.json"
+            "$RUNNER_TEMP/verification/final.json" "$publication" \
+            "$anchor_initial" "$anchor_final" "$anchor_publication" > "$RUNNER_TEMP/verification/outcome.json"
       - name: Show actual available business results
         if: always()
         run: |

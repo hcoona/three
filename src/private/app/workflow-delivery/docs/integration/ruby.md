@@ -320,8 +320,14 @@ qualification. This observation does not claim client source routing or
 dependency resolution. Missing or unknown observation blocks completion.
 
 The ordinary Ruby entry and actual caller compose qualified components.
-They use prepare, observe, gated publish and separate verify/result
-jobs on the supported Linux runner. Transfer complete same-revision control
+They use prepare, observe, gated publish, Official `publish-github-anchor` and separate verify/result
+jobs on the supported Linux runner. Official preparation of public units fails
+closed unless `CHANGELOG.md` contains the required version section and binds
+`PreparedGithubAnchor` (`release/<unit>/v<version>` with `<unit>-<version>.gem`);
+`publish-github-anchor` holds `contents: write` only after RubyGems upload is
+acknowledged or initially exact, and `verify-result` requires both RubyGems and
+anchor completion on Official while Buddy creates neither tag nor GitHub
+Release. Transfer complete same-revision control
 before product execution. Transfer preparation and originals by same-run
 immutable artifact ID with the native download digest check;
 `job-inputs ruby receive <phase>` binds the received preparation's

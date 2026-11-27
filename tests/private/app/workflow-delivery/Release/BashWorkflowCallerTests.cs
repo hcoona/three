@@ -98,6 +98,33 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         Assert.IsFalse(File.Exists(Path.Combine(fixture.Root, "verification/outcome.json")));
     }
 
+    [TestMethod]
+    [DataRow("npm", "Exact", 0, "Satisfied")]
+    [DataRow("npm", "Absent", 1, "Unsatisfied")]
+    [DataRow("python", "Exact", 0, "Satisfied")]
+    [DataRow("python", "Absent", 1, "Unsatisfied")]
+    [DataRow("ruby", "Exact", 0, "Satisfied")]
+    [DataRow("ruby", "Absent", 1, "Unsatisfied")]
+    public async Task OfficialVerificationStepFoldsPrimaryAndGithubAnchorState(string ecosystem,
+        string anchorState, int expectedExit, string expectedState)
+    {
+        using var fixture = new Fixture(ecosystem, official: true);
+        NativeCommandResult received = await Step(fixture, "Receive transferred preparation",
+            fixture.Environment(), context.CancellationToken);
+        Assert.IsTrue(received.Succeeded, received.Stderr);
+        fixture.WriteFinal(ReleaseFileState.Exact);
+        fixture.WriteAnchorFinal(Enum.Parse<ReleaseFileState>(anchorState));
+        var environment = fixture.Environment();
+
+        NativeCommandResult result = await Step(fixture, fixture.VerifyStep, environment,
+            context.CancellationToken);
+
+        Assert.AreEqual(expectedExit, result.ExitCode, result.Stderr);
+        ReleaseOutcome outcome = fixture.Outcome();
+        Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(expectedState), outcome.State);
+        Assert.AreEqual(fixture.Prepared.Subject, outcome.Subject);
+    }
+
     private static Task<NativeCommandResult> Step(Fixture fixture, string name,
         Dictionary<string, string?> environment, CancellationToken token)
     {
@@ -113,6 +140,11 @@ public sealed class BashWorkflowCallerTests(TestContext context)
               if [ "$3" = "$CONTROLLED_OPERATION" ]; then
                 cat "$RUNNER_TEMP/controlled-final.json"
                 return @@EXIT@@
+              fi
+              if [ "$3" = "observe-github-anchor" ] \
+                && [ -f "$RUNNER_TEMP/controlled-anchor-final.json" ]; then
+                cp "$RUNNER_TEMP/controlled-anchor-final.json" "$6"
+                return "${CONTROLLED_ANCHOR_EXIT:-0}"
               fi
               workflow_dotnet "$@"
             }
@@ -180,6 +212,7 @@ public sealed class BashWorkflowCallerTests(TestContext context)
     {
         private const string Products = "tests/private/app/workflow-delivery/fixtures/products/";
         private readonly string ecosystem;
+        private readonly bool official;
         internal string Root { get; } = Directory.CreateTempSubdirectory("bash-caller-tests-")
             .FullName;
         internal PreparedRelease Prepared { get; }
@@ -202,6 +235,7 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         private Fixture(Fixture received)
         {
             ecosystem = received.ecosystem;
+            official = received.official;
             Prepared = received.Prepared;
             foreach (string file in Directory.EnumerateFiles(received.Root, "*",
                 SearchOption.AllDirectories))
@@ -219,26 +253,36 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         // A row-owned copy of one caller's received tree.
         internal static Fixture CopyOf(Fixture received) => new(received);
 
-        internal Fixture(string ecosystem)
+        internal Fixture(string ecosystem, bool official = false)
         {
             this.ecosystem = ecosystem;
+            this.official = official;
             bool github = ecosystem == "github-release";
             string unit = github ? "image-occlusion-editor"
+                : official ? ecosystem switch
+                {
+                    "npm" => "hexo-renderer-asciidoc",
+                    "python" => "nbgv-python",
+                    _ => "asciidoctor-latexmath",
+                }
                 : "hcoona-release-smoke-" + ecosystem;
-            var subject = new ReleaseSubject(new string('a', 40), "refs/heads/development", unit,
-                github ? ReleaseUnitCatalog.GithubRelease(unit).Declaration
-                    : Products + unit + "/workflow-delivery.release-unit.yml", "buddy",
+            string declaration = github ? ReleaseUnitCatalog.GithubRelease(unit).Declaration
+                : official ? "src/public/lib/" + unit + "/workflow-delivery.release-unit.yml"
+                : Products + unit + "/workflow-delivery.release-unit.yml";
+            var subject = new ReleaseSubject(new string('a', 40),
+                official ? "refs/heads/main" : "refs/heads/development", unit, declaration,
+                official ? "official" : "buddy",
                 ecosystem switch
                 {
-                    "npm" => "github-packages-npm",
-                    "python" => "testpypi",
+                    "npm" => official ? "npmjs" : "github-packages-npm",
+                    "python" => official ? "pypi" : "testpypi",
                     "github-release" => GithubReleaseUnit.BuddyDestination,
-                    _ => "github-packages-ruby",
+                    _ => official ? "rubygems" : "github-packages-ruby",
                 }, false);
             ReleaseFile[] files = ecosystem switch
             {
-                "npm" => [Original("build", "archive", "npm-tarball", AdoptedNpmPackage.PackageName,
-                    "original/package.tgz")],
+                "npm" => [Original("build", "archive", "npm-tarball",
+                    official ? unit : AdoptedNpmPackage.PackageName, "original/package.tgz")],
                 "python" => [Original("distributions", "wheel", "python-wheel", unit,
                     "archives/package.whl"), Original("distributions", "sdist", "python-sdist",
                     unit, "archives/package.tar.gz")],
@@ -253,18 +297,27 @@ public sealed class BashWorkflowCallerTests(TestContext context)
             string[] required = ecosystem switch
             {
                 "npm" => ["consumer"],
-                "python" => PythonPreparation.Required,
+                "python" => PythonPreparation.RequiredFor(ReleaseUnitCatalog.Python(unit)),
                 "github-release" => GithubReleasePreparation.Required,
-                _ => RubyPreparation.Required,
+                _ => RubyPreparation.RequiredFor(ReleaseUnitCatalog.Ruby(unit)),
             };
+            ReleaseFile[] anchorAssets = [.. files.Select(file => file with
+            {
+                Name = Path.GetFileName(file.Path),
+            })];
             Prepared = new(subject, files, required, required.Select(id =>
-                new ReleaseCheck(id, ReleaseCheckStatus.Passed)).ToArray());
+                new ReleaseCheck(id, ReleaseCheckStatus.Passed)).ToArray(),
+                Anchor: official ? new(anchorAssets, "### Added\n\n- Official notes.") : null,
+                ReleaseNotes: official ? "### Added\n\n- Official notes." : null);
             var native = new Dictionary<string, string>
             {
                 ["name"] = unit,
                 ["version"] = "1.0.0",
                 ["commit"] = subject.Revision,
             };
+            if (official && (ecosystem == "ruby" ||
+                ecosystem == "python" && !ReleaseUnitCatalog.Python(unit).StaticVersion))
+                native["public-release"] = "true";
             if (ecosystem == "ruby") native["platform"] = "ruby";
             if (github) native["tag"] = GithubReleaseUnit.Tag(subject, "1.0.0");
             ReleaseCommand[] commands = [new("build", new("native", Root, ["build"], 60),
@@ -277,6 +330,9 @@ public sealed class BashWorkflowCallerTests(TestContext context)
                 TransferJson.Default.ReleasePreparationResult);
             // The initial observation is exact, so completion requires no publication result.
             WriteObservation("observation/observation.json", ReleaseFileState.Exact);
+            if (official)
+                WriteAnchorObservation("observation/anchor-observation.json",
+                    ReleaseFileState.Exact);
             if (ecosystem == "python")
                 Write(Path.Combine(Root, "index-tool-result.json"), new PythonIndexToolResult(
                     "controlled-python", [], []), TransferJson.Default.PythonIndexToolResult);
@@ -287,7 +343,9 @@ public sealed class BashWorkflowCallerTests(TestContext context)
             ["RUNNER_TEMP"] = Root,
             ["DESTINATION"] = ecosystem switch
             {
-                "python" => "testpypi",
+                "python" => official ? "pypi" : "testpypi",
+                "npm" => official ? "npmjs" : "github-packages",
+                "ruby" => official ? "rubygems" : "github-packages",
                 "github-release" => GithubReleaseUnit.BuddyDestination,
                 _ => "github-packages",
             },
@@ -302,8 +360,8 @@ public sealed class BashWorkflowCallerTests(TestContext context)
             // The selected runtime setup exports the committed SDK selection.
             ["DOTNET_VERSION"] = RepositoryToolSelection.DotNetSdkVersion,
             ["RUBY_EXECUTABLE"] = "controlled-ruby",
-            ["CONTROLLED_OPERATION"] = "observe-" + (ecosystem == "npm" ? "github-npm" :
-                ecosystem),
+            ["CONTROLLED_OPERATION"] = "observe-" + (ecosystem == "npm"
+                ? (official ? "npmjs" : "github-npm") : ecosystem),
             ["WORKFLOW_APP"] = typeof(Program).Assembly.Location,
             ["WORKFLOW_DOTNET"] = System.Environment.GetEnvironmentVariable("DOTNET_HOST_PATH")
                 ?? "dotnet",
@@ -312,9 +370,24 @@ public sealed class BashWorkflowCallerTests(TestContext context)
         internal void WriteFinal(ReleaseFileState state) =>
             WriteObservation("controlled-final.json", state);
 
+        internal void WriteAnchorFinal(ReleaseFileState state) =>
+            WriteAnchorObservation("controlled-anchor-final.json", state);
+
         internal ReleaseOutcome Outcome() => ReleaseCli.Read(
             Path.Combine(Root, "verification/outcome.json"),
             TransferJson.Default.ReleaseCompletionResult).Outcome;
+
+        private void WriteAnchorObservation(string name, ReleaseFileState state)
+        {
+            var obs = new ReleaseObservation(Prepared.Subject,
+                Prepared.Anchor!.Assets.Select(file => new ReleaseFileObservation(file.Output,
+                    file.Name, file.Version, state, state == ReleaseFileState.Exact ? file.Size
+                        : null, state == ReleaseFileState.Exact ? file.Sha256 : null)).ToArray(),
+                [GithubReleaseDestination.Check],
+                [new(GithubReleaseDestination.Check, ReleaseCheckStatus.Passed)]);
+            Write(Path.Combine(Root, name), new ReleaseObservationResult(obs, [], ReleaseId: 9),
+                TransferJson.Default.ReleaseObservationResult);
+        }
 
         private void WriteObservation(string name, ReleaseFileState state)
         {

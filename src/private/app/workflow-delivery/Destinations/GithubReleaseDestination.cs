@@ -20,8 +20,11 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
     private const string Uploads = "https://" + UploadHost + "/repos/" + Repository;
     private const int MetadataLimit = 2 * 1024 * 1024;
 
+    internal Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
+        CancellationToken token) => ObserveAsync(prepared, null, token);
+
     internal async Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
-        CancellationToken token)
+        IReadOnlyCollection<string>? allowedSiblingAssets, CancellationToken token)
     {
         (string tag, bool buddy) = Identity(prepared);
         long? releaseId = null;
@@ -68,8 +71,10 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
                     if (!assets.TryAdd(Text(asset, "name"), asset.Clone()))
                         throw new InvalidDataException("Repeated release asset.");
                 });
-            // A release carrying any other asset is not this request's release.
-            if (assets.Keys.Any(name => !prepared.Files.Any(file => file.Name == name)))
+            // A release carrying any unexpected asset is not this request's release.
+            if (assets.Keys.Any(name => !prepared.Files.Any(file => file.Name == name) &&
+                    (allowedSiblingAssets is null ||
+                        !allowedSiblingAssets.Contains(name, StringComparer.Ordinal))))
                 return Result(ReleaseFileState.Conflict, ReleaseCheckStatus.Failed);
 
             var files = new List<ReleaseFileObservation>();
@@ -136,7 +141,8 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
             ["tag_name"] = tag,
             ["target_commitish"] = prepared.Subject.Revision,
             ["name"] = GithubReleaseUnit.Title(prepared.Subject.Unit, version),
-            ["body"] = "Workflow Delivery " + prepared.Subject.Channel + " release of " +
+            ["body"] = prepared.ReleaseNotes ??
+                "Workflow Delivery " + prepared.Subject.Channel + " release of " +
                 prepared.Subject.Unit + " " + version + " from " + prepared.Subject.Revision + ".",
             ["draft"] = false,
             ["prerelease"] = buddy,

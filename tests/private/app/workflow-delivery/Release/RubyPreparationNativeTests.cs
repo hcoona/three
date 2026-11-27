@@ -12,7 +12,12 @@ public sealed class RubyPreparationNativeTests(TestContext context)
     private const string Product =
         "tests/private/app/workflow-delivery/fixtures/products/hcoona-release-smoke-ruby";
     private const string Helper = "src/private/app/workflow-delivery/Native/Ruby/facts.rb";
-    private static readonly string[] NativeInputs = [Product + "/version.json", Helper];
+    private static readonly string[] NativeInputs =
+    [
+        Product + "/version.json",
+        Product + "/CHANGELOG.md",
+        Helper,
+    ];
     private static readonly string[] Contents =
     [
         "LICENSE",
