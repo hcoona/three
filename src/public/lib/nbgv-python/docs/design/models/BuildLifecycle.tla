@@ -14,7 +14,11 @@ Configs == [
     wheelStaticForce : BOOLEAN,
     otherEditableMap : {"empty", "other-only", "targets-version"}
 ]
-ValidConfigs == {c \in Configs : c.writesFile => c.hookConfigured}
+ValidConfigs == {
+    c \in Configs :
+        /\ (c.writesFile => c.hookConfigured)
+        /\ ((c.wheelStaticForce \/ c.otherEditableMap = "targets-version") => c.writesFile)
+}
 
 NoArtifact == [built |-> FALSE, builtAt |-> 0, metaVer |-> 0, fileVer |-> 0, hasGitIgnore |-> FALSE]
 
@@ -85,9 +89,12 @@ EvalBuildWith(c, rule, target, mode, tree) ==
         editForce == CASE c.otherEditableMap = "targets-version" -> TRUE
                        [] c.otherEditableMap = "other-only"      -> FALSE
                        [] OTHER                                  -> stdForce
+        forcedNow == IF mode = "editable" THEN editForce ELSE stdForce
         fileVer   == IncludedByHatchling(hook.diskAfter, tree.pathTraversed, tree.hasGitIgnore,
                                          c.staticArtifact, hook.art, stdForce)
-    IN  IF ~hook.ok THEN [status |-> "failed", diskAfter |-> meta.diskAfter, siteCopy |-> 0, artifact |-> NoArtifact]
+    IN  IF ~hook.ok \/ (forcedNow /\ hook.diskAfter = 0) THEN
+            \* Hatchling `recurse_forced_files` raises `FileNotFoundError` when a forced path is missing!
+            [status |-> "failed", diskAfter |-> meta.diskAfter, siteCopy |-> 0, artifact |-> NoArtifact]
         ELSE [status    |-> "ok",
               diskAfter |-> hook.diskAfter,
               siteCopy  |-> IF mode = "editable" /\ editForce THEN hook.diskAfter ELSE 0,

@@ -122,9 +122,13 @@ commitments.
    and must fail closed. Only `SemVer2` (`NpmPackageVersion`) and
    `NuGetPackageVersion` carry NBGV's alphabetic
    `VersionOptions.GitCommitIdPrefix` (default `"g"`, or custom `"u"`):
-   `SemVer1` omits the prefix, while `SimpleVersion`, `Version`, and
-   `AssemblyInformationalVersion` do not distinguish non-public from public
-   builds and are rejected when `PublicRelease = false`. `NuGetPackageVersion`
+   `SemVer1` omits the prefix, `AssemblyInformationalVersion` does not
+   distinguish non-public from public builds and is rejected when
+   `PublicRelease = false`, and lossy core-only selectors (`SimpleVersion`,
+   `Version`) strip prerelease tags as well as commit lowering and are admitted
+   only when `PublicRelease = true` and `PrereleaseVersionNoLeadingHyphen` is
+   empty (preserving strict prerelease polarity across every admitted selector).
+   `NuGetPackageVersion`
    retains `--metadata` (`+meta`) when `nuGetPackageVersion.semVer = 2`
    (dropping it only under `semVer = 1`), unpads SemVer 1 numeric tokens
    (`0002 -> 2`), and pads to four release components
@@ -210,7 +214,10 @@ tests).
    `force_include_editable` is empty, Hatchling's
    `WheelBuilder.get_forced_inclusion_map` copies `build_data["force_include"]`
    entries into `site-packages/`, shadowing live working-tree files in `.pth` /
-   `dev-mode-dirs` editable installs. Unless static wheel-target `force-include`
+   `dev-mode-dirs` editable installs. Pinned Hatchling's `recurse_forced_files`
+   also raises `FileNotFoundError` if a static or hook `force-include` entry
+   points to an absent file (`ValidConfigs` excludes forcing `_version.py` when
+   `writesFile = false`). Unless static wheel-target `force-include`
    or another hook's `build_data["force_include_editable"]` targets the
    generated file, editable builds (`version = "editable"`) must materialize
    `_version.py` in the working tree via `artifacts` only (`siteCopyVer = 0`).
@@ -253,7 +260,7 @@ mise run tla:tlc -- -workers auto -config src/public/lib/nbgv-python/docs/design
 | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------: |
 | [`VersionProjection`](models/VersionProjection.tla) ([cfg](models/VersionProjection.cfg))          | Single-point `(shape, offset \in -2..1, recipe, height \in 0..2, pub, commit)` with relational quantifiers: strict weak order, channels, `posH = -1` / `effH = 0` bounds, promotion, revision. |           2,160 |
 | [`MetadataAndTemplates`](models/MetadataAndTemplates.tla) ([cfg](models/MetadataAndTemplates.cfg)) | Seven field selectors, `GitCommitIdPrefix`, `VersionFileFound = false`, 4-part NuGet `revision`, commit-first `InfoVersion`, `pep440`/orthogonal `nbgv` tuples, and alias/coercion refutation. |           7,560 |
-| [`BuildLifecycle`](models/BuildLifecycle.tla) ([cfg](models/BuildLifecycle.cfg))                   | Bundled `ValidConfigs` across `repo-root`/`monorepo-subdir`, outer-Git unpacked `sdist`, `PKG-INFO` symmetry, editable isolation, two Git commits, and algebraic refutation of 6 hook flaws.   |         109,440 |
+| [`BuildLifecycle`](models/BuildLifecycle.tla) ([cfg](models/BuildLifecycle.cfg))                   | Bundled `ValidConfigs` across `repo-root`/`monorepo-subdir`, outer-Git unpacked `sdist`, `PKG-INFO` symmetry, missing-forced-file failure, editable isolation, and 6 hook refutations.         |          60,800 |
 | [`CommandExecution`](models/CommandExecution.tla) ([cfg](models/CommandExecution.cfg))             | Orthogonal `configSource` vs `EffectiveMechanism` across monorepo/external/non-Git/missing directories, `chdir`-before-`execve` failure taxonomy, and `callerCwd`/relative-exec refutations.   |           7,560 |
 
 | Deliberate boundary configuration                                                                     | Module              | Violated conjecture (`TLC exit 12`) and established domain boundary                                                |

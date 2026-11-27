@@ -66,10 +66,10 @@ ProjectFieldAt(f, pubState, ep, ngSv, ngPrec) ==
                         pay.publicRelease, pay.versionHeight, pay.versionHeightOffset,
                         pay.heightPosition, "", pay.commitShort, ep, "local")
                [] f = "SimpleVersion" ->
-                    IF ~pubState THEN Reject("simple-lacks-lowering")
+                    IF ~pubState \/ pay.prereleaseNoHyphen # <<>> THEN Reject("simple-drops-prerelease-or-lowering")
                     ELSE FinalPep440(ResolveEpoch(ep), pay.simpleVersion)
                [] f = "Version" ->
-                    IF ~pubState THEN Reject("dotnet-lacks-lowering")
+                    IF ~pubState \/ pay.prereleaseNoHyphen # <<>> THEN Reject("dotnet-drops-prerelease-or-lowering")
                     ELSE FinalPep440(ResolveEpoch(ep), pay.version)
                [] f = "AssemblyInformationalVersion" ->
                     IF ~pubState THEN Reject("info-indistinguishable")
@@ -150,8 +150,14 @@ FieldProjectionFidelityLaw ==
             IN  /\ (proj.ok <=>
                       /\ Payload.versionFileFound /\ selectedField # "MissingField"
                       /\ (selectedField \in {"SemVer1", "SimpleVersion", "Version", "AssemblyInformationalVersion"} => publicRelease)
+                      /\ (selectedField \in {"SimpleVersion", "Version"} => preRecipe = "none")
                       /\ ((selectedField \in {"SemVer2", "NuGetPackageVersion"} /\ ~publicRelease) => ~devSaturated))
-                /\ (proj.ok => Pep440Valid(proj))
+                /\ (proj.ok =>
+                      /\ Pep440Valid(proj)
+                      /\ ((Payload.prereleaseNoHyphen # <<>> /\ selectedField # "AssemblyInformationalVersion") =>
+                            Pep440Less(proj, FinalPep440(ResolveEpoch(epochCfg), proj.release)))
+                      /\ ((Payload.prereleaseNoHyphen # <<>> /\ selectedField = "AssemblyInformationalVersion") =>
+                            Pep440Less(proj, [FinalPep440(ResolveEpoch(epochCfg), proj.release) EXCEPT !.local = proj.local])))
                 /\ ((~publicRelease /\ proj.ok /\ pubC.ok) => Pep440Less(proj, pubC))
                 /\ ((proj.ok /\ selectedField = "NuGetPackageVersion" /\ ngPrec = "build") =>
                       /\ (ngSv = 2 => proj = TargetProject(Payload, epochCfg, "local"))

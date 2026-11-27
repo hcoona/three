@@ -43,7 +43,7 @@ StrRank(s) ==
       [] s = "preview" -> 21  [] s = "rc" -> 22       [] s = "u0481029" -> 23 [] s = "uccf1759" -> 24
 
 CommitRawHex(c) == IF c = "digit-sha" THEN "0481029" ELSE "ccf1759"
-CommitRev(c)    == IF c = "digit-sha" THEN 18473 ELSE 52465
+CommitRev(c)    == IF c = "digit-sha" THEN 1153 ELSE 52465
 PaddedIntStr(n) == CASE n = 0 -> "0000" [] n = 1 -> "0001" [] n = 2 -> "0002" [] OTHER -> "0003"
 DigitStrVal(s)  == CASE s = "0000" -> 0 [] s = "0001" -> 1 [] s = "0002" -> 2 [] s = "0003" -> 3 [] OTHER -> 481029
 
