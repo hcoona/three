@@ -12,11 +12,16 @@ require_relative "../renderer_service"
 module Asciidoctor
   module Latexmath
     module Processors
+      # Inline macro processor handling `latexmath:[...]` and `stem:[...]` expressions.
       class InlineMacroProcessor < ::Asciidoctor::Extensions::InlineMacroProcessor
         use_dsl
 
         named :latexmath
 
+        # @param parent [::Asciidoctor::AbstractNode] parent AST node
+        # @param target [String] macro target when positional text is absent
+        # @param attrs [Hash] macro attributes
+        # @return [::Asciidoctor::Inline] rendered inline image or error placeholder
         def process(parent, target, attrs)
           content = attrs["text"] || target
           result = renderer_service(parent).render_inline_content(parent, content, attrs)

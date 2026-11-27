@@ -11,7 +11,9 @@ require_relative "../renderer_service"
 
 module Asciidoctor
   module Latexmath
+    # Asciidoctor extension processors for `latexmath` blocks, inline macros, and statistics.
     module Processors
+      # Block processor handling `[latexmath]` and `[stem]` blocks.
       class BlockProcessor < ::Asciidoctor::Extensions::BlockProcessor
         use_dsl
 
@@ -19,6 +21,10 @@ module Asciidoctor
         on_context :listing, :literal, :open, :pass, :paragraph, :stem
         parse_content_as :raw
 
+        # @param parent [::Asciidoctor::AbstractBlock] parent AST block
+        # @param reader [::Asciidoctor::Reader] block reader
+        # @param attrs [Hash] block attributes
+        # @return [::Asciidoctor::Block] rendered image or error placeholder block
         def process(parent, reader, attrs)
           result = renderer_service(parent).render_block(parent, reader, attrs)
           return create_block(parent, :pass, result.placeholder_html, {}) if result.type == :placeholder

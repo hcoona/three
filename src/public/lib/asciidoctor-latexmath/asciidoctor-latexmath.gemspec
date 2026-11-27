@@ -47,13 +47,14 @@ gemspec = Gem::Specification.new do |spec|
 
   spec.metadata = {
     "homepage_uri" => spec.homepage,
-    "source_code_uri" => "https://github.com/hcoona/three",
+    "source_code_uri" => "https://github.com/hcoona/three/tree/main/src/public/lib/asciidoctor-latexmath",
+    "changelog_uri" => "https://github.com/hcoona/three/blob/main/src/public/lib/asciidoctor-latexmath/CHANGELOG.md",
     "github_repo" => "https://github.com/hcoona/three",
     "bug_tracker_uri" => "https://github.com/hcoona/three/issues",
     "documentation_uri" => "https://github.com/hcoona/three/blob/main/src/public/lib/asciidoctor-latexmath/README.md"
   }
 
-  spec.files = Dir["lib/**/*", "README.md", "LICENSE"]
+  spec.files = Dir["lib/**/*", "README.md", "CHANGELOG.md", "LICENSE"]
   spec.require_paths = ["lib"]
 
   spec.add_runtime_dependency "asciidoctor", ">= 2.0", "< 3.0"

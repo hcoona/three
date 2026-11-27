@@ -6,24 +6,46 @@
 
 module Asciidoctor
   module Latexmath
+    # Base error class for all `asciidoctor-latexmath` failures.
     class LatexmathError < StandardError; end
 
+    # Raised when an unsupported output format is requested.
     class UnsupportedFormatError < LatexmathError; end
 
+    # Raised when a required external rendering or conversion tool cannot be found.
     class MissingToolError < LatexmathError
+      # @return [String] missing executable or tool identifier
       attr_reader :tool
 
+      # @param tool [String] missing executable or tool identifier
+      # @param message [String, nil] optional custom error message
       def initialize(tool, message = nil)
         @tool = tool
         super(message || "Missing required tool: #{tool}")
       end
     end
 
+    # Raised when a document or block attribute contains an invalid value.
     class InvalidAttributeError < LatexmathError; end
 
+    # Raised when an attribute value is outside the supported set or range.
     class UnsupportedValueError < InvalidAttributeError
-      attr_reader :category, :subject, :value, :supported, :hints
+      # @return [String, Symbol] attribute category
+      attr_reader :category
+      # @return [String, Symbol, nil] attribute name
+      attr_reader :subject
+      # @return [Object] rejected value
+      attr_reader :value
+      # @return [Array<String>, String] supported values description
+      attr_reader :supported
+      # @return [Array<String>] remediation hints
+      attr_reader :hints
 
+      # @param category [String, Symbol] attribute category
+      # @param subject [String, Symbol, nil] attribute name
+      # @param value [Object] rejected value
+      # @param supported [Array<String>, String] supported values
+      # @param hint [String, Array<String>, nil] optional remediation hint(s)
       def initialize(category:, subject:, value:, supported:, hint: nil)
         @category = category
         @subject = subject
@@ -60,24 +82,33 @@ module Asciidoctor
       end
     end
 
+    # Raised when two distinct formulas attempt to write to the same explicit target path.
     class TargetConflictError < LatexmathError; end
 
+    # Raised when a rendering command exceeds the configured timeout.
     class RenderTimeoutError < LatexmathError; end
 
+    # Raised when a LaTeX compilation or format conversion subprocess exits non-zero.
     class StageFailureError < LatexmathError; end
 
+    # Error-handling policies (`:log` placeholder vs `:abort` exception) and HTML placeholder builder.
     module ErrorHandling
+      # Represents a resolved `latexmath-on-error` policy.
       class Policy
+        # @return [Symbol] `:abort` or `:log`
         attr_reader :mode
 
+        # @param mode [Symbol] `:abort` or `:log`
         def initialize(mode)
           @mode = mode
         end
 
+        # @return [Boolean] true when rendering errors raise immediately
         def abort?
           mode == :abort
         end
 
+        # @return [Boolean] true when rendering errors log and emit an HTML placeholder
         def log?
           mode == :log
         end
@@ -91,6 +122,11 @@ module Asciidoctor
         log: Policy.new(:log)
       }.freeze
 
+      # Resolves a policy by name.
+      #
+      # @param name [String, Symbol] `:abort` or `:log`
+      # @return [Policy]
+      # @raise [ArgumentError] if `name` is unsupported
       def self.policy(name)
         SUPPORTED_POLICIES.fetch(name.to_sym) do
           raise ArgumentError, "Unknown on-error policy: #{name}"
