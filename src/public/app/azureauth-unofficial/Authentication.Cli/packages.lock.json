@@ -64,7 +64,7 @@
           "Authentication.Core": "[1.0.0, )",
           "Microsoft.Identity.Client": "[4.83.1, )",
           "Microsoft.Identity.Client.Broker": "[4.83.1, )",
-          "Microsoft.Identity.Client.NativeInterop": "[0.20.3, )"
+          "Microsoft.Identity.Client.NativeInterop": "[0.20.7, )"
         }
       },
       "Microsoft.Identity.Client": {
@@ -88,9 +88,9 @@
       },
       "Microsoft.Identity.Client.NativeInterop": {
         "type": "CentralTransitive",
-        "requested": "[0.20.3, )",
-        "resolved": "0.20.3",
-        "contentHash": "k8f/a/IdBYU905Js0QUd0nuoN680adS393QhrcOyAvCbnteKCNUdzuMIi9pROlJrbjxPqQXRNcf3a9cjE65UfA=="
+        "requested": "[0.20.7, )",
+        "resolved": "0.20.7",
+        "contentHash": "87gvxuPdaU3V8nOGk4iUQ4tp5gP/Y+4DYncHuBlix6gQjNBpyzLjmwo97PaE0huUrl0PkTtyJU5gA+BLKtL+dw=="
       },
       "System.IO.Hashing": {
         "type": "CentralTransitive",
@@ -116,9 +116,9 @@
       },
       "Microsoft.Identity.Client.NativeInterop": {
         "type": "CentralTransitive",
-        "requested": "[0.20.3, )",
-        "resolved": "0.20.3",
-        "contentHash": "k8f/a/IdBYU905Js0QUd0nuoN680adS393QhrcOyAvCbnteKCNUdzuMIi9pROlJrbjxPqQXRNcf3a9cjE65UfA=="
+        "requested": "[0.20.7, )",
+        "resolved": "0.20.7",
+        "contentHash": "87gvxuPdaU3V8nOGk4iUQ4tp5gP/Y+4DYncHuBlix6gQjNBpyzLjmwo97PaE0huUrl0PkTtyJU5gA+BLKtL+dw=="
       }
     }
   }
