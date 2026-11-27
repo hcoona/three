@@ -27,6 +27,7 @@ VARIABLES
     callbackDepth,
     pendingEvicted,
     enums,
+    lastOp,
     steps
 
 vars == <<
@@ -41,8 +42,11 @@ vars == <<
     callbackDepth,
     pendingEvicted,
     enums,
+    lastOp,
     steps
 >>
+
+OpTags == {"Init", "Collection", "Open", "Step", "Reset", "Dispose"}
 
 TailLength == cap - startIndex
 
@@ -83,6 +87,7 @@ Init ==
     /\ callbackDepth = 0
     /\ pendingEvicted = Cleared
     /\ enums = [e \in 1..NumEnumerators |-> BlankEnumerator]
+    /\ lastOp = [op |-> "Init", enum |-> 0]
     /\ steps = 0
 
 \* Exact state update of CircularList<T>.AddCore(item, out overwrittenItem).
@@ -145,6 +150,7 @@ CallerAdd(v, hasSubscriber) ==
     /\ steps < MaxSteps
     /\ AddCoreTransition(v, hasSubscriber)
     /\ enums' = enums
+    /\ lastOp' = [op |-> "Collection", enum |-> 0]
     /\ steps' = steps + 1
 
 CallerSetItem(i, v) ==
@@ -162,6 +168,7 @@ CallerSetItem(i, v) ==
     /\ callbackDepth' = 0
     /\ pendingEvicted' = Cleared
     /\ enums' = enums
+    /\ lastOp' = [op |-> "Collection", enum |-> 0]
     /\ steps' = steps + 1
 
 CallerClear ==
@@ -169,6 +176,7 @@ CallerClear ==
     /\ steps < MaxSteps
     /\ ClearTransition(0, Cleared)
     /\ enums' = enums
+    /\ lastOp' = [op |-> "Collection", enum |-> 0]
     /\ steps' = steps + 1
 
 \* Synchronous OnOverflow handler actions: execute while callbackDepth = 1
@@ -178,6 +186,7 @@ OverflowHandlerReentrantAdd(v) ==
     /\ steps < MaxSteps
     /\ AddCoreTransition(v, FALSE)
     /\ enums' = enums
+    /\ lastOp' = [op |-> "Collection", enum |-> 0]
     /\ steps' = steps + 1
 
 OverflowHandlerReentrantClear ==
@@ -185,12 +194,14 @@ OverflowHandlerReentrantClear ==
     /\ steps < MaxSteps
     /\ ClearTransition(0, Cleared)
     /\ enums' = enums
+    /\ lastOp' = [op |-> "Collection", enum |-> 0]
     /\ steps' = steps + 1
 
 OverflowHandlerReturn ==
     /\ callbackDepth = 1
     /\ callbackDepth' = 0
     /\ pendingEvicted' = Cleared
+    /\ lastOp' = [op |-> "Collection", enum |-> 0]
     /\ UNCHANGED <<cap, buf, startIndex, count, version, specSeq, evictedLog, specEvictedLog, enums, steps>>
 
 \* Value-type Enumerator lifecycle and version-checked MoveNext / Reset / Dispose.
@@ -199,6 +210,7 @@ OpenEnumerator(e) ==
     /\ steps < MaxSteps
     /\ enums' = [enums EXCEPT ![e] =
                     [active |-> TRUE, ver |-> version, idx |-> 0, current |-> Cleared, trapped |-> FALSE]]
+    /\ lastOp' = [op |-> "Open", enum |-> e]
     /\ UNCHANGED <<cap, buf, startIndex, count, version, specSeq, evictedLog, specEvictedLog, callbackDepth, pendingEvicted>>
     /\ steps' = steps + 1
 
@@ -216,6 +228,7 @@ StepEnumerator(e) ==
        ELSE
            enums' = [enums EXCEPT ![e].idx = -1,
                                   ![e].current = Cleared]
+    /\ lastOp' = [op |-> "Step", enum |-> e]
     /\ UNCHANGED <<cap, buf, startIndex, count, version, specSeq, evictedLog, specEvictedLog, callbackDepth, pendingEvicted>>
     /\ steps' = steps + 1
 
@@ -229,6 +242,7 @@ ResetEnumerator(e) ==
        ELSE
            enums' = [enums EXCEPT ![e].idx = 0,
                                   ![e].current = Cleared]
+    /\ lastOp' = [op |-> "Reset", enum |-> e]
     /\ UNCHANGED <<cap, buf, startIndex, count, version, specSeq, evictedLog, specEvictedLog, callbackDepth, pendingEvicted>>
     /\ steps' = steps + 1
 
@@ -237,6 +251,7 @@ DisposeEnumerator(e) ==
     /\ steps < MaxSteps
     /\ enums[e].active
     /\ enums' = [enums EXCEPT ![e] = BlankEnumerator]
+    /\ lastOp' = [op |-> "Dispose", enum |-> e]
     /\ UNCHANGED <<cap, buf, startIndex, count, version, specSeq, evictedLog, specEvictedLog, callbackDepth, pendingEvicted>>
     /\ steps' = steps + 1
 
@@ -267,6 +282,7 @@ TypeAndBoundsInvariant ==
     /\ version \in Nat
     /\ callbackDepth \in 0..1
     /\ pendingEvicted \in Values \cup {Cleared}
+    /\ lastOp \in [op : OpTags, enum : 0..NumEnumerators]
     /\ steps \in 0..MaxSteps
     /\ \A i \in 0..(count - 1) : PhysIndex(i) \in 0..(cap - 1)
     /\ \A i, j \in 0..(count - 1) : i # j => PhysIndex(i) # PhysIndex(j)
@@ -294,9 +310,42 @@ NoStaleReferencesInvariant ==
 
 EnumeratorFailFastInvariant ==
     \A e \in 1..NumEnumerators :
-        enums[e].active =>
-            /\ (enums[e].trapped => enums[e].ver # version)
-            /\ (~enums[e].trapped /\ enums[e].ver = version /\ enums[e].idx > 0 =>
-                    /\ enums[e].idx <= count
-                    /\ enums[e].current = specSeq[enums[e].idx])
+        /\ ((callbackDepth = 0 /\ steps < MaxSteps /\ enums[e].active /\ ~enums[e].trapped) =>
+                /\ ENABLED (Next /\ lastOp' = [op |-> "Step", enum |-> e])
+                /\ ENABLED (Next /\ lastOp' = [op |-> "Reset", enum |-> e]))
+        /\ (enums[e].active =>
+                /\ (enums[e].trapped => enums[e].ver # version)
+                /\ (~enums[e].trapped /\ enums[e].ver = version /\ enums[e].idx > 0 =>
+                        /\ enums[e].idx <= count
+                        /\ enums[e].current = specSeq[enums[e].idx]))
+
+EnumeratorFailFastActionProperty ==
+    [][\A e \in 1..NumEnumerators :
+        /\ (lastOp'.enum # e => enums'[e] = enums[e])
+        /\ (lastOp' = [op |-> "Step", enum |-> e] =>
+                /\ enums[e].active /\ ~enums[e].trapped
+                /\ enums'[e].active /\ enums'[e].ver = enums[e].ver
+                /\ IF enums[e].ver # version THEN
+                       /\ enums'[e].trapped
+                       /\ enums'[e].idx = enums[e].idx
+                       /\ enums'[e].current = enums[e].current
+                   ELSE
+                       /\ ~enums'[e].trapped
+                       /\ IF enums[e].idx >= 0 /\ enums[e].idx < count THEN
+                              /\ enums'[e].idx = enums[e].idx + 1
+                              /\ enums'[e].current = specSeq[enums[e].idx + 1]
+                          ELSE
+                              /\ enums'[e].idx = -1
+                              /\ enums'[e].current = Cleared)
+        /\ (lastOp' = [op |-> "Reset", enum |-> e] =>
+                /\ enums[e].active /\ ~enums[e].trapped
+                /\ enums'[e].active /\ enums'[e].ver = enums[e].ver
+                /\ IF enums[e].ver # version THEN
+                       /\ enums'[e].trapped
+                       /\ enums'[e].idx = enums[e].idx
+                       /\ enums'[e].current = enums[e].current
+                   ELSE
+                       /\ ~enums'[e].trapped
+                       /\ enums'[e].idx = 0
+                       /\ enums'[e].current = Cleared)]_vars
 =============================================================================

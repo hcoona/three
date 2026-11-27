@@ -40,13 +40,14 @@ Following the repository's [shared engineering principles](../../../../../docs/e
 ### 3. Finite-State Protocol, Reentrancy & Fail-Fast Model Checking (`TLA+` / `TLC`)
 
 - **Location**: `src/public/lib/CircularList/docs/models/CircularList.tla` and `CircularList.cfg` (bound in `docs/governance/record-families.yaml` and syntax-checked by HK `tla-sany`).
-- **What is verified**: Exhaustive breadth-first `TLC` (`2.19`, `rev: 5a47802`) state-space exploration under `MaxCapacity = 3` (`cap \in 1..3`), `Values = {1, 2}`, `Cleared = 0`, `MaxSteps = 5`, and `NumEnumerators = 2` (`29,702` generated states, `8,587` distinct states, search depth `6`, `0` errors). Models `CallerAdd`, `CallerSetItem`, `CallerClear`, synchronous single-level `OnOverflow` reentrancy (`callbackDepth \in 0..1`: `OverflowHandlerReentrantAdd`, `OverflowHandlerReentrantClear`, `OverflowHandlerReturn`), and two independent enumerator lifecycles (`OpenEnumerator`, `StepEnumerator`, `ResetEnumerator`, `DisposeEnumerator` gated on `callbackDepth = 0`). Verifies six invariants in every reachable state:
+- **What is verified**: Exhaustive breadth-first `TLC` (`2.19`, `rev: 5a47802`) state-space exploration under `MaxCapacity = 3` (`cap \in 1..3`), `Values = {1, 2}`, `Cleared = 0`, `MaxSteps = 5`, and `NumEnumerators = 2` (`38,902` generated states, `11,539` distinct states, search depth `6`, `0` errors). Models `CallerAdd`, `CallerSetItem`, `CallerClear`, synchronous single-level `OnOverflow` reentrancy (`callbackDepth \in 0..1`: `OverflowHandlerReentrantAdd`, `OverflowHandlerReentrantClear`, `OverflowHandlerReturn`), two independent enumerator lifecycles (`OpenEnumerator`, `StepEnumerator`, `ResetEnumerator`, `DisposeEnumerator` gated on `callbackDepth = 0`), and an explicit operation-tag observer (`lastOp`). Verifies six state invariants plus one action property across every reachable state and step:
     1. `TypeAndBoundsInvariant`
     2. `SequenceRefinementInvariant`
     3. `SegmentsPartitionInvariant`
     4. `OverflowCallbackCoherenceInvariant`
     5. `NoStaleReferencesInvariant`
-    6. `EnumeratorFailFastInvariant`
+    6. `EnumeratorFailFastInvariant` (including `ENABLED` readiness ensuring active untrapped enumerators can always attempt `Step` and `Reset`)
+    7. `EnumeratorFailFastActionProperty` (`PROPERTY` keyed on `lastOp'`: verifies frame preservation, version-stamp immutability, abstract `specSeq` step/reset refinement when fresh, and mandatory `trapped = TRUE` without advancing or resetting `idx`/`current` when stale)
 - **Boundary**: Sound and exhaustive only within those configured finite bounds (`cap \in 1..3`, `Values = {1, 2}`, `NumEnumerators = 2`, `MaxSteps = 5`, `callbackDepth \in 0..1`) on single-threaded interleavings. Subscriber exception propagation (`OnOverflow` throwing) is verified in Layer 1 (`TestCircularList.cs`) rather than modeled in `TLA+`, and `CircularList<T>` is not thread-safe without external synchronization.
 
 ### 4. Offline Deductive Separation-Logic Verification (`PAL-CS` / Pulse / F\*)
