@@ -1,3 +1,8 @@
+/**
+ * SPDX-FileCopyrightText: 2017 Shuai Zhang
+ * SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+ */
+
 import type * as nbgv from 'nerdbank-gitversioning';
 
 export const MAX_BROWSER_VERSION_PART: number;

@@ -1,3 +1,8 @@
+/**
+ * SPDX-FileCopyrightText: 2017 Shuai Zhang
+ * SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+ */
+
 // biome-ignore-all lint/suspicious/noConsole: this unofficial cli tool uses console output intentionally
 import { spawn } from 'node:child_process';
 import { access, readFile, writeFile } from 'node:fs/promises';

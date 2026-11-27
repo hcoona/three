@@ -1,14 +1,13 @@
 # SPDX-FileCopyrightText: 2025 Shuai Zhang
 #
-# SPDX-License-Identifier: CC-BY-NC-ND-4.0
+# SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
 
 version = 1
 
 [[annotations]]
 SPDX-FileCopyrightText = "2025 Shuai Zhang"
-SPDX-License-Identifier = "CC-BY-NC-ND-4.0"
+SPDX-License-Identifier = "LGPL-3.0-or-later WITH LGPL-3.0-linking-exception"
 path = [
-  ".editorconfig",
   ".gitignore",
   ".vscode/settings.json",
   "CHANGELOG.md",

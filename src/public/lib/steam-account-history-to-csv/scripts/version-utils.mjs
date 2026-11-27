@@ -1,3 +1,8 @@
+/**
+ * SPDX-FileCopyrightText: 2017 Shuai Zhang
+ * SPDX-License-Identifier: LGPL-3.0-or-later WITH LGPL-3.0-linking-exception
+ */
+
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as nbgv from 'nerdbank-gitversioning';

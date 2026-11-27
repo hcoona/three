@@ -8,6 +8,7 @@ import json
 import subprocess
 import sys
 import tarfile
+import tomllib
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -329,7 +330,11 @@ def test_native_identity_uses_maintained_backend_without_version_engine(
 
 
 NBGV = "nbgv-python"
-NBGV_VERSION = "2.1.0.dev1"
+NBGV_VERSION = tomllib.loads(
+    (ROOT / "src/public/lib/nbgv-python/pyproject.toml").read_text(
+        encoding="utf-8"
+    )
+)["project"]["version"]
 NBGV_STEM = "nbgv_python-" + NBGV_VERSION
 NBGV_MODULES = [
     "__init__.py",
@@ -368,6 +373,7 @@ def nbgv_sdist(directory, metadata=NBGV_METADATA, *, omit=None):
         "PKG-INFO": metadata,
         "pyproject.toml": b"p",
         "README.md": b"r",
+        "LICENSE": b"l",
         "CHANGELOG.md": b"c",
     }
     files.update({"src/nbgv_python/" + module: b"m" for module in NBGV_MODULES})
@@ -412,11 +418,14 @@ def test_nbgv_originals_require_their_payload_and_declared_dependency(
     [
         ("wheel", "py.typed"),
         ("sdist", "src/nbgv_python/py.typed"),
+        ("sdist", "LICENSE"),
         ("sdist", "CHANGELOG.md"),
     ],
 )
-def test_nbgv_archives_require_py_typed_and_changelog(tmp_path, kind, omitted):
-    """Nbgv archives require py.typed and CHANGELOG.md."""
+def test_nbgv_archives_require_py_typed_license_and_changelog(
+    tmp_path, kind, omitted
+):
+    """Nbgv archives require py.typed, LICENSE, and CHANGELOG.md."""
     path = (
         nbgv_wheel(tmp_path, omit=omitted)
         if kind == "wheel"
