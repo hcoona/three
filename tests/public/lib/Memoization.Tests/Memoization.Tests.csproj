@@ -2,16 +2,20 @@
 
   <PropertyGroup>
     <TargetFramework>$(CurrentTargetFramework)</TargetFramework>
+    <Nullable>enable</Nullable>
 
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="CsCheck" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Microsoft.Extensions.Caching.Memory" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../../../../src/public/lib/Memoization/Memoization.csproj" />
+    <ProjectReference Include="../../../../src/public/lib/Memoization.Generators/Memoization.Generators.csproj" />
   </ItemGroup>
 
 </Project>
