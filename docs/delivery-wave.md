@@ -403,3 +403,112 @@ and history.
   gold files; no unreviewed change to repository-locked tool/runtime versions or
   other projects' behavior; and no publication, release, credential or access
   change.
+
+### Admit repository security disclosure policy (#1271)
+
+- **Work carrier:** [Issue #1271](https://github.com/hcoona/three/issues/1271)
+  under [Issue #1868](https://github.com/hcoona/three/issues/1868), and its
+  linked pull requests.
+- **Accepted inputs and scope/outcome:** using
+  [governance](governance/governance-system.md),
+  [record policy](governance/record-system.md),
+  [engineering principles](engineering/engineering-principles.md),
+  [documentation portal](README.md),
+  [family catalog](governance/record-families.yaml),
+  [public release triage](engineering/public-release-triage.md), and root
+  `README.md`, admit root `SECURITY.md` establishing GitHub private
+  vulnerability reporting on `hcoona/three` as the canonical disclosure channel,
+  route supported-package and supported-version scope to accepted project and
+  Official release authorities without a duplicate inventory, register
+  `SECURITY.md` in [`record-families.yaml`](governance/record-families.yaml), and
+  link it from [`docs/README.md`](README.md) and root `README.md`.
+- **Permitted external/paid effects:** none beyond routine repository
+  development and governed CI validation; enabling GitHub private vulnerability
+  reporting in repository settings remains an explicit repository-owner
+  operation outside repository commits.
+- **Exclusions and closure:** no repository admin setting or ruleset mutation,
+  SLA or bug-bounty commitment beyond accepted project records, release/proving
+  dispatch, publication, credential, or access change. Retain applicable
+  independent `record-system-review` and `GOV-011` disposition; delete this
+  entry atomically in the delivery PR that closes #1271.
+
+### Align three-day minimum release age and public library dependency floors (#1307)
+
+- **Work carrier:** [Issue #1307](https://github.com/hcoona/three/issues/1307)
+  under [Issue #1868](https://github.com/hcoona/three/issues/1868), and its
+  linked pull requests.
+- **Accepted inputs and scope/outcome:** using
+  [governance](governance/governance-system.md),
+  [record policy](governance/record-system.md),
+  [workspaces](engineering/workspaces.md), Workflow Delivery's
+  [Python](../src/private/app/workflow-delivery/docs/integration/python.md),
+  [Node](../src/private/app/workflow-delivery/docs/integration/node.md), and
+  [Ruby](../src/private/app/workflow-delivery/docs/integration/ruby.md)
+  integration records and
+  [native Ruby suite](../tests/private/app/workflow-delivery/Native/Ruby/README.md),
+  root `hk.pkl`, `mise.toml`, `renovate.json`, `eng/renovate/.npmrc`, workspace
+  manifests, and `src/public/lib/**` manifests/lockfiles, align a three-day
+  minimum release age across native resolvers (`Renovate` retaining only the
+  three HK-locked timestamp-less datasource rules with `automerge: true` on
+  `nodejs/Release` and `devcontainer`, `eng/renovate/.npmrc`, `pnpm`, `uv`,
+  `mise`, and qualified `Bundler` `4.0.20` with `BUNDLE_COOLDOWN: "3"` while
+  retaining pre-switch Bundler context fixtures); lock runtime, optional, peer,
+  and engine dependency floors across `src/public/lib/**` (freezing routine
+  `Renovate` floor bumps, retaining `hexo-renderer-asciidoc`'s
+  `@asciidoctor/core` exact-pin exception, and isolating packable public NuGet
+  runtime dependencies into `src/public/lib/Directory.Packages.props`
+  `[x.y.z,)` ranges); and enforce both invariants mechanically via `hk.pkl`,
+  [`workspaces.md`](engineering/workspaces.md), and `CiScope` routing.
+- **Permitted external/paid effects:** none beyond routine repository
+  package/lockfile resolution and governed CI validation.
+- **Exclusions and closure:** no non-native NuGet release-age wrapper, routine
+  bumping of existing public-library minimum floors, lockfile-verification
+  weakening, release/proving dispatch, publication, ruleset, credential, or
+  access change; raising a public library floor requires security remediation or
+  separate owner Wave authorization. Retain applicable independent reviews and
+  `GOV-011` disposition; delete this entry atomically in the delivery PR that
+  closes #1307.
+
+### Complete Official tags, release notes, and non-.NET contracts (#1868)
+
+- **Work carrier:** umbrella
+  [Issue #1868](https://github.com/hcoona/three/issues/1868) and Issues
+  [#1353](https://github.com/hcoona/three/issues/1353),
+  [#1833](https://github.com/hcoona/three/issues/1833),
+  [#1351](https://github.com/hcoona/three/issues/1351),
+  [#1815](https://github.com/hcoona/three/issues/1815), and
+  [#1816](https://github.com/hcoona/three/issues/1816), and their linked pull
+  requests.
+- **Accepted inputs and scope/outcome:** using
+  [governance](governance/governance-system.md),
+  [record policy](governance/record-system.md),
+  [engineering principles](engineering/engineering-principles.md), Workflow
+  Delivery's [portal](../src/private/app/workflow-delivery/docs/README.md),
+  [README](../src/private/app/workflow-delivery/README.md),
+  [requirements](../src/private/app/workflow-delivery/docs/requirements.md),
+  [release](../src/private/app/workflow-delivery/docs/design/release.md) and
+  [execution-boundary](../src/private/app/workflow-delivery/docs/design/execution-boundaries.md)
+  designs, and integration records, plus
+  [`nbgv-python`](../src/public/lib/nbgv-python/README.md) and
+  [`asciidoctor-latexmath`](../src/public/lib/asciidoctor-latexmath/README.md),
+  update Workflow Delivery records, kernel, and Release Plan 1 non-.NET callers
+  (`Python`, `npm`, `Ruby`, and `BrowserStore`) to extract bounded 1–2 section
+  `CHANGELOG.md` release notes in unprivileged `prepare` (failing closed on
+  Official non-.NET runs when missing, seeding smoke fixtures, and retaining
+  `GithubReleaseDestination`'s absent-`CHANGELOG.md` fallback until Release
+  Plan 2 #1818) and reconcile idempotent `release/<unit>/v<version>` Git tags
+  and GitHub Releases with prepared artifacts in `contents: write`-scoped
+  Official completion after destination upload (keeping Buddy runs
+  tag/Release-free and Edge `notes` reviewer-only); and complete `nbgv-python`
+  (#1815) and `asciidoctor-latexmath` (#1816) consumer metadata, `CHANGELOG.md`
+  payload/check contracts, `README.md`, and YARD documentation.
+- **Permitted external/paid effects:** none beyond routine repository
+  development and governed CI validation.
+- **Exclusions and closure:** no #1400 cross-run artifact decoupling, Release
+  Plan 2 `.NET` NuGet/`ImageOcclusionEditor` packaging or changelog changes
+  (#1811, #1818, #1867), live release/proving dispatch, publication, publisher
+  recreation (#1358), credential, or access change. Retain applicable
+  independent reviews and `GOV-011` disposition; delete this entry atomically in
+  the final delivery PR that completes this Release Plan 1 non-.NET scope
+  (closing #1815 and #1816 and delivering the non-.NET slice of #1353, #1833,
+  and #1351, while their excluded .NET scope remains open for Release Plan 2).
