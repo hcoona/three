@@ -328,18 +328,25 @@ bounded, and unknown or conflicting state blocks completion.
 
 For Official `Python`, `npm`, `Ruby` and `BrowserStore` requests carrying a
 `PreparedGithubAnchor`, completion requires both the primary destination's
-completion predicate above and byte-equal observation of the
-`release/<unit>/v<version>` tag at the selected commit and its non-draft,
-non-prerelease GitHub Release assets. Anchor publication runs only when the
-initial primary observation is already satisfied or the primary publication step
-acknowledged upload/submission without error; if primary publication succeeded
-and anchor creation or asset upload failed, a fresh same-revision dispatch
-observes the satisfied primary destination without repeating primary writes and
-completes the missing tag, GitHub Release or asset. Same-commit Official runs
-across the three browser stores converge on the shared
-`release/steam-account-history-to-csv/v<npmVersion>` release by permitting that
-version's sibling store archive names while still failing closed on any foreign
-asset name, mismatched byte digest or tag pointing to another commit.
+completion predicate above and observation of the `release/<unit>/v<version>`
+tag at the selected commit and its non-draft, non-prerelease GitHub Release
+with the prepared release notes and byte-equal assets. Anchor publication runs
+only when the initial primary observation is already satisfied or the primary
+publication step acknowledged upload/submission without error; for destinations
+that can reobserve satisfaction (`Python`, `npm`, `Ruby`, Chrome Web Store and
+Firefox AMO), if primary publication succeeded and anchor creation or asset
+upload failed, a fresh same-revision dispatch observes the satisfied primary
+destination without repeating primary writes and completes the missing tag,
+GitHub Release or asset. Because Edge Add-ons has no read endpoint and its
+prestate remains `Unobserved`
+([browser store integration](../integration/browser-store.md#destinations-and-completion)),
+an anchor failure after Partner Center received an Edge version must not
+redispatch the Edge request and instead returns anchor-only recovery to the
+owner. Same-commit Official runs across the three browser stores converge on the
+shared `release/steam-account-history-to-csv/v<npmVersion>` release by
+permitting that version's sibling store archive names while still failing closed
+on any foreign asset name, mismatched byte digest or tag pointing to another
+commit.
 
 Historical campaigns retain all their original consumer requirements, evidence
 and terminal outcomes. A later change of completion conditions cannot rewrite an

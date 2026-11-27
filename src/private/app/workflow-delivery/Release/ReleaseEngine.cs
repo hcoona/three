@@ -368,21 +368,29 @@ internal static class ReleaseEngine
         primaryAdapter.ValidateObservation(preparation, initial);
         if (AllSatisfied(profile, initial.Observation))
             return primaryPublication is null;
-        if (!ObservationProceeds(profile, initial.Observation) || primaryPublication is null ||
-            primaryPublication.Errors.Length != 0)
+        if (!ObservationProceeds(profile, initial.Observation) || primaryPublication is null)
             return false;
         if (profile.Verification == DestinationVerificationMode.StoreAccepted)
         {
-            if (primaryPublication.Subject != preparation.Prepared.Subject ||
-                primaryPublication.After is not { } storeAfter)
+            ValidateStorePublication(primaryAdapter, preparation, primaryPublication);
+            if (primaryPublication.Errors.Length != 0)
                 return false;
-            primaryAdapter.ValidateObservation(preparation, storeAfter);
-            return AllSatisfied(profile, storeAfter.Observation);
+            if (primaryPublication.After is { } storeAfter)
+                return AllSatisfied(profile, storeAfter.Observation);
+            return !profile.PublisherOnlyRead &&
+                ObservationProceeds(profile, primaryPublication.Before.Observation) &&
+                primaryPublication.Steps is
+                [
+                { Target: "upload", Succeeded: true, Acknowledged: true },
+                { Target: "publish", Succeeded: true, Acknowledged: true },
+                ];
         }
         string[] initialMissing = MissingOutputs(initial.Observation, profile.OrderedKinds,
             preparation.Prepared);
         ValidatePublication(primaryAdapter, profile, preparation, initialMissing,
             primaryPublication);
+        if (primaryPublication.Errors.Length != 0)
+            return false;
         if (primaryPublication.After is { } after && AllSatisfied(profile, after.Observation))
             return true;
         if (primaryPublication.After is { } observedAfter &&
@@ -659,6 +667,18 @@ internal static class ReleaseEngine
         }
     }
 
+    private static void ValidateStorePublication(IDestinationAdapter adapter,
+        ReleasePreparationResult preparation, ReleasePublicationResult publication)
+    {
+        if (publication.Subject != preparation.Prepared.Subject ||
+            publication.Steps.Any(step => step.Kind != "store" || step.Command is not null ||
+                !double.IsFinite(step.DurationSeconds) || step.DurationSeconds < 0))
+            throw new InvalidDataException("Publication is not for this request.");
+        adapter.ValidateObservation(preparation, publication.Before);
+        if (publication.After is not null)
+            adapter.ValidateObservation(preparation, publication.After);
+    }
+
     private static ReleaseCompletionResult CompleteStore(IDestinationAdapter adapter,
         DestinationProfile profile, ReleasePreparationResult preparation,
         ReleaseObservationResult initial, ReleaseObservationResult? final,
@@ -666,15 +686,7 @@ internal static class ReleaseEngine
     {
         ReleaseSubject subject = preparation.Prepared.Subject;
         if (publication is not null)
-        {
-            if (publication.Subject != subject ||
-                publication.Steps.Any(step => step.Kind != "store" || step.Command is not null ||
-                    !double.IsFinite(step.DurationSeconds) || step.DurationSeconds < 0))
-                throw new InvalidDataException("Publication is not for this request.");
-            adapter.ValidateObservation(preparation, publication.Before);
-            if (publication.After is not null)
-                adapter.ValidateObservation(preparation, publication.After);
-        }
+            ValidateStorePublication(adapter, preparation, publication);
         if (profile.PublisherOnlyRead && final is not null)
             throw new InvalidDataException(
                 "Store has no verification observation outside its publisher.");

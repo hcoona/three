@@ -109,8 +109,9 @@ required check `release-identity`.
   acceptable only then, because creation binds the tag to the selected
   revision. An existing release whose tag is missing is a conflict, even when
   its assets are exact, so it is neither satisfied nor extended.
-- An existing release must not be a draft, and its prerelease flag must match
-  the channel.
+- An existing release must not be a draft, its prerelease flag must match the
+  channel, and when Official release notes are prepared its body must equal
+  them.
 - Every listed asset must be one of the prepared names in the `uploaded`
   state, with the prepared size (or an allowed same-version sibling store
   archive name when observing a shared browser-store Official anchor). Another
@@ -172,6 +173,6 @@ The MLD's [post-publication completion](../design/release.md#post-publication-co
 contract applies to this destination; this table owns its concrete conditions
 and observation.
 
-| Existing destination/use                            | Native completion conditions to preserve                                                                                                          | Post-publication observation                                                                                   |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| GitHub prerelease Buddy and GitHub release Official | Tag at the selected revision, one non-draft release with the channel's prerelease flag, exactly the two prepared assets uploaded with their sizes | Each prepared asset listed on the release in the `uploaded` state, and its downloaded bytes equal the original |
+| Existing destination/use                            | Native completion conditions to preserve                                                                                                                                                                                    | Post-publication observation                                                                                   |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| GitHub prerelease Buddy and GitHub release Official | Tag at the selected revision, one non-draft release with the channel's prerelease flag (and Official release body equal to prepared release notes when prepared), exactly the two prepared assets uploaded with their sizes | Each prepared asset listed on the release in the `uploaded` state, and its downloaded bytes equal the original |

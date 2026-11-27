@@ -65,10 +65,11 @@ ecosystem's complete preparation check before creating the phase output director
 Every `job-inputs` entry rejects a live run attempt other than 1, so partial
 reruns of later jobs stop too. Native tool-config operations
 remain ecosystem-specific. Each `complete-*` command takes preparation, initial observation,
-final observation and publication (`-` only when omitted) paths, plus optional
-Official GitHub Release anchor final-observation and publication paths on
-`Python`, `npm`, `Ruby` and `BrowserStore`. Missing
-required publication information remains unknown even when final bytes match.
+final observation and publication (`-` only when omitted) paths, plus an optional
+three-argument Official GitHub Release anchor group (initial observation, final
+observation and publication, `-` when omitted) on `Python`, `npm`, `Ruby` and
+`BrowserStore`. Missing required publication information remains unknown even
+when final bytes match.
 
 ### Source Layout
 

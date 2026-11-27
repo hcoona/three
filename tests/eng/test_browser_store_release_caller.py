@@ -109,10 +109,10 @@ def test_only_the_publisher_holds_environment_secrets_and_write_scope(
     )
 
 
-def test_anchor_publisher_isolates_contents_write_and_serializes_unit(
+def test_anchor_publisher_isolates_contents_write_and_serializes_by_unit(
     workflow,
 ):
-    """Only the anchor publisher gets contents:write and unit serialization."""
+    """Only the anchor publisher gets contents:write, queued by unit."""
     jobs = workflow["jobs"]
     anchor_job = jobs["publish-github-anchor"]
     assert anchor_job["permissions"] == {"contents": "write"}
@@ -121,6 +121,7 @@ def test_anchor_publisher_isolates_contents_write_and_serializes_unit(
             "workflow-delivery-github-release-steam-account-history-to-csv"
         ),
         "cancel-in-progress": False,
+        "queue": "max",
     }
     for name, job in jobs.items():
         if name != "publish-github-anchor":
