@@ -69,9 +69,9 @@ job with the union of every destination's privileges. For Official `Python`,
 `npm`, `Ruby` and `BrowserStore` callers, repository `contents: write` for the
 `release/<unit>/v<version>` tag and GitHub Release anchor is scoped to a
 dedicated post-publisher `publish-github-anchor` job serialized by unit
-(`workflow-delivery-github-release-<unit>`), keeping `prepare` and `observe`
-free of write permissions and keeping destination publishers free of
-`contents: write`.
+(`workflow-delivery-github-release-<unit>`, using `queue: max` when multiple
+storefront runs share the unit), keeping `prepare` and `observe` free of write
+permissions and keeping destination publishers free of `contents: write`.
 
 Logical phases are prepare/qualify, observe/describe, gated publication when needed,
 and verification/result. Combine or split them according to actual runner,

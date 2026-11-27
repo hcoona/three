@@ -60,7 +60,9 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
             long id = Number(release, "id");
             // A release whose tag is gone is no longer bound to the prepared commit.
             if (!tagged || Text(release, "tag_name") != tag || Flag(release, "draft") ||
-                Flag(release, "prerelease") != buddy)
+                Flag(release, "prerelease") != buddy ||
+                (!buddy && prepared.ReleaseNotes is not null &&
+                    Body(release) != prepared.ReleaseNotes))
                 return Result(ReleaseFileState.Conflict, ReleaseCheckStatus.Failed);
             releaseId = id;
 
@@ -237,6 +239,14 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
     private static string Text(JsonElement value, string name) =>
         value.GetProperty(name).GetString() is { Length: > 0 } text ? text :
             throw new InvalidDataException("Missing native text: " + name);
+
+    private static string Body(JsonElement value) =>
+        value.GetProperty("body") switch
+        {
+            { ValueKind: JsonValueKind.Null } => "",
+            { ValueKind: JsonValueKind.String } text => text.GetString()!,
+            _ => throw new InvalidDataException("Invalid native text: body"),
+        };
 
     private static long Number(JsonElement value, string name) =>
         value.GetProperty(name).GetInt64() is > 0 and var number ? number :

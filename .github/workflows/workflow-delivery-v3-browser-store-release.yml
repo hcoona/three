@@ -268,6 +268,7 @@ jobs:
     concurrency:
       group: workflow-delivery-github-release-steam-account-history-to-csv
       cancel-in-progress: false
+      queue: max
     steps:
       - *control
       - *prepared

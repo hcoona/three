@@ -158,9 +158,14 @@ def test_framework_provider_does_not_select_the_native_sdk(tmp_path):
     assert locked.locked_version(tmp_path, "dotnet-frameworks") == "10.4.5"
 
 
+def workflow_files(directory: Path) -> list[Path]:
+    """Workflow YAML files (*.yml and *.yaml) directly under directory."""
+    return sorted([*directory.glob("*.yml"), *directory.glob("*.yaml")])
+
+
 def guarded_workflows():
     """Workflows whose tool versions committed configuration owns."""
-    return sorted((ROOT / ".github/workflows").glob("*.yml"))
+    return workflow_files(ROOT / ".github/workflows")
 
 
 def _version_keys(node):
@@ -207,6 +212,56 @@ def test_workflows_take_tool_versions_from_committed_configuration():
         text = path.read_text()
         found = literal_tool_versions(text, yaml.safe_load(text))
         assert found == [], path
+
+
+def collect_workflow_concurrency_queues(
+    paths: list[Path],
+) -> list[tuple[str, str, object]]:
+    """Validate and return concurrency.queue entries across workflow files."""
+    queue_sites: list[tuple[str, str, object]] = []
+    for path in paths:
+        doc = yaml.safe_load(path.read_text())
+        scopes = [("workflow", doc.get("concurrency"))] + [
+            (f"jobs.{name}", job.get("concurrency"))
+            for name, job in (doc.get("jobs") or {}).items()
+            if isinstance(job, dict)
+        ]
+        for scope, concurrency in scopes:
+            if isinstance(concurrency, dict) and "queue" in concurrency:
+                value = concurrency["queue"]
+                assert value in {"single", "max"}, (path, scope, value)
+                if value == "max":
+                    assert concurrency.get("cancel-in-progress") is not True, (
+                        path,
+                        scope,
+                    )
+                queue_sites.append((path.name, scope, value))
+    return queue_sites
+
+
+def test_workflows_validate_concurrency_queue_where_actionlint_ignores_it():
+    """Validate concurrency.queue values while actionlint v1.7.11 lags."""
+    assert collect_workflow_concurrency_queues(guarded_workflows()) == [
+        (
+            "workflow-delivery-v3-browser-store-release.yml",
+            "jobs.publish-github-anchor",
+            "max",
+        )
+    ]
+
+
+def test_workflow_concurrency_queue_guard_covers_yaml_extension(tmp_path):
+    """Both .yml and .yaml workflows are checked for invalid queue settings."""
+    workflows = tmp_path / ".github/workflows"
+    workflows.mkdir(parents=True)
+    bad = workflows / "invalid.yaml"
+    bad.write_text(
+        "name: Bad\non: push\nconcurrency:\n"
+        "  group: g\n  queue: bogus\njobs: {}\n"
+    )
+    assert workflow_files(workflows) == [bad]
+    with pytest.raises(AssertionError):
+        collect_workflow_concurrency_queues(workflow_files(workflows))
 
 
 @pytest.mark.parametrize(

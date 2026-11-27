@@ -61,7 +61,15 @@ local pipeline_linters = new Mapping<String, Step> {
     profiles = List("small")
     glob = List("**/.github/workflows/*.yml", "**/.github/workflows/*.yaml")
     check = new Command {
-      argv = List("actionlint", "--", "{{files}}")
+      // actionlint v1.7.11 predates GitHub Actions' concurrency.queue property.
+      argv =
+        List(
+          "actionlint",
+          "-ignore",
+          "^unexpected key \"queue\" for \"concurrency\" section\\. expected one of \"cancel-in-progress\", \"group\"$",
+          "--",
+          "{{files}}",
+        )
     }
   }
 }

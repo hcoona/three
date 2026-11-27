@@ -192,7 +192,8 @@ internal static class PythonRepositoryInputs
     internal static bool IsWorkflow(string path) =>
         path.StartsWith(".github/workflows/", StringComparison.Ordinal) &&
         path.IndexOf('/', ".github/workflows/".Length) < 0 &&
-        path.EndsWith(".yml", StringComparison.Ordinal);
+        (path.EndsWith(".yml", StringComparison.Ordinal) ||
+         path.EndsWith(".yaml", StringComparison.Ordinal));
 
     private static bool IsReleaseCallerWorkflow(string path) =>
         IsWorkflow(path) &&

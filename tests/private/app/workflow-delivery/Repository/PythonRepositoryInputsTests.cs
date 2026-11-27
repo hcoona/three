@@ -111,6 +111,7 @@ public sealed class PythonRepositoryInputsTests
     [DataRow(".gitattributes", AzureAuthPytest, true)]
     [DataRow(".gitattributes", AzureAuthPytest, false)]
     [DataRow("renovate.json", RuntimePytest, true)]
+    [DataRow(".github/workflows/lint.yaml", RuntimePytest, true)]
     [DataRow("src/public/lib/nbgv-python/src/removed.py",
         "tests/private/app/workflow-delivery/Native/Python", true)]
     [DataRow("tests/private/app/workflow-delivery/fixtures/products/" +

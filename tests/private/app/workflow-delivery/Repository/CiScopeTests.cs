@@ -747,8 +747,8 @@ public sealed class CiScopeTests
     }
 
     [TestMethod]
-    // The committed tool-version guard (test_python_runtime.py) reads every root *.yml.
-    [DataRow(".github/workflows/lint.yaml", false)]
+    // The committed tool-version guard (test_python_runtime.py) reads every root *.yml/*.yaml.
+    [DataRow(".github/workflows/lint.yaml", true)]
     [DataRow(".github/workflows/codeql.yml", true)]
     [DataRow(".github/workflows/workflow-delivery-v3-npm-release.yml", true)]
     public void RootWorkflowsReceiveHkWorkflowLintResponsibility(string path, bool python)
@@ -944,7 +944,7 @@ public sealed class CiScopeTests
         var revision = new GitRevision(Basis, [new(path, "100644", "blob")]);
         ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(revision, [path], [], [],
             Tasks, Hk));
-        Assert.IsEmpty(row.Reasons);
+        Assert.IsFalse(row.Reasons.Any(reason => reason.Rule == "native-hk-workflow-lint"));
     }
 
     [TestMethod]
