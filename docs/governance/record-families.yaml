@@ -135,3 +135,15 @@ bindings:
       state: current,
       path: 'src/private/app/workflow-delivery/docs/design/models/*.cfg',
     }
+  - {
+      id: circular-list-models,
+      namespace: src/public/lib/CircularList,
+      state: current,
+      path: 'src/public/lib/CircularList/docs/models/*.tla',
+    }
+  - {
+      id: circular-list-model-configs,
+      namespace: src/public/lib/CircularList,
+      state: current,
+      path: 'src/public/lib/CircularList/docs/models/*.cfg',
+    }

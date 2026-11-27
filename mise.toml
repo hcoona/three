@@ -162,6 +162,10 @@ run = "apm install --only mcp"
 description = "Run the clean-room Z3 formal specification checks for Hcoona.Nanopass"
 run = "uv run --script src/public/lib/Nanopass/scripts/verify_formal_spec.py"
 
+[tasks."circular-list:verify-formal-spec"]
+description = "Run the Z3 BitVec(32) formal specification checks for CircularList"
+run = "uv run --script src/public/lib/CircularList/scripts/verify_formal_spec.py"
+
 [tasks."tla:tlc"]
 description = "Run TLC finite-state model checking with an isolated temporary -metadir"
 run = "python eng/scripts/tla.py tlc"

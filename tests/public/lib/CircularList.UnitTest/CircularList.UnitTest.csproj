@@ -5,6 +5,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="CsCheck" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../../../../src/public/lib/CircularList/CircularList.csproj" />
   </ItemGroup>
 
