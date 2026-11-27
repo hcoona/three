@@ -896,7 +896,16 @@ def test_slice_b_bare_venv_isolated_worker_and_zero_crop_page_heartbeat(
     site_pkgs = next((bare_venv / "lib").glob("python*/site-packages"))
     host_site_pkgs = Path(str(np.__file__)).resolve().parents[1]
     for entry in host_site_pkgs.iterdir():
-        if "sheet_music_omr" in entry.name or "sheet-music-omr" in entry.name:
+        if any(
+            pkg in entry.name
+            for pkg in (
+                "sheet_music_omr",
+                "sheet-music-omr",
+                "music21",
+                "converter21",
+                "musicdiff",
+            )
+        ):
             continue
         dst = site_pkgs / entry.name
         if not dst.exists():

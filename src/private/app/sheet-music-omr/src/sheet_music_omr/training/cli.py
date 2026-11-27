@@ -573,3 +573,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         scrub_paths(json.dumps(result, indent=2, sort_keys=True)) + "\n"
     )
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
