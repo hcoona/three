@@ -33,74 +33,73 @@ public sealed class RunDatabase
         Directory.CreateDirectory(StatePath);
         connectionString = Sql.ConnectionStringFor(databasePath);
         using SqliteConnection connection = Open();
-        Sql.Execute(connection, "PRAGMA journal_mode=WAL;");
-        using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
-        Sql.Execute(
-            connection,
-            "CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);",
-            transaction
-        );
-        string? existingVersion =
-            Sql.Scalar(
-                connection,
-                "SELECT value FROM meta WHERE key='schema_version';",
-                transaction
-            ) as string;
         if (
-            existingVersion is not null
-            && int.Parse(existingVersion, CultureInfo.InvariantCulture) != SchemaVersion
+            configuration is null
+            && TryLoadExistingConfiguration(connection, out RunConfiguration? existing)
         )
         {
-            throw new InvalidOperationException(
-                $"Unsupported run schema {existingVersion}; state has not been recreated."
-            );
-        }
-
-        string? stored =
-            Sql.Scalar(connection, "SELECT value FROM meta WHERE key='configuration';", transaction)
-            as string;
-        if (stored is null)
-        {
-            if (configuration is null)
-            {
-                throw new InvalidOperationException("Run configuration is missing.");
-            }
-
-            if (!Paths.AreSame(configuration.StatePath, StatePath))
-            {
-                throw new ArgumentException(
-                    "Configuration and database state paths disagree.",
-                    nameof(configuration)
-                );
-            }
-
-            Configuration = configuration;
-            Sql.Execute(
-                connection,
-                "INSERT INTO meta(key,value) VALUES('configuration',$configuration),"
-                    + "('schema_version',$version),('run_id',$run);",
-                transaction,
-                ("$configuration", JsonSerializer.Serialize(configuration, Json.Options)),
-                ("$version", SchemaVersion.ToString(CultureInfo.InvariantCulture)),
-                ("$run", Guid.NewGuid().ToString("N"))
-            );
+            Configuration = existing!;
         }
         else
         {
-            if (configuration is not null)
+            using (SqliteTransactionScope transaction = Sql.BeginTransaction(connection))
             {
-                throw new InvalidOperationException(
-                    "An initialized run cannot be overwritten by init."
+                Sql.Execute(
+                    connection,
+                    "CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+                    transaction
                 );
+                ValidateExistingSchemaVersion(connection, transaction);
+                string? stored =
+                    Sql.Scalar(
+                        connection,
+                        "SELECT value FROM meta WHERE key='configuration';",
+                        transaction
+                    ) as string;
+                if (stored is null)
+                {
+                    if (configuration is null)
+                    {
+                        throw new InvalidOperationException("Run configuration is missing.");
+                    }
+
+                    if (!Paths.AreSame(configuration.StatePath, StatePath))
+                    {
+                        throw new ArgumentException(
+                            "Configuration and database state paths disagree.",
+                            nameof(configuration)
+                        );
+                    }
+
+                    Configuration = configuration;
+                    Sql.Execute(
+                        connection,
+                        "INSERT INTO meta(key,value) VALUES('configuration',$configuration),"
+                            + "('schema_version',$version),('run_id',$run);",
+                        transaction,
+                        ("$configuration", JsonSerializer.Serialize(configuration, Json.Options)),
+                        ("$version", SchemaVersion.ToString(CultureInfo.InvariantCulture)),
+                        ("$run", Guid.NewGuid().ToString("N"))
+                    );
+                }
+                else
+                {
+                    if (configuration is not null)
+                    {
+                        throw new InvalidOperationException(
+                            "An initialized run cannot be overwritten by init."
+                        );
+                    }
+
+                    Configuration = DeserializeConfiguration(stored);
+                }
+
+                transaction.Commit();
             }
 
-            Configuration =
-                JsonSerializer.Deserialize<RunConfiguration>(stored, Json.Options)
-                ?? throw new InvalidOperationException("Stored run configuration is invalid.");
-            Configuration.Validate();
+            Sql.EnsureWalMode(connection);
         }
 
-        transaction.Commit();
         cachedMembers = Array.AsReadOnly(["owner", .. Configuration.WorkerIds]);
         Meta = new(this);
     }
@@ -148,10 +147,85 @@ public sealed class RunDatabase
         Configuration = configuration;
         cachedMembers = Array.AsReadOnly(["owner", .. configuration.WorkerIds]);
     }
+
+    private static bool TryLoadExistingConfiguration(
+        SqliteConnection connection,
+        out RunConfiguration? configuration
+    )
+    {
+        configuration = null;
+        if (
+            Sql.Scalar(
+                connection,
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='meta';"
+            )
+            is null
+        )
+        {
+            return false;
+        }
+
+        ValidateExistingSchemaVersion(connection, null);
+        string? stored =
+            Sql.Scalar(connection, "SELECT value FROM meta WHERE key='configuration';") as string;
+        if (stored is null)
+        {
+            throw new InvalidOperationException("Run configuration is missing.");
+        }
+
+        configuration = DeserializeConfiguration(stored);
+        return string.Equals(
+            Sql.Scalar(connection, "PRAGMA journal_mode;") as string,
+            "wal",
+            StringComparison.OrdinalIgnoreCase
+        );
+    }
+
+    private static void ValidateExistingSchemaVersion(
+        SqliteConnection connection,
+        SqliteTransaction? transaction
+    )
+    {
+        string? existingVersion =
+            Sql.Scalar(
+                connection,
+                "SELECT value FROM meta WHERE key='schema_version';",
+                transaction
+            ) as string;
+        if (
+            existingVersion is not null
+            && int.Parse(existingVersion, CultureInfo.InvariantCulture) != SchemaVersion
+        )
+        {
+            throw new InvalidOperationException(
+                $"Unsupported run schema {existingVersion}; state has not been recreated."
+            );
+        }
+    }
+
+    private static RunConfiguration DeserializeConfiguration(string stored)
+    {
+        RunConfiguration configuration =
+            JsonSerializer.Deserialize<RunConfiguration>(stored, Json.Options)
+            ?? throw new InvalidOperationException("Stored run configuration is invalid.");
+        configuration.Validate();
+        return configuration;
+    }
 }
 
 public static class Sql
 {
+    internal static void EnsureWalMode(SqliteConnection connection)
+    {
+        string? mode = Sql.Scalar(connection, "PRAGMA journal_mode=WAL;") as string;
+        if (!string.Equals(mode, "wal", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"SQLite database failed to enter WAL mode (journal_mode={mode ?? "null"})."
+            );
+        }
+    }
+
     internal static string ConnectionStringFor(string path) =>
         new SqliteConnectionStringBuilder
         {
