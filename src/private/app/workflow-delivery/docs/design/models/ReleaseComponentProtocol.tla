@@ -118,8 +118,10 @@ EnvelopeTamperingBlocked(p) ==
               PrimaryPermitsAnchor(p, req, goodTgt, goodRt,
                                    [goodPub EXCEPT !.refreshed = estObs, !.commands = <<>>, !.pubFinalObs = UnobservedMap(p)]))
         /\ (p.readTopology = "publisher-only" =>
-              PrimaryPermitsAnchor(p, req, goodTgt, goodRt,
-                                   [goodPub EXCEPT !.commands = <<<<firstOp, "ambiguous">>>>, !.pubFinalObs = estObs]))
+              /\ PrimaryPermitsAnchor(p, req, goodTgt, goodRt,
+                                      [goodPub EXCEPT !.commands = <<<<firstOp, "ambiguous">>>>, !.pubFinalObs = estObs])
+              /\ ~PrimaryPermitsAnchor(p, req, goodTgt, goodRt,
+                                       [goodPub EXCEPT !.commands = <<<<firstOp, "failed">>>>, !.pubFinalObs = estObs]))
         /\ \A rec \in SealedPubReceiptsFromPool(p, req, goodTgt, goodRt, ValidObsMaps(p)) :
              IsValidSealedPubReceipt(p, req, goodTgt, goodRt, rec)
         /\ staleNoCmd.satisfaction # "satisfied" /\ staleNoCmd.attempted = "unknown"

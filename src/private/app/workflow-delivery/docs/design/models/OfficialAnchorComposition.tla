@@ -399,8 +399,11 @@ AnchorGateAndZeroWriteDiscipline ==
           PrimaryPermitsAnchor(profile, CurrentRequest, PrimaryTargetEnv, PrimaryRouteEnv, PrimaryReceiptAtAnchor))
     /\ ((AnchorActive /\ PrimaryRouteEnv.route = "publisher" /\ profile.readTopology = "publisher-only" /\
          primaryStatus = "present" /\ primaryAtAnchorStatus = "present" /\
+         OpsWithOutcome(primaryCommands, "failed") = {} /\
          AggregateObsState(profile, primaryFinalObs) = ProofToken(profile.proofMode)) =>
           PrimaryPermitsAnchor(profile, CurrentRequest, PrimaryTargetEnv, PrimaryRouteEnv, PrimaryReceiptAtAnchor))
+    /\ (OpsWithOutcome(primaryCommands, "failed") # {} =>
+          ~PrimaryPermitsAnchor(profile, CurrentRequest, PrimaryTargetEnv, PrimaryRouteEnv, PrimaryReceiptAtAnchor))
     /\ ((AggregateObsState(profile, preObs) = ProofToken(profile.proofMode) \/
          (primaryStatus = "present" /\ AggregateObsState(profile, primaryRefreshed) = ProofToken(profile.proofMode))) =>
           primaryCommands = <<>> /\

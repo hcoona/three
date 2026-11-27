@@ -411,9 +411,11 @@ PrimaryPermitsAnchor(p, req, primaryTargetEnv, primaryRouteEnv, primaryPubReceip
     /\ \/ (primaryRouteEnv.route = "verify-without-write" /\ primaryPubReceiptEnv.status = "not-required")
        \/ /\ primaryRouteEnv.route = "publisher" /\ primaryPubReceiptEnv.status = "present"
           /\ IF CompletionReader(p) = "publisher"
-             THEN AggregateObsState(p, primaryPubReceiptEnv.pubFinalObs) = ProofToken(p.proofMode)
-             ELSE \/ (~IsUnobservedMap(p, primaryPubReceiptEnv.pubFinalObs) /\
-                      AggregateObsState(p, primaryPubReceiptEnv.pubFinalObs) = ProofToken(p.proofMode))
+             THEN /\ OpsWithOutcome(primaryPubReceiptEnv.commands, "failed") = {}
+                  /\ AggregateObsState(p, primaryPubReceiptEnv.pubFinalObs) = ProofToken(p.proofMode)
+             ELSE \/ /\ OpsWithOutcome(primaryPubReceiptEnv.commands, "failed") = {}
+                     /\ ~IsUnobservedMap(p, primaryPubReceiptEnv.pubFinalObs)
+                     /\ AggregateObsState(p, primaryPubReceiptEnv.pubFinalObs) = ProofToken(p.proofMode)
                   \/ /\ ~IsUnobservedMap(p, primaryPubReceiptEnv.refreshed)
                      /\ AggregateObsState(p, primaryPubReceiptEnv.refreshed) \in {ProofToken(p.proofMode), "missing"}
                      /\ MissingOps(p, primaryPubReceiptEnv.refreshed) \subseteq primaryRouteEnv.reviewed
