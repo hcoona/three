@@ -188,3 +188,75 @@ relay port. Native Windows and non-WSL Linux keep Playwright's default channel
 lookup, and an explicit `PLAYWRIGHT_MCP_EXECUTABLE_PATH` overrides discovery on
 any platform. Reload active CLI MCP sessions (`/mcp reload`) after changing the
 launcher task.
+
+## Minimum Release Age
+
+Repository dependency and toolchain resolvers enforce a uniform three-day
+minimum release-age cooldown before newly published upstream releases can enter
+lockfiles or automated update pull requests, using each ecosystem's native
+configuration:
+
+- [`renovate.json`](../../renovate.json): `"minimumReleaseAge": "3 days"`.
+  Only three upstream datasources that omit release timestamps carry narrowly
+  scoped `packageRules` exemptions: `github-actions` digest/pin updates
+  (`minimumReleaseAge: null`), `custom.regex` `nodejs/Release` `git-refs`
+  schedule updates (`minimumReleaseAge: null`), and `devcontainer` `docker`
+  digest updates (`minimumReleaseAgeBehaviour: "timestamp-optional"`). Both
+  `nodejs/Release` and `devcontainer` enable `automerge: true`; major Node and
+  .NET test-platform migrations remain manually reviewed.
+- [`eng/renovate/.npmrc`](../../eng/renovate/.npmrc): `min-release-age=3` for
+  the standalone Renovate CLI npm lockfile.
+- [`pnpm-workspace.yaml`](../../pnpm-workspace.yaml) and standalone repository
+  pnpm workspaces outside `tests/`: `minimumReleaseAge: 4320` (minutes).
+- [`pyproject.toml`](../../pyproject.toml): `tool.uv.exclude-newer = "3 days"`,
+  recorded in `uv.lock` as `options.exclude-newer-span = "P3D"`, while keeping
+  `.config/uv/uv.toml` exclusively for `setup-uv`'s `required-version`.
+- [`mise.toml`](../../mise.toml): `settings.minimum_release_age = "3d"`.
+- Active Ruby bundle roots (`src/public/lib/asciidoctor-latexmath` and
+  `tests/private/app/workflow-delivery/Native/Ruby`): `.bundle/config` sets
+  `BUNDLE_COOLDOWN: "3"` with `Gemfile.lock` locked on Bundler `4.0.20` or
+  later (nested `tests/private/app/workflow-delivery/Native/Ruby/contexts/**`
+  fixtures preserve historical pre-4.0 lockfiles strictly for paired endpoint
+  compatibility tests).
+- NuGet (`dotnet restore`) provides no native CLI release-age setting; NuGet
+  updates rely on Renovate's three-day `minimumReleaseAge` gate together with
+  committed `packages.lock.json` verification (`RestoreLockedMode=true`).
+
+Any reduction below three days or addition to the timestamp-less Renovate
+exemption allowlist requires repository-owner approval.
+
+## Public Library Minimum Dependency Floors
+
+Published libraries under `src/public/lib/**` declare the lowest compatible
+runtime, optional, peer, and language/engine versions they genuinely require
+rather than tracking latest upstream releases:
+
+- **NuGet (`src/public/lib/Directory.Packages.props`)**: every
+  non-`PrivateAssets="all"` `<PackageReference>` of a packable
+  `src/public/lib/**/*.csproj` must be isolated unconditionally in
+  `src/public/lib/Directory.Packages.props` (via `Include` or `Update`) using
+  an open-ended minimum-floor interval `[x.y.z,)` so public packages never
+  inherit floating latest versions from root `Directory.Packages.props`.
+- **PyPI (`src/public/lib/**/pyproject.toml`)**: `project.requires-python`,
+  `project.dependencies`, and `project.optional-dependencies` declare `>=`
+  minimum floors without exact pins or pessimistic caps.
+- **npmjs (`src/public/lib/**/package.json`)**: published packages declare
+  minimum floors (`^` or `>=`) across `dependencies`, `optionalDependencies`,
+  `peerDependencies`, and `engines`. `@asciidoctor/core` in
+  `src/public/lib/hexo-renderer-asciidoc/package.json` is the single documented
+  exact-version contract exception because Asciidoctor.js minor releases shift
+  generated HTML/runtime contracts coupled to the renderer.
+- **RubyGems (`src/public/lib/**/*.gemspec`)**: `required_ruby_version` and
+  runtime dependencies declare `>=` minimum floors (allowing only major-boundary
+  `< N.0` upper guards where SemVer major breaks apply, never exact `=` or
+  minor-locking `~>` constraints).
+
+[`renovate.json`](../../renovate.json) disables routine dependency-floor updates
+(`enabled: false`) across all four `src/public/lib/**` floor surfaces while
+keeping development/test dependency updates, `lockFileMaintenance`, and
+vulnerability alerts active. Raising a published library's minimum dependency
+or language/engine floor narrows downstream compatibility and requires either
+security vulnerability remediation or an explicit owner-authorized compatibility
+change in [`docs/delivery-wave.md`](../delivery-wave.md). HK's
+`supply-chain-policy` check enforces both cross-ecosystem release-age alignment
+and public-library floor invariants mechanically.

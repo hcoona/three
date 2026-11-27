@@ -896,6 +896,20 @@ public sealed class CiScopeTests
     }
 
     [TestMethod]
+    [DataRow("eng/scripts/check_supply_chain_policy.py")]
+    [DataRow("tests/private/app/workflow-delivery/Native/Ruby/.bundle/config")]
+    [DataRow("src/public/lib/asciidoctor-latexmath/.bundle/config")]
+    [DataRow("src/public/lib/Directory.Packages.props")]
+    public void SupplyChainPolicyInputsReceivePythonResponsibility(string path)
+    {
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(Revision(path), [path], [],
+            [], Tasks, Hk));
+        string rows = string.Join(", ", row.Reasons.Select(item => item.Owner + ":" + item.Rule));
+        Assert.IsTrue(row.Reasons.Any(reason => reason.Owner == "python" &&
+            reason.Rule == "native-python-caller-responsibility"), rows);
+    }
+
+    [TestMethod]
     public void ScriptsWithoutInlineMetadataKeepPythonResponsibility()
     {
         const string path = "eng/scripts/workflow_delivery_v3_hk.py";

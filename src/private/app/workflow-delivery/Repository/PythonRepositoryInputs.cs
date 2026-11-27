@@ -137,6 +137,7 @@ internal static class PythonRepositoryInputs
             "tests/eng/test_python_release_caller.py" or
             "tests/eng/test_python_runtime.py" or
             "tests/eng/test_release_batch_dispatch.py" or
+            "tests/eng/test_supply_chain_policy.py" or
             "tests/eng/test_workflow_delivery_v3_hk.py") ||
         (target == "tests/eng/test_python_runtime.py" && (path is "renovate.json" or
             "global.json" || IsWorkflow(path))) ||
@@ -173,6 +174,7 @@ internal static class PythonRepositoryInputs
         (target == "tests/eng/test_release_triage.py" &&
             (path is "eng/scripts/release_triage.py" or ".github/workflows/release-triage.yml" or
                 "version.json" || IsPublicInventoryInput(path))) ||
+        (target == "tests/eng/test_supply_chain_policy.py" && IsSupplyChainPolicyInput(path)) ||
         // Retired HK wrapper scripts; a comparison deleting them still needs an owner.
         (target == "tests/eng/test_workflow_delivery_v3_hk.py" &&
             path is "eng/scripts/hk_exec.py" or "eng/scripts/hk_actionlint.py" or
@@ -181,6 +183,7 @@ internal static class PythonRepositoryInputs
             path is "eng/scripts/sync_python_version.py" or
                 "eng/scripts/workflow_delivery_v3_hk.py" or
                 "eng/scripts/hk_scope_drift.py" or
+                "eng/scripts/check_supply_chain_policy.py" or
                 "eng/scripts/update_node_release_schedule.py" or
                 // Retired guard script; a comparison deleting it still needs an owner.
                 "eng/scripts/update_node_mise_lock.py");
@@ -209,6 +212,24 @@ internal static class PythonRepositoryInputs
          path.EndsWith("/pyproject.toml", StringComparison.Ordinal) ||
          path.EndsWith(".csproj", StringComparison.Ordinal) ||
          path.EndsWith(".gemspec", StringComparison.Ordinal));
+
+    internal static bool IsSupplyChainPolicyInput(string path) =>
+        path is "eng/scripts/check_supply_chain_policy.py" or "mise.toml" or "renovate.json" or
+            "eng/renovate/.npmrc" or "pyproject.toml" or "uv.lock" or
+            "src/public/lib/Directory.Packages.props" ||
+        (!Under(path, "tests") &&
+            (path == "pnpm-workspace.yaml" ||
+             path.EndsWith("/pnpm-workspace.yaml", StringComparison.Ordinal))) ||
+        (!Under(path, "tests/private/app/workflow-delivery/Native/Ruby/contexts") &&
+            (path == "Gemfile" || path.EndsWith("/Gemfile", StringComparison.Ordinal) ||
+             path == "Gemfile.lock" || path.EndsWith("/Gemfile.lock", StringComparison.Ordinal) ||
+             path == ".bundle/config" ||
+             path.EndsWith("/.bundle/config", StringComparison.Ordinal))) ||
+        (Under(path, "src/public/lib") &&
+            (path.EndsWith("/package.json", StringComparison.Ordinal) ||
+             path.EndsWith("/pyproject.toml", StringComparison.Ordinal) ||
+             path.EndsWith(".csproj", StringComparison.Ordinal) ||
+             path.EndsWith(".gemspec", StringComparison.Ordinal)));
 
     private static bool Azure(string path) =>
         DotNetInheritedInputs.Consumes(path, AzureRoots) ||
