@@ -71,7 +71,8 @@ The extension is designed to run only on the Steam Account History page to read 
 
 ## Support and Release History
 
-- **Project homepage:** <https://github.com/hcoona/three/tree/main/src/public/lib/steam-account-history-to-csv>
+- **Project homepage (user guide):** <https://github.com/hcoona/three/blob/main/src/public/lib/steam-account-history-to-csv/README.user.md>
+- **Source & developer guide:** <https://github.com/hcoona/three/tree/main/src/public/lib/steam-account-history-to-csv>
 - **Issue tracker / support:** <https://github.com/hcoona/three/issues>
 - **Changelog:** `CHANGELOG.md` ([online copy on GitHub](https://github.com/hcoona/three/blob/main/src/public/lib/steam-account-history-to-csv/CHANGELOG.md))
 
