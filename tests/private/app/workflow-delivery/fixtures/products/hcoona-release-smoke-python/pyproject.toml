@@ -24,6 +24,7 @@ packages = ["src/hcoona_release_smoke_python"]
 include = [
   "src/hcoona_release_smoke_python",
   "pyproject.toml",
+  "CHANGELOG.md",
   "README.md",
   "LICENSE",
 ]

@@ -105,12 +105,16 @@ def _project_spec(
         for p in pkg_dirs[0].rglob("*.py")
         if p.is_file()
     }
+    if (pkg_dirs[0] / "py.typed").is_file():
+        wheel_files.add(f"{module}/py.typed")
     sdist_files = {f"src/{rel}" for rel in wheel_files} | {
         "pyproject.toml",
         "README.md",
     }
     if (project_dir / "LICENSE").is_file():
         sdist_files.add("LICENSE")
+    if (project_dir / "CHANGELOG.md").is_file():
+        sdist_files.add("CHANGELOG.md")
     api = (
         api_override
         if api_override is not None
