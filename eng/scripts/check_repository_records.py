@@ -298,7 +298,7 @@ def collect_identifiers(
         matched = [
             b
             for b in bindings
-            if b.get("state") == "current"
+            if b.get("state", "current") == "current"
             and valid_binding_pattern(b.get("path", ""))
             and matches(path, b["path"])
         ]
@@ -379,7 +379,7 @@ def _validate_bindings(  # noqa: C901 - Single-pass binding verification.
             error("unsafe-binding-path", pattern, binding["id"])
             continue
         selected = [p for p in current.modes if matches(p, pattern)]
-        if binding["state"] == "scheduled":
+        if binding.get("state") == "scheduled":
             if selected:
                 error("scheduled-has-instances", pattern, binding["id"])
             continue

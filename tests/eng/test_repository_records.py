@@ -182,6 +182,35 @@ def test_wildcard_binding_covers_new_project_without_catalog_edit(
     assert report["diagnostics"] == []
 
 
+def test_omitting_scheduled_state_admits_record_and_protects_its_ids(
+    tmp_path: Path,
+) -> None:
+    """A scheduled path gains ownership and ID protection when made current."""
+    repo = FixtureRepo(tmp_path)
+    path = "docs/next.md"
+    binding = {
+        "id": "next",
+        "namespace": "repository",
+        "state": "scheduled",
+        "path": path,
+    }
+    repo.catalog["bindings"].append(binding)
+    repo.save_catalog()
+    repo.write(path, "# Next\n\n## REQ-042 New commitment\n")
+    assert "scheduled-has-instances" in codes(
+        checker.check_repository(repo.root, repo.base, None)
+    )
+
+    del binding["state"]
+    repo.save_catalog()
+    assert codes(checker.check_repository(repo.root, repo.base, None)) == []
+    accepted = repo.commit("Admit the new record")
+    repo.write(path, "# Next\n")
+    assert codes(checker.check_repository(repo.root, accepted, None)) == [
+        "established-identifier-removed"
+    ]
+
+
 def test_uncovered_and_symlinked_markdown_records_fail_closed(
     tmp_path: Path,
 ) -> None:

@@ -21,7 +21,7 @@
     "binding": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "namespace", "state", "path"],
+      "required": ["id", "namespace", "path"],
       "properties": {
         "id": {
           "type": "string",
@@ -32,7 +32,8 @@
           "minLength": 1
         },
         "state": {
-          "enum": ["current", "scheduled"]
+          "enum": ["current", "scheduled"],
+          "default": "current"
         },
         "path": {
           "type": "string",
