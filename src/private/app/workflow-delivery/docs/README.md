@@ -23,9 +23,11 @@ turn them into operation permission. Unsupported necessary native capabilities
 remain unsupported. Internal historical formats need no compatibility reader.
 
 For a nonnormative specification independent of the implementation, see
-[business decisions and finite TLA+ models](design/business-semantics.md).
-It covers the five CI and Release journeys and separates checked decisions
-from assumptions about native systems.
+[business decisions and finite TLA+ models](design/business-semantics.md) and
+its white-box decomposition into
+[component and bilateral port contracts](design/component-contracts.md).
+Together they cover the five CI and Release journeys, internal port boundaries,
+and assumptions about native systems.
 
 ## Native Integration Evidence
 
