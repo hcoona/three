@@ -515,6 +515,27 @@ def verify_w6_slice_b_gpu_assets(  # noqa: C901
     }
 
 
+def _require_local_wsl2_rtx4090_host() -> None:
+    if "microsoft" not in platform.release().lower():
+        _stop("formal setup-w6-slice-b requires a local WSL2 workstation")
+    smi_bin = shutil.which("nvidia-smi")
+    if smi_bin is None:
+        _stop("formal setup-w6-slice-b requires NVIDIA RTX 4090 via nvidia-smi")
+    try:
+        smi = subprocess.run(  # noqa: S603
+            [smi_bin, "-L"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except OSError as exc:
+        msg = "formal setup-w6-slice-b requires NVIDIA RTX 4090 via nvidia-smi"
+        raise StopConditionError(msg) from exc
+    if smi.returncode != 0 or "RTX 4090" not in smi.stdout:
+        _stop("formal setup-w6-slice-b requires a local NVIDIA RTX 4090 GPU")
+
+
 def setup_w6_slice_b(  # noqa: PLR0913
     downloads_dir: Path,
     *,
@@ -528,6 +549,8 @@ def setup_w6_slice_b(  # noqa: PLR0913
     """Verify carried-forward state, fetch locked GPU assets and build venv."""
     downloads = downloads_dir.absolute()
     check_outside_repository(downloads)
+    if formal and require_cuda:
+        _require_local_wsl2_rtx4090_host()
     if formal and (package_run_dir is None or traindev_root is None):
         _stop(
             "formal setup-w6-slice-b requires --package-run-dir and"

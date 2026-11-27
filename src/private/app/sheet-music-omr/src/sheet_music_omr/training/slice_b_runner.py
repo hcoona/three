@@ -334,6 +334,26 @@ def _resample_blind_crop_14px(
     return crop.resize((nw, nh), Image.Resampling.BICUBIC)
 
 
+def _verify_dataset_belongs_to_packaged_slice_a(
+    ds_dir: Path, package_run_dir: Path | None = None
+) -> Path:
+    resolved_ds = ds_dir.resolve()
+    if resolved_ds.name not in {"w6-crops-20k", "w6-crops-50k"} or (
+        resolved_ds.parent.name != "datasets"
+    ):
+        msg = (
+            "Slice B dataset directory must be <package_run>/datasets/"
+            "w6-crops-{20k,50k}"
+        )
+        raise StopConditionError(msg)
+    pkg_root = resolved_ds.parents[1]
+    if package_run_dir is not None and package_run_dir.resolve() != pkg_root:
+        msg = "--package-run-dir does not match --dataset-dir package root"
+        raise StopConditionError(msg)
+    verify_packaged_slice_a_datasets(pkg_root)
+    return pkg_root
+
+
 def run_w6_gpu_train(  # noqa: C901, PLR0912, PLR0913, PLR0915
     downloads_dir: Path,
     run_dir: Path,
@@ -366,8 +386,8 @@ def run_w6_gpu_train(  # noqa: C901, PLR0912, PLR0913, PLR0915
     if formal and src["dirty"]:
         msg = "formal Slice B GPU training requires a clean git tree"
         raise StopConditionError(msg)
-    if package_run_dir is not None and not tiny_fixture:
-        verify_packaged_slice_a_datasets(package_run_dir)
+    if not tiny_fixture and (formal or package_run_dir is not None):
+        _verify_dataset_belongs_to_packaged_slice_a(ds_dir, package_run_dir)
     lock = resolve_model_weight_lock(model_repo)
     env_info = (
         {"tiny_fixture": True}
@@ -1671,10 +1691,13 @@ def run_w6_traindev_replay_and_preregister(  # noqa: C901, PLR0912, PLR0913, PLR
     run = _validate_slice_b_run_dir(downloads, run_dir)
     ds_dir = synth_dataset_dir.absolute()
     check_outside_repository(ds_dir)
+    check_no_symlink_under(ds_dir, Path(ds_dir.anchor))
     src = source_state(run_git)
     if formal and src["dirty"]:
         msg = "formal Slice B replay and pre-registration requires a clean tree"
         raise StopConditionError(msg)
+    if formal and not tiny_fixture:
+        _verify_dataset_belongs_to_packaged_slice_a(ds_dir)
     repos_to_check = [model_repo] if model_repo is not None else None
     if not tiny_fixture:
         verify_w6_slice_b_gpu_assets(
