@@ -431,3 +431,31 @@ and history.
   gold files; no unreviewed change to repository-locked tool/runtime versions or
   other projects' behavior; and no publication, release, credential or access
   change.
+
+### Specify and rewrite PhiFailureDetector v3
+
+- **Work carrier:** [Issue #1820](https://github.com/hcoona/three/issues/1820)
+  and its linked pull requests, coordinating consumer documentation and
+  release-note alignment with
+  [Issue #1824](https://github.com/hcoona/three/issues/1824).
+- **Accepted inputs and scope/outcome:** using
+  [governance](governance/governance-system.md),
+  [record policy](governance/record-system.md),
+  [engineering principles](engineering/engineering-principles.md),
+  [.NET compatibility](engineering/dotnet-compatibility.md), and
+  `PhiFailureDetector`'s [portal](../src/public/lib/PhiFailureDetector/README.md),
+  formally specify (`TLA+/TLC` concurrency, sliding-window equivalence, and
+  liveness models plus `Z3` `Real` and IEEE-754 `Float64` numerical proofs) and
+  deliver the `3.0` (`3.0.0-beta.{height}`) breaking public-contract, numerical,
+  and thread-safety rewrite of `src/public/lib/PhiFailureDetector/`, updating
+  its release-unit qualification probe, `README.md`, `ReleaseNotes.md`,
+  record/task bindings (`docs/governance/record-families.yaml`, `mise.toml`),
+  and layered `MSTest`/`CsCheck` verification in
+  `tests/public/lib/PhiFailureDetector.UnitTest/`.
+- **Permitted external/paid effects:** none beyond routine repository
+  development and governed CI validation.
+- **Exclusions and closure:** no Release Plan 2 multi-library `.NET`
+  baseline/TFM or `CHANGELOG.md` target consolidation (`#1798`, `#1811`,
+  `#1867`), live `nuget.org` release dispatch, or credential/publisher changes.
+  Retain applicable independent reviews and `GOV-011` disposition; delete this
+  entry atomically in the delivery PR that completes #1820.
