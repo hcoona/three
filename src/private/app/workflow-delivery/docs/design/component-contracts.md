@@ -284,18 +284,21 @@ mise run tla:tlc -- -workers auto -config "$m/OfficialAnchorProtocol.cfg" "$m/Of
   [`DeliveryPortAlgebra`](models/DeliveryPortAlgebra.tla) defines the required
   `RightPort` observation postcondition: an operation cell reports `missing` if
   and only if `coordMatch /\ ~present /\ status = "absent"` (never on a foreign
-  coordinate), and reports `established` if and only if
-  `present /\ status # "absent" /\ EvaluatePositiveProof(...) = ProofToken`
-  from raw coordinate, metadata, byte-comparison or store-status facts (so on
-  `blind-receipt`, an `acknowledged` submission command whose polled operation
-  status remains `unknown` stays in `uncertainCalls` and never reports
-  `satisfied`). `TLC` verifies that `Engine` and `Core` preserve every safety,
-  isolation, envelope-binding, dual-port anchor and refinement property
-  _assuming_ each `LeftPort` and `RightPort` implementation satisfies that
-  postcondition and its native platform contracts (`WD-SYS-004`, `WD-REL-008`,
-  `WD-REL-009`, `WD-OPS-002`, `WD-RET-004`). It does not verify MSBuild, PNPM,
-  UV, Bundler, NBGV, GitHub Actions artifact integrity, OIDC token exchange or
-  external registry HTTP endpoints.
+  coordinate); reports `conflict` if and only if `present` holds with either a
+  foreign coordinate (`~coordMatch`), `status = "rejected"`, or a `served-bytes`
+  target of non-`unknown`/`absent` status whose metadata or bytes fail to match
+  (`~metadataMatch \/ ~bytesMatch`); reports `established` if and only if
+  `present /\ status \notin {"absent", "unknown", "rejected"} /\ EvaluatePositiveProof(...) = ProofToken`;
+  and reports `unknown` otherwise (including unread/failed reads with
+  `status = "unknown"`, so on `blind-receipt` an `acknowledged` submission
+  command whose polled operation status remains `unknown` stays in
+  `uncertainCalls` and never reports `satisfied`). `TLC` verifies that `Engine`
+  and `Core` preserve every safety, isolation, envelope-binding, dual-port
+  anchor and refinement property _assuming_ each `LeftPort` and `RightPort`
+  implementation satisfies that postcondition and its native platform contracts
+  (`WD-SYS-004`, `WD-REL-008`, `WD-REL-009`, `WD-OPS-002`, `WD-RET-004`). It
+  does not verify MSBuild, PNPM, UV, Bundler, NBGV, GitHub Actions artifact
+  integrity, OIDC token exchange or external registry HTTP endpoints.
 - **Shared browser-store anchor concurrency:** When multiple storefront runs for
   the same Official unit share one `release/<unit>/v<npmVersion>` anchor, native
   workflow concurrency serializes `publish-github-anchor` per unit while

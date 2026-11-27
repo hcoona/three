@@ -72,9 +72,21 @@ RawClassificationOnto(pm) ==
     /\ {ClassifyRawOpObs(pm, ev) : ev \in RawOpEvidenceSpace} = OpObsValues
     /\ \A ev \in RawOpEvidenceSpace :
          /\ (ClassifyRawOpObs(pm, ev) = "established") <=>
-              (ev.present /\ ev.status # "absent" /\
+              (ev.present /\ ev.status \notin {"absent", "unknown", "rejected"} /\
                EvaluatePositiveProof(pm, ev.coordMatch, ev.metadataMatch, ev.bytesMatch, ev.status) = ProofToken(pm))
          /\ (ClassifyRawOpObs(pm, ev) = "missing") <=> (ev.coordMatch /\ ~ev.present /\ ev.status = "absent")
+         /\ (ClassifyRawOpObs(pm, ev) = "conflict") <=>
+              (ev.present /\
+               (~ev.coordMatch \/ ev.status = "rejected" \/
+                (pm = "served-bytes" /\ ev.status \notin {"absent", "unknown"} /\
+                 (~ev.metadataMatch \/ ~ev.bytesMatch))))
+         /\ (ClassifyRawOpObs(pm, ev) = "unknown") <=>
+              ((~ev.coordMatch /\ ~ev.present) \/
+               (ev.coordMatch /\ ~ev.present /\ ev.status # "absent") \/
+               (ev.coordMatch /\ ev.present /\
+                (ev.status \in {"absent", "unknown"} \/
+                 (pm # "served-bytes" /\ ev.status # "rejected" /\
+                  EvaluatePositiveProof(pm, ev.coordMatch, ev.metadataMatch, ev.bytesMatch, ev.status) # ProofToken(pm)))))
 
 EnvelopeTamperingBlocked(p) ==
     LET req       == [execution |-> 2, unit |-> "u", revision |-> "c1", inputs |-> "in1",

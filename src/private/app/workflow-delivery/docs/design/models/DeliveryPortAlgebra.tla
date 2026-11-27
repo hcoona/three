@@ -162,12 +162,12 @@ RawOpEvidenceSpace ==
 ClassifyRawOpObs(pm, ev) ==
     IF ~ev.coordMatch THEN IF ev.present THEN "conflict" ELSE "unknown"
     ELSE IF ~ev.present THEN IF ev.status = "absent" THEN "missing" ELSE "unknown"
-    ELSE IF ev.status = "absent" THEN "unknown"
+    ELSE IF ev.status \in {"absent", "unknown"} THEN "unknown"
+    ELSE IF ev.status = "rejected" THEN "conflict"
     ELSE IF EvaluatePositiveProof(pm, ev.coordMatch, ev.metadataMatch,
                                   ev.bytesMatch, ev.status) = ProofToken(pm)
          THEN "established"
-    ELSE IF ev.status = "rejected" \/ (pm = "served-bytes" /\ ev.metadataMatch /\ ~ev.bytesMatch)
-         THEN "conflict"
+    ELSE IF pm = "served-bytes" THEN "conflict"
     ELSE "unknown"
 
 OpObsValues == {"missing", "established", "conflict", "unknown"}
