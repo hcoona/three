@@ -6,8 +6,8 @@ This is a lightweight browser extension that converts the Steam account history 
 
 ### Chrome Web Store
 
-- Before submission, verify the packed extension works locally and double-check the `manifest.json` fields such as `name`, `version`, `icons`, and `description`. Every release must bump the manifest version, and the manifest has to live at the root of the ZIP archive. See [“Prepare to publish”](https://developer.chrome.com/docs/webstore/prepare?hl=zh-cn).
-- The developer console accepts ZIP uploads only. Once the package is uploaded, the manifest metadata shown in the “Package” tab becomes read-only—you must update the manifest locally and re-upload to change it. See [“Publish in the Chrome Web Store”](https://developer.chrome.com/docs/webstore/publish?hl=zh-cn).
+- Before submission, verify the packed extension works locally and double-check the `manifest.json` fields such as `name`, `version`, `icons`, and `description`. Every release must bump the manifest version, and the manifest has to live at the root of the ZIP archive. See [“Prepare to publish”](https://developer.chrome.com/docs/webstore/prepare).
+- The developer console accepts ZIP uploads only. Once the package is uploaded, the manifest metadata shown in the “Package” tab becomes read-only—you must update the manifest locally and re-upload to change it. See [“Publish in the Chrome Web Store”](https://developer.chrome.com/docs/webstore/publish).
 
 ### Firefox Add-ons (AMO)
 
@@ -16,8 +16,8 @@ This is a lightweight browser extension that converts the Steam account history 
 
 ### Microsoft Edge Add-ons
 
-- Publishing to the Microsoft Edge Add-ons store requires a Partner Center developer account and a working prototype of the extension. See [“Publish Microsoft Edge extensions”](https://learn.microsoft.com/zh-cn/microsoft-edge/extensions/publish/publish-extension).
-- The uploaded ZIP must include `manifest.json`, icons, and every runtime asset. Make sure manifest fields (`name`, `description`, `short_description`, etc.) match what you intend to display in the store listing. The submission wizard walks through uploading the package, selecting markets, filling out properties/listing texts, and providing testing notes. See [the same article](https://learn.microsoft.com/zh-cn/microsoft-edge/extensions/publish/publish-extension).
+- Publishing to the Microsoft Edge Add-ons store requires a Partner Center developer account and a working prototype of the extension. See [“Publish Microsoft Edge extensions”](https://learn.microsoft.com/en-us/microsoft-edge/extensions/publish/publish-extension).
+- The uploaded ZIP must include `manifest.json`, icons, and every runtime asset. Make sure manifest fields (`name`, `description`, `short_description`, etc.) match what you intend to display in the store listing. The submission wizard walks through uploading the package, selecting markets, filling out properties/listing texts, and providing testing notes. See [the same article](https://learn.microsoft.com/en-us/microsoft-edge/extensions/publish/publish-extension).
 
 All three storefronts require thorough local testing before submission and generally expect a clear privacy disclosure plus demo credentials when applicable.
 

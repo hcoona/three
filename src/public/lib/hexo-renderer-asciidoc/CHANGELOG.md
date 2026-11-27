@@ -16,8 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 > [!WARNING]
-> The current `4.0.0` major line is a breaking change from 3.x. Programmatic
-> users must update to the new async contract before adopting it.
+> Version `4.0.0` is a breaking major release over 3.x. Programmatic callers
+> must update to the asynchronous renderer contract before upgrading.
 
 ### Changed
 
@@ -75,18 +75,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Do not render untrusted AsciiDoc. Use only trusted input in an isolated or
   sandboxed working directory containing no secrets. `safe: server` and output
   sanitization are not substitutes for that isolation.
-
-## [3.1.0-beta.11.g3f78566] - 2025-12-22
-
-### Maintenance
-
-- Adjust the repository descriptions in `package.json`.
-
-## [3.1.0-beta.10.g19c6f08] - 2025-12-22
-
-### Maintenance
-
-- Rename `ChangeLog.md` to `CHANGELOG.md`.
 
 ## [3.0.0] - 2025-11-17
 

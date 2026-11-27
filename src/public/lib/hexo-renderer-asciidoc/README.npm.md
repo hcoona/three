@@ -36,12 +36,7 @@ npm install hexo-renderer-asciidoc@beta --save
 pnpm add hexo-renderer-asciidoc@beta
 ```
 
-Testers of an unpublished candidate must
-use the checkout instructions and evidence from the authoritative migration PR
-or prerelease announcement. That source must designate the immutable candidate
-SHA and the acceptance evidence/check URLs. Do not infer a candidate from
-default `main`, an arbitrary ref, or this README. This README intentionally
-cannot designate or authenticate a future candidate.
+When evaluating an unpublished source candidate rather than a published dist-tag, check out the exact immutable commit SHA designated by its review or release carrier rather than an unverified branch ref.
 
 After installing, Hexo picks up the renderer automatically. There is nothing to configure or register manually.
 
@@ -84,11 +79,10 @@ The renderer does not add renderer-specific `_config.yml` sections. Feature togg
 The example is a source-tree contributor fixture that depends on the local
 package via `file:../..`; it is not included as a runnable site in the installed
 package. Rebuild the parent and reinstall this local dependency before
-regenerating the example after renderer changes. For an already independently
-verified and trusted source checkout,
-follow [`src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md`](https://github.com/hcoona/three/blob/main/src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md). Reviewers of an unpublished candidate
-must use the checkout instructions and acceptance evidence designated by the
-authoritative migration PR or prerelease announcement, as described above.
+regenerating the example after renderer changes. From a verified repository
+checkout (pinned to its immutable commit SHA when evaluating a specific
+candidate), follow
+[`src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md`](https://github.com/hcoona/three/blob/main/src/public/lib/hexo-renderer-asciidoc/examples/hexo-site/README.md).
 
 Published-package users can instead create a regular Hexo site and install the
 published package as described in [Installation](#installation).
