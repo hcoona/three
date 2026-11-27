@@ -4,20 +4,20 @@ A high-performance, generic circular buffer (circular list) library for .NET, su
 
 ## Features
 
-- Fixed capacity, automatically overwrites the oldest element on overflow
-- Generic, fully implements `IList<T>` API
+- Fixed positive capacity (`capacity >= 1`), automatically overwriting the oldest element on overflow
+- Generic, implementing `IList<T>` and `IReadOnlyList<T>`
 - Multi-targeting: `netstandard2.0`, `netstandard2.1`, `net462`, `net8.0`, `net9.0`
-- `Span<T>`/`Memory<T>` support on modern platforms
-- Overflow event notification when an element is overwritten
-- Not thread-safe (add your own locking for concurrency)
+- Zero-allocation dual-segment `GetSegments()` and `CopyTo(Span<T>)`, plus `AsSpan()` contiguous view/snapshot
+- Overflow event notification (`OnOverflow`) invoked after ring state transitions complete
+- Value-type enumerator with modification-version (`InvalidOperationException`) checks
+- Not thread-safe (add external synchronization for concurrent callers)
 
 ## Installation
 
-Install from NuGet (assuming package name is CircularList):
+Install from NuGet:
 
 ```shell
-# .NET CLI
-dotnet add package CircularList
+dotnet add package IO.Github.Hcoona.Collections.CircularList
 ```
 
 ## Quick Start
@@ -26,36 +26,41 @@ dotnet add package CircularList
 using IO.Github.Hcoona.Collections;
 
 var list = new CircularList<int>(capacity: 3);
+list.OnOverflow += (sender, overwritten) =>
+{
+    Console.WriteLine($"Overwritten: {overwritten}");
+};
+
 list.Add(1);
 list.Add(2);
 list.Add(3);
-list.Add(4); // Now 1 is overwritten, list contains [2,3,4]
+list.Add(4); // Overwrites 1; list now contains [2, 3, 4]
 
 foreach (var item in list)
 {
     Console.WriteLine(item); // Outputs 2, 3, 4
 }
 
-// Subscribe to overflow event
-list.OnOverflow += (sender, overwritten) =>
-{
-    Console.WriteLine($"Overwritten: {overwritten}");
-};
+var (first, second) = list.GetSegments();
 ```
 
 ## Main API
 
-- `CircularList<T>(int capacity)`: Create a circular list with the specified capacity
-- `void Add(T item)`: Add an element, overwriting the oldest if full
-- `T this[int index]`: Indexer, 0 is the oldest element
-- `int Capacity`: The fixed capacity
-- `int Count`: Current number of elements
-- `event EventHandler<T> OnOverflow`: Raised when an element is overwritten
-- `ReadOnlySpan<T> AsSpan()`: Efficient access to the circular list contents
-- `bool Contains(T item)`: Check if the list contains a specific item
-- `int IndexOf(T item)`: Find the logical index of a specific item
-- `void Clear()`: Remove all items from the list
-- `void CopyTo(T[] array, int arrayIndex)`: Copy all items to an array
+- `CircularList<T>(int capacity)`: Create a circular list with `capacity >= 1` (`ArgumentOutOfRangeException` if `capacity <= 0`)
+- `void Add(T item)`: Append an element, or overwrite the oldest element when full and raise `OnOverflow`
+- `T this[int index]`: Logical indexer (`0` is the oldest element; `set` updates in place and invalidates active enumerators)
+- `int Capacity` / `int Count`: Fixed capacity and current element count (`0 <= Count <= Capacity`)
+- `event EventHandler<T>? OnOverflow`: Raised after an overwrite completes with the evicted element
+- `CircularList<T>.Segments GetSegments()`: Zero-allocation `(First, Second)` `ReadOnlySpan<T>` view over internal storage (invalidated on mutation)
+- `ReadOnlySpan<T> AsSpan()`: Zero-allocation view when contiguous in the backing array, or an allocated contiguous snapshot when wrapped
+- `void CopyTo(Span<T> destination)` / `void CopyTo(T[] array, int arrayIndex)`: Copy active elements in logical order
+- `bool Contains(T item)` / `int IndexOf(T item)`: Search active elements in logical order using `EqualityComparer<T>.Default`
+- `void Clear()`: Reset count and release element references in cleared slots
+- `CircularList<T>.Enumerator GetEnumerator()`: Value-type enumerator that throws `InvalidOperationException` if the collection is mutated during enumeration
+
+## Verification
+
+Contract and invariant verification coverage is recorded in [`docs/validation.md`](docs/validation.md).
 
 ## Multi-target Framework Support
 
