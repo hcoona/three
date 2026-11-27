@@ -108,43 +108,58 @@ public static class Program
                     return 0;
                 }
 
-                LocalTools tools = new(database);
-                Coordinator coordinator = new(database, tools.Collaboration, tools.Git);
-                result = args[0] switch
+                if (args[0] == "pause")
                 {
-                    "run" or "resume" or "reconnect" => await coordinator
-                        .RunAsync(args[0], cancellation.Token)
-                        .ConfigureAwait(false),
-                    "status" => coordinator.Status(),
-                    "reconcile" => coordinator.Reconcile(
-                        options["--reservation"], options.GetValueOrDefault("--evidence")
-                    ),
-                    "pause" => coordinator.RequestControl("pause"),
-                    "preflight" => await coordinator
-                        .PreflightAsync(cancellation.Token)
-                        .ConfigureAwait(false),
-                    "calibrate" => await coordinator
-                        .CalibrateAsync(cancellation.Token)
-                        .ConfigureAwait(false),
-                    "finalize" => await coordinator
-                        .FinalizeAsync(cancellation.Token)
-                        .ConfigureAwait(false),
-                    "cleanup" => await coordinator
-                        .CleanupAsync(cancellation.Token)
-                        .ConfigureAwait(false),
-                    "tool" => await tools
-                        .InvokeAsync(
-                            "owner",
-                            options["--name"],
-                            JsonNode.Parse(options["--json"])?.AsObject()
-                                ?? throw new ArgumentException("--json must contain an object."),
-                            cancellation.Token
-                        )
-                        .ConfigureAwait(false),
-                    _ => throw new ArgumentException(
-                        "Unknown command. Run --help for supported syntax."
-                    ),
-                };
+                    result = Coordinator.EnqueueControl(database, "pause");
+                }
+                else
+                {
+                    LocalTools tools = new(database);
+                    if (args[0] == "tool")
+                    {
+                        result = await tools
+                            .InvokeAsync(
+                                "owner",
+                                options["--name"],
+                                JsonNode.Parse(options["--json"])?.AsObject()
+                                    ?? throw new ArgumentException(
+                                        "--json must contain an object."
+                                    ),
+                                cancellation.Token
+                            )
+                            .ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        Coordinator coordinator = new(database, tools.Collaboration, tools.Git);
+                        result = args[0] switch
+                        {
+                            "run" or "resume" or "reconnect" => await coordinator
+                                .RunAsync(args[0], cancellation.Token)
+                                .ConfigureAwait(false),
+                            "status" => coordinator.Status(),
+                            "reconcile" => coordinator.Reconcile(
+                                options["--reservation"],
+                                options.GetValueOrDefault("--evidence")
+                            ),
+                            "preflight" => await coordinator
+                                .PreflightAsync(cancellation.Token)
+                                .ConfigureAwait(false),
+                            "calibrate" => await coordinator
+                                .CalibrateAsync(cancellation.Token)
+                                .ConfigureAwait(false),
+                            "finalize" => await coordinator
+                                .FinalizeAsync(cancellation.Token)
+                                .ConfigureAwait(false),
+                            "cleanup" => await coordinator
+                                .CleanupAsync(cancellation.Token)
+                                .ConfigureAwait(false),
+                            _ => throw new ArgumentException(
+                                "Unknown command. Run --help for supported syntax."
+                            ),
+                        };
+                    }
+                }
             }
 
             Console.WriteLine(result.ToJsonString(Json.Options));

@@ -39,6 +39,12 @@ public sealed class CreditLedger
         connectionString = Sql.ExistingConnectionStringFor(path);
         campaignAllowance = allowance;
         using SqliteConnection connection = OpenForInitialization(path, requireExisting);
+        if (TryReadInitializedIdentity(connection, allowance, out string? existingIdentity))
+        {
+            Identity = existingIdentity!;
+            return;
+        }
+
         using (
             SqliteTransactionScope transaction = Sql.BeginTransaction(connection, deferred: false)
         )
@@ -117,32 +123,8 @@ public sealed class CreditLedger
                 );
             }
 
-            using (
-                SqliteCommand command = Sql.Command(
-                    connection,
-                    "SELECT schema_version,allowance FROM credit_campaign WHERE singleton=1;",
-                    transaction
-                )
-            )
-            using (ObservedSqliteReader reader = Sql.Reader(command))
-            {
-                if (
-                    !reader.Read()
-                    || reader.GetInt32(0) is not (1 or 2)
-                    || Parse(reader.GetString(1)) != allowance
-                )
-                {
-                    throw new InvalidOperationException(
-                        "Campaign schema or allowance differs; the durable budget cannot be reset."
-                    );
-                }
-            }
-
-            if ((long)Sql.Scalar(
-                    connection,
-                    "SELECT schema_version FROM credit_campaign WHERE singleton=1;",
-                    transaction
-                )! == 1)
+            _ = ValidateCampaignHeader(connection, transaction, allowance, out int version);
+            if (version == 1)
             {
                 Sql.Execute(
                     connection,
@@ -162,7 +144,7 @@ public sealed class CreditLedger
             transaction.Commit();
         }
 
-        Sql.Execute(connection, "PRAGMA journal_mode=WAL;");
+        Sql.EnsureWalMode(connection);
         Identity = (string)(
             Sql.Scalar(connection, "SELECT identity FROM credit_campaign WHERE singleton=1;")
             ?? throw new InvalidOperationException("The durable campaign identity is missing.")
@@ -170,6 +152,86 @@ public sealed class CreditLedger
     }
 
     public string Identity { get; }
+
+    private static bool TryReadInitializedIdentity(
+        SqliteConnection connection,
+        decimal allowance,
+        out string? identity
+    )
+    {
+        identity = null;
+        if (
+            Sql.Scalar(
+                connection,
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='credit_campaign';"
+            )
+            is null
+        )
+        {
+            return false;
+        }
+
+        string readIdentity = ValidateCampaignHeader(connection, null, allowance, out int version);
+        if (
+            version != 2
+            || Convert.ToInt64(
+                Sql.Scalar(
+                    connection,
+                    """
+                    SELECT COUNT(*) FROM sqlite_master
+                    WHERE type='table' AND name IN (
+                        'credit_campaign',
+                        'credit_reservations',
+                        'credit_reports',
+                        'credit_sdk_usage',
+                        'credit_sdk_owners',
+                        'credit_cancellation_disqualifiers',
+                        'credit_cancellations'
+                    );
+                    """
+                ),
+                CultureInfo.InvariantCulture
+            ) != 7
+            || !string.Equals(
+                Sql.Scalar(connection, "PRAGMA journal_mode;") as string,
+                "wal",
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            return false;
+        }
+
+        identity = readIdentity;
+        return true;
+    }
+
+    private static string ValidateCampaignHeader(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        decimal allowance,
+        out int version
+    )
+    {
+        using SqliteCommand command = Sql.Command(
+            connection,
+            "SELECT schema_version,allowance,identity FROM credit_campaign WHERE singleton=1;",
+            transaction
+        );
+        using ObservedSqliteReader reader = Sql.Reader(command);
+        if (
+            !reader.Read()
+            || (version = reader.GetInt32(0)) is not (1 or 2)
+            || Parse(reader.GetString(1)) != allowance
+        )
+        {
+            throw new InvalidOperationException(
+                "Campaign schema or allowance differs; the durable budget cannot be reset."
+            );
+        }
+
+        return reader.GetString(2);
+    }
 
     private SqliteConnection OpenForInitialization(string path, bool requireExisting)
     {
@@ -1287,28 +1349,12 @@ public sealed class CreditLedger
         using ObservedSqliteReader reader = Sql.Reader(command);
         while (reader.Read())
         {
-            if (reader.IsDBNull(0) || reader.IsDBNull(1))
-            {
-                return true;
-            }
-
-            try
-            {
-                using Process owner = Process.GetProcessById(reader.GetInt32(0));
-                if (
-                    owner.HasExited
-                    || owner.StartTime.ToUniversalTime().Ticks != reader.GetInt64(1)
-                )
-                {
-                    return true;
-                }
-            }
-            catch (Exception exception)
-                when (exception
-                        is ArgumentException
-                            or InvalidOperationException
-                            or System.ComponentModel.Win32Exception
-                )
+            if (
+                reader.IsDBNull(0)
+                || reader.IsDBNull(1)
+                || ProcessRunner.InspectOwner(reader.GetInt32(0), reader.GetInt64(1))
+                    != ProcessRunner.OwnerLiveness.Live
+            )
             {
                 return true;
             }
@@ -1323,7 +1369,7 @@ public sealed class CreditLedger
         string id
     )
     {
-        using Process owner = Process.GetCurrentProcess();
+        (int ownerPid, long ownerTicks) = ProcessRunner.CurrentOwnerIdentity();
         Sql.Execute(
             connection,
             """
@@ -1334,8 +1380,8 @@ public sealed class CreditLedger
             """,
             transaction,
             ("$id", id),
-            ("$pid", owner.Id),
-            ("$ticks", owner.StartTime.ToUniversalTime().Ticks)
+            ("$pid", ownerPid),
+            ("$ticks", ownerTicks)
         );
     }
 

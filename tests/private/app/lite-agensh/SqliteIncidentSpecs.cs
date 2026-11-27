@@ -981,6 +981,156 @@ public sealed class SqliteIncidentSpecs
         Assert.AreEqual("ForeignCoverage", incident["failure"]!["operation"]!.GetValue<string>());
     }
 
+    [TestMethod]
+    public async Task StatusAndReadOpenAcquireZeroWriteTransactionsUnderHeldWriters()
+    {
+        using ScratchDirectory scratch = new();
+        RunConfiguration configuration = new()
+        {
+            RepositoryPath = scratch.PathFor("checkout"),
+            StatePath = scratch.PathFor("run"),
+            CampaignLedgerPath = scratch.PathFor("campaign.sqlite"),
+            Goal = "Open status and read tools without contending for SQLite writer locks.",
+        };
+        Directory.CreateDirectory(configuration.RepositoryPath);
+        RunDatabase initialized = new(configuration.StatePath, configuration);
+        LocalTools initializedTools = new(initialized);
+        _ = new Coordinator(
+            initialized,
+            initializedTools.Collaboration,
+            initializedTools.Git,
+            nativeWorkerFactory: null
+        );
+
+        using SqliteConnection runWriter = initialized.Open();
+        using SqliteTransactionScope heldRunWrite = Sql.BeginTransaction(
+            runWriter,
+            operation: "HeldRunWriter"
+        );
+        using SqliteConnection ledgerWriter = Sql.OpenExisting(
+            configuration.CampaignLedgerPath,
+            "campaign"
+        );
+        using SqliteTransactionScope heldLedgerWrite = Sql.BeginTransaction(
+            ledgerWriter,
+            deferred: false,
+            operation: "HeldLedgerWriter"
+        );
+
+        // Both writer locks remain held throughout reopen/read; any attempted write transaction on
+        // either database would throw SqliteException (database is locked).
+        RunDatabase reopened = new(configuration.StatePath);
+        LocalTools reopenedTools = new(reopened);
+        Coordinator statusCoordinator = new(
+            reopened,
+            reopenedTools.Collaboration,
+            reopenedTools.Git,
+            nativeWorkerFactory: null
+        );
+        JsonObject status = statusCoordinator.Status();
+        JsonObject tasks = reopenedTools.Collaboration.Invoke("owner", "task_list", []);
+        JsonObject changes = await reopenedTools
+            .Git.InvokeAsync("owner", "change_list", [])
+            .ConfigureAwait(false);
+        _ = Assert.ThrowsExactly<InvalidOperationException>(() =>
+            new CreditLedger(
+                configuration.CampaignLedgerPath,
+                configuration.CampaignAiCreditAllowance + 10
+            )
+        );
+
+        Assert.IsTrue(status["ok"]!.GetValue<bool>());
+        Assert.IsTrue(tasks["ok"]!.GetValue<bool>());
+        Assert.IsTrue(changes["ok"]!.GetValue<bool>());
+        heldRunWrite.Dispose();
+        heldLedgerWrite.Dispose();
+        runWriter.Dispose();
+        ledgerWriter.Dispose();
+
+        // Pause CLI command succeeds even when the bound campaign ledger is unavailable, and
+        // non-WAL run/campaign databases restore WAL mode on reopen.
+        string movedLedgerPath = configuration.CampaignLedgerPath + ".temporarily-missing";
+        File.Move(configuration.CampaignLedgerPath, movedLedgerPath);
+        try
+        {
+            int pauseExit = await Program
+                .Main(["pause", "--state", configuration.StatePath])
+                .ConfigureAwait(false);
+            Assert.AreEqual(0, pauseExit);
+            using SqliteConnection verifyPause = initialized.Open();
+            Assert.AreEqual(
+                "pause",
+                Sql.Scalar(
+                    verifyPause,
+                    "SELECT action FROM coordinator_controls WHERE state='pending' LIMIT 1;"
+                )
+            );
+        }
+        finally
+        {
+            File.Move(movedLedgerPath, configuration.CampaignLedgerPath);
+        }
+
+        using (
+            SqliteConnection poolHandle = new(
+                Sql.ConnectionStringFor(Path.Combine(configuration.StatePath, "run.sqlite"))
+            )
+        )
+        {
+            SqliteConnection.ClearPool(poolHandle);
+        }
+        using (
+            SqliteConnection nonWal = Sql.OpenExisting(
+                Path.Combine(configuration.StatePath, "run.sqlite"),
+                "run"
+            )
+        )
+        {
+            Assert.AreEqual(
+                "delete",
+                (Sql.Scalar(nonWal, "PRAGMA journal_mode=DELETE;") as string)?.ToLowerInvariant()
+            );
+        }
+        using (
+            SqliteConnection nonWalLedger = Sql.OpenExisting(
+                configuration.CampaignLedgerPath,
+                "campaign"
+            )
+        )
+        {
+            Assert.AreEqual(
+                "delete",
+                (Sql.Scalar(nonWalLedger, "PRAGMA journal_mode=DELETE;") as string)
+                    ?.ToLowerInvariant()
+            );
+        }
+        _ = new RunDatabase(configuration.StatePath);
+        _ = new CreditLedger(
+            configuration.CampaignLedgerPath,
+            configuration.CampaignAiCreditAllowance,
+            requireExisting: true
+        );
+        using (SqliteConnection checkWal = initialized.Open())
+        {
+            Assert.AreEqual(
+                "wal",
+                (Sql.Scalar(checkWal, "PRAGMA journal_mode;") as string)?.ToLowerInvariant()
+            );
+        }
+        using (
+            SqliteConnection checkLedgerWal = Sql.OpenExisting(
+                configuration.CampaignLedgerPath,
+                "campaign"
+            )
+        )
+        {
+            Assert.AreEqual(
+                "wal",
+                (Sql.Scalar(checkLedgerWal, "PRAGMA journal_mode;") as string)?.ToLowerInvariant()
+            );
+        }
+    }
+
     private static SqliteException ObserveIoFailure(
         SqliteConnection connection,
         string operation,
