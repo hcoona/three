@@ -1,94 +1,136 @@
 # Phi Failure Detector
 
-A high-performance implementation of the phi accrual failure detector for distributed systems in .NET.
+A formally specified, numerically stable implementation of the
+$\varphi$ accrual failure detector for distributed systems in .NET.
 
 ## Overview
 
-The Phi Failure Detector is an adaptive failure detection algorithm that provides more accurate and flexible failure detection compared to traditional timeout-based approaches. It uses statistical analysis of heartbeat intervals to calculate a phi value that represents the suspicion level of a node failure, applicable to cluster node failure detection, periodic heartbeat monitoring, network partition detection, and load-balancer health routing.
+Instead of treating node health as a fixed binary timeout, the $\varphi$ accrual failure
+detector continuously outputs a suspicion value $\varphi(t) = -\log_{10} P_{\text{model}}(T_{\text{now}} - T_{\text{last}})$
+based on the fitted arrival distribution over recent heartbeat intervals (`Exponential`
+matches $10^{-\varphi}$ exactly; `Normal` uses Page's 1977 cubic logistic approximation
+adopted by Akka and Apache Cassandra, which preserves their operational threshold scale
+such as `8.0`–`16.0` while growing slightly faster than the exact Gaussian `erfc` tail
+at extreme $z$-scores, e.g., $\varphi = 16$ corresponds to a true Gaussian tail near
+$10^{-12.2}$):
+
+- $\varphi = 1.0 \implies 10^{-1}$ ($10\%$) modeled survival tail probability
+- $\varphi = 3.0 \implies 10^{-3}$ ($0.1\%$) modeled survival tail probability
+- $\varphi = 8.0 \implies 10^{-8}$ modeled survival tail (default production threshold)
+- $\varphi = 16.0 \implies 10^{-16}$ modeled survival tail (conservative WAN / heavy-GC environments)
 
 ## Features
 
-- **Adaptive Detection**: Automatically adjusts to network conditions and system load
-- **Statistical Analysis**: Uses historical heartbeat data for accurate failure prediction
-- **Configurable Thresholds**: Customizable phi values for different reliability requirements
-- **High Performance**: Optimized for low-latency distributed systems
-- **Multi-Framework Support**: Compatible with .NET Standard 2.0+, .NET Framework 4.6.2+, .NET 8.0, and .NET 9.0
-- **Multiple Distribution Models**: Supports both exponential and normal distribution models
-- **Thread-Safe**: Designed for concurrent usage in distributed systems
+- **Clean Domain API (`v3.0`)**: Immutable `PhiAccrualFailureDetectorOptions` record with
+  `TimeSpan` durations, optional constructor `TimeProvider` injection, zero-allocation
+  atomic `PhiSnapshot` (`Evaluate()`), clean `HeartbeatStatistics` (`SampleCount`, `Mean`,
+  `StandardDeviation`), and explicit `Reset()` across peer reboots.
+- **Linearizable Concurrency**: Single-point atomic `(state, clock)` snapshot acquisition
+  prevents stale pre-heartbeat timestamps or torn multi-field observations under concurrent
+  `RecordHeartbeat()`, `Evaluate()`, `GetPhi()`, `IsAvailable()`, and `Reset()` calls.
+- **Deep-Tail Numerical Stability**: Base-10 Normal survival evaluation uses a smooth
+  softplus formulation of Page's cubic logistic normal-tail approximation, remaining
+  finite and monotonic at extreme $z$-scores ($y \ge 25$) where `Math.Exp(-z)` underflows
+  IEEE-754 `double` to `0.0`.
+- **Two-Stack Chan Sliding Window**: $O(1)$ amortized pairwise-variance queue in `double`
+  seconds avoids subtracting squared sums, preventing 64-bit integer tick-squaring
+  overflow, low-jitter cancellation, and post-outlier variance collapse upon eviction.
+- **Formal Specification & Verification**: Backed by Z3 real-arithmetic / IEEE-754
+  `Float64` proofs ([`scripts/verify_formal_spec.py`](scripts/verify_formal_spec.py)), a
+  TLC-checked TLA+ state-machine & concurrency model
+  ([`docs/models/PhiAccrualFailureDetector.tla`](docs/models/PhiAccrualFailureDetector.tla)),
+  and `CsCheck` property-based tests.
+- **Multi-Framework & AOT Ready**: Targets `netstandard2.0`, `netstandard2.1`, `net462`,
+  `net8.0`, and `net9.0` with zero reflection and native AOT compatibility on modern .NET.
 
 ## Installation
 
 ```bash
-dotnet add package PhiFailureDetector
+dotnet add package PhiFailureDetector --prerelease
 ```
 
 ## Quick Start
 
 ```csharp
 using System;
-using Detector = PhiFailureDetector.PhiFailureDetector;
+using PhiFailureDetector;
 
-var timeProvider = TimeProvider.System;
-var detector = new Detector(
-    capacity: 100,
-    initialHeartbeatInterval: timeProvider.TimestampFrequency / 10, // 100 ms in timestamp ticks
-    timeProvider: timeProvider,
-    phiFunc: Detector.Exponential
-);
+var detector = new PhiAccrualFailureDetector(
+    new PhiAccrualFailureDetectorOptions
+    {
+        Threshold = 8.0,
+        MaxSampleSize = 1000,
+        MinStandardDeviation = TimeSpan.FromMilliseconds(100),
+        AcceptableHeartbeatPause = TimeSpan.FromSeconds(3),
+        InitialHeartbeatEstimate = TimeSpan.FromSeconds(1),
+        Distribution = PhiDistribution.Normal,
+    },
+    TimeProvider.System);
 
-// Record heartbeats when they arrive
-detector.Report();
+// Record heartbeats as they arrive from the monitored peer
+detector.RecordHeartbeat();
 
-// Later, check the current phi value (suspicion level)
-double phi = detector.Phi();
+// Atomically evaluate availability, phi, elapsed silence, and window statistics
+PhiSnapshot snapshot = detector.Evaluate();
+if (!snapshot.IsAvailable)
+{
+    Console.WriteLine(
+        $"Peer suspected: phi={snapshot.Phi:F2}, elapsed={snapshot.Elapsed}, stats={snapshot.Statistics}");
+}
 
-// A phi value above your threshold indicates suspected failure
-bool isSuspected = phi > 8.0;
+// Fast scalar checks when full diagnostics are not needed
+bool available = detector.IsAvailable();
+double suspicion = detector.GetPhi();
+
+// Clear history when the peer reboots or starts a new incarnation epoch
+detector.Reset();
 ```
 
-The detector uses high-resolution timestamps from `TimeProvider.GetTimestamp()`.
-Set `initialHeartbeatInterval` in the same timestamp ticks, using the provider's
-`TimestampFrequency` to convert a duration. This also applies to custom time
-providers used for tests or simulations. Choose a conservatively long startup
-interval for your cluster to trade slower initial detection for fewer false
-positives and avoid flapping before real samples accumulate.
+## Choosing a Distribution and Options
 
-## Architecture Overview
+| Option                     | Default        | Guidance                                                                                                                                                                                                                          |
+| -------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Threshold`                | `8.0`          | Suspicion cutoff (`IsAvailable()` returns `GetPhi() < Threshold`). Use `8.0`–`12.0` on LANs; `12.0`–`16.0` on WANs or noisy clouds.                                                                                               |
+| `Distribution`             | `Normal`       | Use `Normal` for periodic heartbeats with Gaussian jitter (Hayashibara et al. / Akka / Pekko). Use `Exponential` for memoryless/Poisson gossip arrivals ([CASSANDRA-2597](https://issues.apache.org/jira/browse/CASSANDRA-2597)). |
+| `AcceptableHeartbeatPause` | `00:00:00`     | Tolerated transient stall (for example GC pauses or brief packet drops) before suspicion begins to climb steeply.                                                                                                                 |
+| `InitialHeartbeatEstimate` | `00:00:01`     | Conservative interval estimate used after the very first heartbeat (`Bootstrapping` state) before a real inter-arrival interval is observed.                                                                                      |
+| `MinStandardDeviation`     | `00:00:00.100` | Floor on $\sigma$ in `Normal` mode so near-zero jitter on localhost/LAN never triggers hair-trigger false positives.                                                                                                              |
+| `MaxSampleSize`            | `1000`         | Sliding window capacity bounding memory to $O(W)$ and letting the detector adapt when heartbeat cadence changes.                                                                                                                  |
 
-1. **Monitoring:** Record heartbeat intervals in a bounded arrival window. Use
-   a throttler alongside the window when you need to limit the sampling rate.
-2. **Interpretation:** Choose `Exponential` for Poisson gossip arrivals and
-   `Normal` (Gaussian) for regular heartbeats with jitter. See
-   [CASSANDRA-2597](https://issues.apache.org/jira/browse/CASSANDRA-2597) for
-   why the distribution matters.
-3. **Action:** The caller compares the phi value with its threshold and decides
-   how to respond, such as marking a peer as suspected.
+## Lifecycle Semantics
 
-## Phi Value Interpretation
+Each `PhiAccrualFailureDetector` instance tracks a single monitored peer through three
+states observable via `PhiSnapshot snapshot = detector.Evaluate()`:
 
-The phi value represents the suspicion level of node failure:
+1. **Idle** (`snapshot.IsMonitoring == false`, `snapshot.Elapsed is null`,
+   `snapshot.Statistics.SampleCount == 0`): No heartbeat has been observed yet (or
+   `Reset()` was called). `GetPhi()` returns `0.0` and `IsAvailable()` returns `true`.
+2. **Bootstrapping** (`snapshot.IsMonitoring == true`,
+   `snapshot.Statistics.SampleCount == 0`): Exactly one heartbeat has been recorded.
+   Suspicion is evaluated against a synthetic prior anchored at `InitialHeartbeatEstimate`
+   so a node that crashes immediately after its first heartbeat still accrues suspicion
+   monotonically without `0 / 0 = NaN` degeneracy.
+3. **Active** (`snapshot.IsMonitoring == true`, `snapshot.Statistics.SampleCount >= 1`):
+   Suspicion is evaluated from the empirical sliding window of inter-arrival intervals.
 
-- **0-3**: Low suspicion - Node is likely healthy
-- **3-8**: Medium suspicion - Some concern about node health
-- **8+**: High suspicion - Node is likely failed (99.999% confidence)
+## Formal Verification
 
-Common threshold values:
+From the repository root (with [MISE](https://mise.jdx.dev/) configured):
 
-- `3.0`: 99.9% confidence of failure
-- `8.0`: 99.999% confidence of failure (recommended for production)
-- `16.0`: 99.99999% confidence of failure (very conservative)
+```bash
+# Run Z3 real-arithmetic & IEEE-754 Float64 formal proofs
+mise run phi-failure-detector:verify-formal-spec
 
-## Performance Considerations
-
-- Memory usage is proportional to the configured capacity
-- Calculation complexity is O(1) for both reporting heartbeats and calculating phi values
-- Thread-safe operations allow concurrent access from multiple threads
+# Model-check the TLA+ lifecycle & concurrency specification with TLC
+mise run tla:tlc src/public/lib/PhiFailureDetector/docs/models/PhiAccrualFailureDetector.tla \
+  -config src/public/lib/PhiFailureDetector/docs/models/PhiAccrualFailureDetector.cfg
+```
 
 ## Algorithm Reference
 
 Based on ["The φ accrual failure detector"](https://ieeexplore.ieee.org/abstract/document/1353004/)
-by N. Hayashibara, X. Defago, R. Yared, and T. Katayama, published in Proceedings
-of the 23rd IEEE International Symposium on Reliable Distributed Systems, 2004
+by N. Hayashibara, X. Défago, R. Yared, and T. Katayama, _Proceedings of the 23rd IEEE
+International Symposium on Reliable Distributed Systems (SRDS 2004)_, pp. 66–78
 ([open PDF](https://dspace.jaist.ac.jp/dspace/bitstream/10119/4784/1/IS-RR-2004-010.pdf)).
 
 ## Releasing
