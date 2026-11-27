@@ -819,7 +819,7 @@ internal sealed class NativeWorker : INativeWorker
             ("$worker", worker),
             ("$session", id),
             ("$baseline", (allocation.Actual ?? 0).ToString(CultureInfo.InvariantCulture)),
-            ("$initialize", "sdk:" + NativeSdkSession.SdkVersion),
+            ("$initialize", NativeSdkSession.InitializeMarker),
             ("$recovery", recovery),
             ("$time", database.Now.ToString("O"))
         );

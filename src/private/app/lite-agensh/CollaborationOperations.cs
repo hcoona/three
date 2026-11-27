@@ -22,6 +22,11 @@ public sealed partial class CollaborationOperations
         ArgumentNullException.ThrowIfNull(database);
         this.database = database;
         using var connection = database.Open();
+        if (IsSchemaInitialized(connection))
+        {
+            return;
+        }
+
         using var transaction = Sql.BeginTransaction(connection);
         Sql.Execute(
             connection,
@@ -93,6 +98,50 @@ public sealed partial class CollaborationOperations
         );
         transaction.Commit();
     }
+
+    private static bool IsSchemaInitialized(SqliteConnection connection) =>
+        Convert.ToInt64(
+            Sql.Scalar(
+                connection,
+                """
+                SELECT COUNT(*) FROM sqlite_master
+                WHERE type='table' AND name IN (
+                    'tasks','task_comments','messages','board_history','board_recent',
+                    'delivery_batches','events','shown_notices','shown_gists','batch_gists',
+                    'notice_cursors','notice_leases'
+                );
+                """
+            ),
+            CultureInfo.InvariantCulture
+        ) == 12
+        && Sql.Scalar(
+            connection,
+            """
+            SELECT COUNT(*) FROM sqlite_master
+            WHERE type='index' AND name IN (
+                'messages_channel','one_sending_batch','events_recipient_state','events_batch_state'
+            );
+            """
+        ) is long indexCount
+        && indexCount == 4
+        && Sql.Scalar(connection, "SELECT 1 FROM tasks WHERE id=1;") is not null;
+
+    internal static void ReopenOwnerClosedRoot(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string timestamp
+    ) =>
+        Sql.Execute(
+            connection,
+            """
+            DELETE FROM meta WHERE key=$key AND value='owner';
+            UPDATE tasks SET state='open',closed_by=NULL,updated_at=$time
+            WHERE id=1 AND state='closed' AND closed_by='owner';
+            """,
+            transaction,
+            ("$key", RunMetadata.RootClosedByKey),
+            ("$time", timestamp)
+        );
 
     private string Timestamp => database.Now.ToString("O", CultureInfo.InvariantCulture);
 

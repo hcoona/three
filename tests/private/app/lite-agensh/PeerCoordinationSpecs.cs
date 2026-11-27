@@ -684,6 +684,456 @@ public sealed class PeerCoordinationSpecs(TestContext testContext)
     }
 
     [TestMethod]
+    [TestCategory("EndReasonAndDeliveryControl")]
+    [Timeout(60_000, CooperativeCancellation = true)]
+    public async Task OpenSegmentHelperLeaseAndUnmatchedRuntimeGuardLifecycleTransitions()
+    {
+        CancellationToken token = testContext.CancellationToken;
+        CoordinatorScenarioRun state = await CoordinatorScenarioRun.CreateAsync(
+            testContext, token, ownedHosts: false, realGit: true
+        ).ConfigureAwait(false);
+        await state.RunBodyAsync(async () =>
+        {
+            Coordinator inspector = state.Coordinator("status");
+            _ = state.Start();
+            ControlledSessionPool.Turn[] initial = await ReadPeerTurnsAsync(state, token)
+                .ConfigureAwait(false);
+            ObservedManualClock.ObservedPoll poll = await state.ObserveOwnerPollAsync(token)
+                .ConfigureAwait(false);
+            (JsonObject change, _) = await SubmitReviewedAsync(
+                state, "worker1", "worker2", "helper-scope.txt", "Helper read check.\n", token
+            ).ConfigureAwait(false);
+            await CompletePeerTurnsAsync(state, initial, token).ConfigureAwait(false);
+            ControlledSessionPool.Turn[] initialNotices =
+                await ReadPeerTurnsAsync(state, token).ConfigureAwait(false);
+            ObservedManualClock.ObservedPoll pausePoll =
+                await state.ObserveOwnerPollAsync(token).ConfigureAwait(false);
+            await CompletePeerTurnsAsync(state, initialNotices, token).ConfigureAwait(false);
+            JsonObject paused = GitScenarioState.Data(
+                await state.StopRunningAsync("pause", pausePoll, token).ConfigureAwait(false)
+            );
+            Assert.AreEqual("paused", paused["lifecycle"]!.GetValue<string>());
+
+            // Simulate an interrupted resume that committed an open segment row before updating
+            // lifecycle: resume must refuse to open a second segment, and reconnect must close it.
+            using (var connection = state.Database.Open())
+            {
+                Sql.Execute(
+                    connection,
+                    """
+                    INSERT INTO coordinator_segments(mode,state,started_at,deadline)
+                    VALUES('resume','starting',$started,$deadline);
+                    """,
+                    null,
+                    ("$started", state.Database.Now.ToString("O")),
+                    ("$deadline", state.Database.Now.AddMinutes(10).ToString("O"))
+                );
+            }
+            JsonObject refusedResume = await inspector
+                .RunAsync("resume", token)
+                .ConfigureAwait(false);
+            Assert.IsFalse(refusedResume["ok"]!.GetValue<bool>());
+            Assert.AreEqual("conflict", refusedResume["code"]!.GetValue<string>());
+            Assert.AreEqual(
+                1L,
+                state.Value("SELECT COUNT(*) FROM coordinator_segments WHERE ended_at IS NULL;")
+            );
+
+            state.Sessions.BeforeOpen = (session, _) =>
+                session.ExactSession is null
+                    ? Task.CompletedTask
+                    : Task.FromException(
+                        new OperationException(
+                            "session_load_failed",
+                            "Controlled session load unavailable."
+                        )
+                    );
+            _ = state.Start("reconnect");
+            ControlledSessionPool.Turn[] reconnectTurns = await ReadPeerTurnsAsync(state, token)
+                .ConfigureAwait(false);
+            state.Sessions.BeforeOpen = null;
+            ObservedManualClock.ObservedPoll reconnectPoll =
+                await state.ObserveOwnerPollAsync(token).ConfigureAwait(false);
+            Assert.AreEqual(
+                1L,
+                state.Value("SELECT COUNT(*) FROM coordinator_segments WHERE ended_at IS NULL;")
+            );
+            await CompletePeerTurnsAsync(state, reconnectTurns, token).ConfigureAwait(false);
+            ControlledSessionPool.Turn[] reconnectNotices =
+                await ReadPeerTurnsAsync(state, token).ConfigureAwait(false);
+            await CompletePeerTurnsAsync(state, reconnectNotices, token).ConfigureAwait(false);
+            JsonObject pausedReconnect = GitScenarioState.Data(
+                await state.StopRunningAsync("pause", reconnectPoll, token).ConfigureAwait(false)
+            );
+            Assert.AreEqual("paused", pausedReconnect["lifecycle"]!.GetValue<string>());
+            Assert.AreEqual(
+                0L,
+                state.Value("SELECT COUNT(*) FROM coordinator_segments WHERE ended_at IS NULL;")
+            );
+
+            // Real change_read records helper scope, and a live helper lease neither gets killed
+            // by survivor recovery nor poisons finalization, while still blocking cleanup.
+            JsonObject readChange = await state
+                .GitToolAsync(
+                    "owner",
+                    "change_read",
+                    new() { ["id"] = change["id"]!.GetValue<long>() },
+                    token
+                )
+                .ConfigureAwait(false);
+            Assert.Contains("Helper read check.", readChange["diff"]!.GetValue<string>());
+            Assert.AreEqual(
+                "helper",
+                state.Value(
+                    "SELECT scope FROM process_lease_owners ORDER BY lease_id DESC LIMIT 1;"
+                )
+            );
+            Assert.AreEqual(
+                6L,
+                state.Value("SELECT COUNT(*) FROM pragma_table_info('process_leases');")
+            );
+
+            (int currentPid, long currentTicks) = ProcessRunner.CurrentOwnerIdentity();
+            long liveHelperLease;
+            long deadHelperLease;
+            using (var connection = state.Database.Open())
+            {
+                Sql.Execute(
+                    connection,
+                    """
+                    INSERT INTO process_leases(pid,start_ticks,kind,state,created_at)
+                    VALUES($pid,$ticks,'command','running','2026-04-01T00:00:00.0000000Z');
+                    """,
+                    null,
+                    ("$pid", currentPid),
+                    ("$ticks", currentTicks)
+                );
+                liveHelperLease = (long)Sql.Scalar(connection, "SELECT last_insert_rowid();")!;
+                Sql.Execute(
+                    connection,
+                    """
+                    INSERT INTO process_lease_owners(lease_id,owner_pid,owner_start_ticks,scope)
+                    VALUES($id,$pid,$ticks,'helper');
+                    """,
+                    null,
+                    ("$id", liveHelperLease),
+                    ("$pid", currentPid),
+                    ("$ticks", currentTicks)
+                );
+                Sql.Execute(
+                    connection,
+                    """
+                    INSERT INTO process_leases(pid,start_ticks,kind,state,created_at)
+                    VALUES(999996,1,'command','running','2026-04-01T00:00:00.0000000Z');
+                    """
+                );
+                deadHelperLease = (long)Sql.Scalar(connection, "SELECT last_insert_rowid();")!;
+                Sql.Execute(
+                    connection,
+                    """
+                    INSERT INTO process_lease_owners(lease_id,owner_pid,owner_start_ticks,scope)
+                    VALUES($id,999995,1,'helper');
+                    """,
+                    null,
+                    ("$id", deadHelperLease)
+                );
+                Sql.Execute(
+                    connection,
+                    """
+                    INSERT INTO process_leases(pid,start_ticks,kind,state,created_at)
+                    VALUES(999993,1,'native:runtime:registered','exited',
+                        '2026-04-01T00:00:00.0000000Z');
+                    """
+                );
+            }
+            state.Database.WriteMetadata(
+                "native:runtime:registered",
+                new JsonObject
+                {
+                    ["runtimeId"] = "registered",
+                    ["state"] = "opening",
+                    ["ownerPid"] = 999993,
+                    ["ownerStartTicks"] = 1L,
+                }.ToJsonString()
+            );
+
+            JsonObject finalized = GitScenarioState.Data(
+                await inspector.FinalizeAsync(token).ConfigureAwait(false)
+            );
+            Assert.IsTrue(finalized["accepted"]!.GetValue<bool>());
+            Assert.AreEqual("finalized", StatusData(inspector)["lifecycle"]!.GetValue<string>());
+            Assert.AreEqual(
+                "settled",
+                JsonNode.Parse(state.Database.ReadMetadata("native:runtime:registered")!)![
+                    "state"
+                ]!.GetValue<string>()
+            );
+            Assert.AreEqual(
+                "running",
+                state.Value(
+                    "SELECT state FROM process_leases WHERE id=$id;",
+                    ("$id", liveHelperLease)
+                )
+            );
+            Assert.AreEqual(
+                "exited",
+                state.Value(
+                    "SELECT state FROM process_leases WHERE id=$id;",
+                    ("$id", deadHelperLease)
+                )
+            );
+
+            JsonObject cleanupBlocked = await inspector.CleanupAsync(token).ConfigureAwait(false);
+            Assert.IsFalse(cleanupBlocked["ok"]!.GetValue<bool>());
+            Assert.AreEqual(
+                "ownership_unresolved",
+                cleanupBlocked["code"]!.GetValue<string>()
+            );
+
+            using (var connection = state.Database.Open())
+            {
+                Sql.Execute(
+                    connection,
+                    "UPDATE process_leases SET state='exited' WHERE id=$id;",
+                    null,
+                    ("$id", liveHelperLease)
+                );
+                Sql.Execute(
+                    connection,
+                    """
+                    INSERT INTO process_helper_admissions(
+                        id,owner_pid,owner_start_ticks,created_at)
+                    VALUES('pending-helper',$pid,$ticks,'2026-04-01T00:00:00.0000000Z');
+                    """,
+                    null,
+                    ("$pid", currentPid),
+                    ("$ticks", currentTicks)
+                );
+            }
+            JsonObject admissionBlocked = await inspector
+                .CleanupAsync(token)
+                .ConfigureAwait(false);
+            Assert.IsFalse(admissionBlocked["ok"]!.GetValue<bool>());
+            Assert.AreEqual(
+                "ownership_unresolved",
+                admissionBlocked["code"]!.GetValue<string>()
+            );
+
+            // A still-pending helper admission whose live host failed registration/settlement also
+            // blocks FinalizeAsync recovery rather than being ignored because the host PID lives.
+            JsonObject finalizeBlockedByAdmission = await inspector
+                .FinalizeAsync(token)
+                .ConfigureAwait(false);
+            Assert.IsFalse(finalizeBlockedByAdmission["ok"]!.GetValue<bool>());
+            Assert.AreEqual(
+                "unavailable",
+                finalizeBlockedByAdmission["code"]!.GetValue<string>()
+            );
+            Assert.AreEqual("unresolved", StatusData(inspector)["lifecycle"]!.GetValue<string>());
+            state.Database.WriteMetadata("lifecycle", "finalized");
+
+            using (var connection = state.Database.Open())
+            {
+                Sql.Execute(
+                    connection,
+                    "DELETE FROM process_helper_admissions WHERE id='pending-helper';"
+                );
+            }
+
+            // If a helper admission converts into a lease and that SAME helper owner then exits
+            // while ResolveSurvivorsAsync is draining admissions, recovery neither fails on the
+            // converted admission nor misses the newly created lease.
+            using (
+                System.Diagnostics.Process shortHelper = System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo("git", ["hash-object", "--stdin"])
+                    {
+                        RedirectStandardInput = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                    }
+                )!
+            )
+            {
+                int helperPid = shortHelper.Id;
+                long helperTicks = shortHelper.StartTime.ToUniversalTime().Ticks;
+                using (var connection = state.Database.Open())
+                {
+                    Sql.Execute(
+                        connection,
+                        """
+                        INSERT INTO process_helper_admissions(
+                            id,owner_pid,owner_start_ticks,created_at)
+                        VALUES('converting-helper',$pid,$ticks,'2026-04-01T00:00:00.0000000Z');
+                        """,
+                        null,
+                        ("$pid", helperPid),
+                        ("$ticks", helperTicks)
+                    );
+                }
+                Microsoft.Extensions.Time.Testing.FakeTimeProvider drainClock = new();
+                ProcessRunner verifyRunner = new(state.Database, drainClock);
+                Task survivorTask = verifyRunner.ResolveSurvivorsAsync(token);
+                Assert.IsFalse(survivorTask.IsCompleted);
+
+                shortHelper.StandardInput.Close();
+                await shortHelper.WaitForExitAsync(token).ConfigureAwait(false);
+                long convertedLeaseId;
+                using (var connection = state.Database.Open())
+                using (var transaction = Sql.BeginTransaction(connection))
+                {
+                    Sql.Execute(
+                        connection,
+                        "DELETE FROM process_helper_admissions WHERE id='converting-helper';",
+                        transaction
+                    );
+                    Sql.Execute(
+                        connection,
+                        """
+                        INSERT INTO process_leases(pid,start_ticks,kind,state,created_at)
+                        VALUES(999991,1,'command','running','2026-04-01T00:00:00.0000000Z');
+                        """,
+                        transaction
+                    );
+                    convertedLeaseId = (long)Sql.Scalar(
+                        connection,
+                        "SELECT last_insert_rowid();",
+                        transaction
+                    )!;
+                    Sql.Execute(
+                        connection,
+                        """
+                        INSERT INTO process_lease_owners(
+                            lease_id,owner_pid,owner_start_ticks,scope)
+                        VALUES($id,$pid,$ticks,'helper');
+                        """,
+                        transaction,
+                        ("$id", convertedLeaseId),
+                        ("$pid", helperPid),
+                        ("$ticks", helperTicks)
+                    );
+                    transaction.Commit();
+                }
+
+                drainClock.Advance(TimeSpan.FromMilliseconds(50));
+                await survivorTask.WaitAsync(TimeSpan.FromSeconds(15), token).ConfigureAwait(false);
+                Assert.AreEqual(
+                    "exited",
+                    state.Value(
+                        "SELECT state FROM process_leases WHERE id=$id;",
+                        ("$id", convertedLeaseId)
+                    )
+                );
+            }
+            JsonObject cleaned = GitScenarioState.Data(
+                await inspector.CleanupAsync(token).ConfigureAwait(false)
+            );
+            Assert.IsNotEmpty(cleaned["removed"]!.AsArray());
+
+            JsonObject postCleanupRead = await state
+                .Operations.InvokeAsync(
+                    "owner",
+                    "change_read",
+                    new() { ["id"] = change["id"]!.GetValue<long>() },
+                    token
+                )
+                .ConfigureAwait(false);
+            Assert.IsFalse(postCleanupRead["ok"]!.GetValue<bool>());
+            Assert.AreEqual("unavailable", postCleanupRead["code"]!.GetValue<string>());
+
+            // An orphaned opening runtime record from a dead owner without a settled lease fails
+            // closed with ownership ambiguity.
+            state.Database.WriteMetadata(
+                "native:runtime:orphaned",
+                new JsonObject
+                {
+                    ["runtimeId"] = "orphaned",
+                    ["state"] = "opening",
+                    ["ownerPid"] = 999994,
+                    ["ownerStartTicks"] = 1L,
+                }.ToJsonString()
+            );
+            JsonObject orphanedPreflight = await inspector
+                .PreflightAsync(token)
+                .ConfigureAwait(false);
+            Assert.IsFalse(orphanedPreflight["ok"]!.GetValue<bool>());
+            Assert.AreEqual("unavailable", orphanedPreflight["code"]!.GetValue<string>());
+            Assert.AreEqual("unresolved", StatusData(inspector)["lifecycle"]!.GetValue<string>());
+            Assert.Contains(
+                "native:runtime:orphaned",
+                state.Database.ReadMetadata("lifecycle:ownership_ambiguity")!
+            );
+        }).ConfigureAwait(false);
+    }
+
+    [TestMethod]
+    [Timeout(30_000, CooperativeCancellation = true)]
+    public async Task LeaseUpdateFailureWritesUnsettledSidecarThatIsolatesAllProcessGuards()
+    {
+        CancellationToken token = testContext.CancellationToken;
+        using ScratchDirectory scratch = new();
+        RunConfiguration configuration = new()
+        {
+            RepositoryPath = scratch.PathFor("checkout"),
+            StatePath = scratch.PathFor("run"),
+            CampaignLedgerPath = scratch.PathFor("campaign.sqlite"),
+            Goal = "Verify ProcessRunner unwind sidecar blocks guards even when DB rows settle.",
+        };
+        Directory.CreateDirectory(configuration.RepositoryPath);
+        RunDatabase database = new(configuration.StatePath, configuration);
+        ProcessRunner runner = new(database);
+        using (var connection = database.Open())
+        {
+            Sql.Execute(
+                connection,
+                """
+                CREATE TRIGGER block_lease_updates BEFORE UPDATE ON process_leases
+                BEGIN SELECT RAISE(ABORT, 'simulated lease update failure'); END;
+                """
+            );
+        }
+
+        string sidecarDir = Path.Combine(database.StatePath, "unsettled-leases");
+        _ = await Assert
+            .ThrowsExactlyAsync<Microsoft.Data.Sqlite.SqliteException>(
+                () =>
+                    runner.RunAsync(
+                        "git",
+                        ["--version"],
+                        configuration.RepositoryPath,
+                        TimeSpan.FromSeconds(15),
+                        token
+                    )
+            )
+            .ConfigureAwait(false);
+        Assert.IsTrue(Directory.Exists(sidecarDir));
+        Assert.IsNotEmpty(Directory.GetFiles(sidecarDir, "*.unresolved"));
+
+        // Settle the DB row to exited while keeping the production-written sidecar so all three
+        // guards are proven to block on the sidecar alone.
+        using (var connection = database.Open())
+        {
+            Sql.Execute(connection, "DROP TRIGGER block_lease_updates;");
+            Sql.Execute(
+                connection,
+                "UPDATE process_leases SET state='exited' WHERE state<>'exited';"
+            );
+        }
+
+        _ = await Assert
+            .ThrowsExactlyAsync<InvalidOperationException>(
+                () => runner.ResolveSurvivorsAsync(token)
+            )
+            .ConfigureAwait(false);
+        using (var connection = database.Open())
+        {
+            Assert.IsTrue(ProcessRunner.HasUnsettledLeases(connection));
+            Assert.IsTrue(ProcessRunner.HasUnresolvedLease(connection));
+        }
+    }
+
+    [TestMethod]
     [TestCategory("TwoPeersCooperateWithoutScheduler")]
     [Timeout(120_000, CooperativeCancellation = true)]
     public async Task PeersSelectWorkCommunicateAndIntegrateIndependentlyReviewedChanges()

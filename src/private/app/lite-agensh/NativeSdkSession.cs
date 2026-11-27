@@ -116,6 +116,8 @@ internal sealed class NativeSdkSession : INativeSdkSession
             ?.InformationalVersion
         ?? throw new InvalidOperationException("The SDK package identity is missing.");
 
+    public static string InitializeMarker => "sdk:" + SdkVersion;
+
     public string SessionId =>
         session?.SessionId ?? throw new InvalidOperationException("No native session.");
 

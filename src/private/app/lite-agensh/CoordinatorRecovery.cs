@@ -16,20 +16,65 @@ internal sealed class CoordinatorRecovery(
     string ledgerBinding
 )
 {
-    public static string BindNativeStorage(
+    public static string EnsureCoordinatorStorage(RunDatabase database, CreditLedger credits)
+    {
+        string binding = ExpectedLedgerBinding(database, credits);
+        using SqliteConnection connection = database.Open();
+        string? existing = Sql.GetMetadata(connection, null, RunMetadata.LedgerBindingKey);
+        if (existing is not null && existing != binding)
+        {
+            throw new InvalidOperationException(
+                "The run's campaign identity/path or credit allowances changed; budget "
+                    + "reset is blocked."
+            );
+        }
+
+        if (
+            existing == binding
+            && Sql.Scalar(
+                connection,
+                """
+                SELECT COUNT(*) FROM sqlite_master
+                WHERE type='table' AND name IN (
+                    'native_sessions','native_attempts','coordinator_segments',
+                    'coordinator_turns','coordinator_controls'
+                );
+                """
+            )
+                is long tables
+            && tables == 5
+        )
+        {
+            return binding;
+        }
+
+        using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
+        BindNativeStorage(database, credits, connection, transaction, binding);
+        CoordinatorSegmentRunner.EnsureSegmentStorage(connection, transaction);
+        CoordinatorControls.EnsureSchema(connection, transaction);
+        transaction.Commit();
+        return binding;
+    }
+
+    private static string ExpectedLedgerBinding(RunDatabase database, CreditLedger credits) =>
+        SerializePayload(
+            new
+            {
+                path = Path.GetFullPath(database.Configuration.CampaignLedgerPath),
+                campaignIdentity = credits.Identity,
+                database.Configuration.RunAiCreditAllowance,
+                database.Configuration.CampaignAiCreditAllowance,
+            }
+        ).ToJsonString();
+
+    private static void BindNativeStorage(
         RunDatabase database,
         CreditLedger credits,
         SqliteConnection connection,
-        SqliteTransaction transaction
+        SqliteTransaction transaction,
+        string binding
     )
     {
-        string binding = SerializePayload(new
-        {
-            path = Path.GetFullPath(database.Configuration.CampaignLedgerPath),
-            campaignIdentity = credits.Identity,
-            database.Configuration.RunAiCreditAllowance,
-            database.Configuration.CampaignAiCreditAllowance,
-        }).ToJsonString();
         string? existing = Sql.GetMetadata(connection, transaction, RunMetadata.LedgerBindingKey);
         if (existing is not null && existing != binding)
         {
@@ -57,7 +102,6 @@ internal sealed class CoordinatorRecovery(
             ("$key", RunMetadata.LedgerBindingKey),
             ("$binding", binding)
         );
-        return binding;
     }
 
     public JsonObject Reconcile(string reservationId, string? evidencePath)
@@ -97,6 +141,8 @@ internal sealed class CoordinatorRecovery(
         using SqliteConnection connection = database.Open();
         bool hasSegments = Sql.Scalar(connection,
             "SELECT id FROM coordinator_segments LIMIT 1;") is not null;
+        bool hasOpenSegment = Sql.Scalar(connection,
+            "SELECT id FROM coordinator_segments WHERE ended_at IS NULL LIMIT 1;") is not null;
         if (mode == "run" && hasSegments)
         {
             throw new OperationException(
@@ -111,7 +157,8 @@ internal sealed class CoordinatorRecovery(
             );
         }
         if (mode == "resume"
-            && database.Meta.Lifecycle is not ("paused" or "stopped" or "finalized"))
+            && (hasOpenSegment
+                || database.Meta.Lifecycle is not ("paused" or "stopped" or "finalized")))
         {
             throw new OperationException(
                 "conflict", "Explicit resume requires an already quiescent run."
@@ -122,8 +169,7 @@ internal sealed class CoordinatorRecovery(
             return false;
         }
         RequireOriginalLedger();
-        if (Sql.Scalar(connection,
-            "SELECT id FROM coordinator_segments WHERE ended_at IS NULL LIMIT 1;") is null)
+        if (!hasOpenSegment)
         {
             if (database.Meta.Lifecycle == "unresolved")
             {
@@ -146,8 +192,7 @@ internal sealed class CoordinatorRecovery(
     public void RequireCleanupSettlement()
     {
         using SqliteConnection connection = database.Open();
-        if (Sql.Scalar(connection,
-            "SELECT id FROM process_leases WHERE state<>'exited' LIMIT 1;") is not null)
+        if (ProcessRunner.HasUnsettledLeases(connection, includeLiveHelpers: true))
         {
             throw new OperationException(
                 "ownership_unresolved", "Cleanup refuses unresolved owned process leases."
@@ -197,6 +242,7 @@ internal sealed class CoordinatorRecovery(
         try
         {
             await processes.ResolveSurvivorsAsync(cancellationToken).ConfigureAwait(false);
+            ReconcileOpeningRuntimes();
             if (!string.IsNullOrEmpty(database.Meta.OwnershipAmbiguity))
             {
                 throw new OperationException(
@@ -332,6 +378,67 @@ internal sealed class CoordinatorRecovery(
         }
     }
 
+    private void ReconcileOpeningRuntimes()
+    {
+        List<(string Key, JsonObject State)> openingRuntimes = [];
+        using (SqliteConnection connection = database.Open())
+        using (
+            SqliteCommand command = Sql.Command(
+                connection,
+                """
+                SELECT key,value FROM meta
+                WHERE key LIKE 'native:runtime:%' AND key NOT LIKE 'native:runtime:%:session:%';
+                """
+            )
+        )
+        using (ObservedSqliteReader reader = Sql.Reader(command))
+        {
+            while (reader.Read())
+            {
+                string key = reader.GetString(0);
+                if (
+                    JsonNode.Parse(reader.GetString(1)) is JsonObject record
+                    && record["state"]?.GetValue<string>() == "opening"
+                )
+                {
+                    openingRuntimes.Add((key, record));
+                }
+            }
+        }
+
+        if (openingRuntimes.Count == 0)
+        {
+            return;
+        }
+
+        using SqliteConnection verify = database.Open();
+        foreach ((string key, JsonObject record) in openingRuntimes)
+        {
+            if (
+                record["ownerPid"] is JsonValue pidValue
+                && record["ownerStartTicks"] is JsonValue ticksValue
+                && ProcessRunner.InspectOwner(
+                    pidValue.GetValue<int>(),
+                    ticksValue.GetValue<long>()
+                ) == ProcessRunner.OwnerLiveness.Live
+            )
+            {
+                continue;
+            }
+
+            if (ProcessRunner.HasSettledKind(verify, key))
+            {
+                record["state"] = "settled";
+                database.Meta.WriteJson(key, record);
+                continue;
+            }
+
+            database.Meta.RecordOwnershipAmbiguity(
+                $"Runtime {key} recorded opening state without a settled process lease."
+            );
+        }
+    }
+
     private void ValidateSdkRecoveryAssociation(CreditReservation reservation)
     {
         using (SqliteConnection connection = database.Open())
@@ -348,7 +455,7 @@ internal sealed class CoordinatorRecovery(
                     ("$path", reservation.UsagePath),
                     ("$reservation", reservation.Id),
                     ("$worker", reservation.Worker),
-                    ("$initialize", "sdk:" + NativeSdkSession.SdkVersion)
+                    ("$initialize", NativeSdkSession.InitializeMarker)
                 ) as string;
             if (
                 reservation.SessionId is null
