@@ -180,8 +180,6 @@ AdvanceCommit ==
 Next == QueryMetadata \/ BuildSdist \/ BuildWheel \/ BuildWheelFromSdist \/ BuildEditable \/ AdvanceCommit
 Spec == Init /\ [][Next]_vars
 
-EditableObservedFileVer == IF editable.siteCopyVer # 0 THEN editable.siteCopyVer ELSE diskFileVer
-
 \* 1. Read-only metadata, `legacyWrite` checkout rejection, and outer-Git unpacked-`sdist` safety.
 ReadOnlyAndGitFreeSdistLaw ==
     /\ ~readMutated /\ sdistWheelStatus # "failed"
@@ -209,11 +207,12 @@ ProvenanceAndArchiveIntegrityLaw ==
         /\ (EvalMetadata(validRootSdist).ok <=> EvalBuild("wheel", "standard", validRootSdist).status = "ok")
         /\ (cfg.writesFile => EvalBuild("wheel", "standard", corruptSdist).status = "failed")
 
-\* 4. Editable `site-packages/` isolation.
+\* 4. Editable `site-packages/` isolation (no `site-packages/` copy written to shadow
+\*    top-level modules / PEP 420 namespace packages or leave orphan directories alongside `.pth` packages).
 EditableNoSitePackagesShadowLaw ==
     (editable.installed /\ cfg.otherEditableMap # "targets-version" /\
      ~(cfg.otherEditableMap = "empty" /\ cfg.wheelStaticForce)) =>
-        editable.siteCopyVer = 0 /\ EditableObservedFileVer = diskFileVer
+        editable.siteCopyVer = 0
 
 \* 5. Algebraic refutation of the 6 tempting shortcuts on the same state space (zero extra `.cfg`s!):
 AlternativeBoundaryLaw ==
@@ -237,5 +236,5 @@ AlternativeBoundaryLaw ==
 \* Deliberately refuted temporal conjecture (PEP 660 frozen `.dist-info` after `AdvanceCommit`):
 EditableMetadataTracksCommitWithoutReinstall ==
     (editable.installed /\ cfg.writesFile /\ diskFileVer # 0) =>
-        editable.metaVer = EditableObservedFileVer
+        editable.metaVer = diskFileVer
 =============================================================================

@@ -213,8 +213,10 @@ tests).
    (`EditableNoSitePackagesShadowLaw`, `AlternativeBoundaryLaw`):** When
    `force_include_editable` is empty, Hatchling's
    `WheelBuilder.get_forced_inclusion_map` copies `build_data["force_include"]`
-   entries into `site-packages/`, shadowing live working-tree files in `.pth` /
-   `dev-mode-dirs` editable installs. Pinned Hatchling's `recurse_forced_files`
+   entries into `site-packages/` (shadowing live working-tree files for
+   top-level modules and PEP 420 namespace packages, or leaving orphan
+   `site-packages/` directories alongside regular `.pth` packages whose
+   `__init__.py` resolves from the working tree). Pinned Hatchling's `recurse_forced_files`
    also raises `FileNotFoundError` if a static or hook `force-include` entry
    points to an absent file (`ValidConfigs` excludes forcing `_version.py` when
    `writesFile = false`). Unless static wheel-target `force-include`
