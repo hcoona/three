@@ -702,7 +702,7 @@ def test_system_results_to_crop_assembly_prefix_and_abstention_fallback() -> (
 
 
 def test_slice_b_cli_subcommands_and_packaged_verification(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Parse Slice B CLI commands and validate packaged dataset digests."""
     parser = cli.build_parser()
@@ -798,6 +798,22 @@ def test_slice_b_cli_subcommands_and_packaged_verification(
     ):
         slice_b_ledgers.verify_packaged_slice_a_datasets(
             pkg, expected_digests=exp, verify_png_assets=True
+        )
+    # Dataset path outside <pkg>/datasets/w6-crops-{20k,50k} is rejected
+    with pytest.raises(StopConditionError, match="Slice B dataset directory"):
+        slice_b_runner._verify_dataset_belongs_to_packaged_slice_a(
+            tmp_path / "unchecked_ds"
+        )
+    # Non-WSL2 Linux host is rejected at setup_w6_slice_b entry before imports
+    monkeypatch.setattr(
+        slice_b_ledgers.platform, "release", lambda: "6.8.0-generic"
+    )
+    with pytest.raises(StopConditionError, match="WSL2 workstation"):
+        slice_b_ledgers.setup_w6_slice_b(
+            tmp_path / "dl_nowsl",
+            package_run_dir=pkg,
+            traindev_root=tmp_path / "missing_td",
+            formal=True,
         )
 
 
