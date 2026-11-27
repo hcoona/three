@@ -108,15 +108,15 @@ are partitioned into behavioral equivalence classes verified against
 
 ## Checked finite models
 
-Every invariant defined across all checkable modules is mounted in the 15
-configurations below (4 positive + 1 witness + 10 counterexamples):
+Every invariant defined across all checkable modules is mounted in the 17
+configurations below (4 positive + 1 witness + 12 counterexamples):
 
 | Module and configuration                                                                                          | Checked scope and established property                                                                                                            | Distinct states |
 | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------: |
 | [`PostPipeline`](models/PostPipeline.tla) ([`PostPipeline.cfg`](models/PostPipeline.cfg))                         | Pure 4-entry Warehouse composition under `hexo-hooks` (`DisableNunjucks = TRUE`, fence mask, allowlisted top/`#preamble` `<!-- more -->`).        |          12,222 |
 | [`PostPipeline`](models/PostPipeline.tla) ([`PostPipelineRendererOnly.cfg`](models/PostPipelineRendererOnly.cfg)) | Restricted host/author envelope (`hlEnabled = FALSE`, flat `<!-- more -->`, including anonymous `post.render`) where `renderer-only` is sound.    |           1,134 |
 | [`CodeHighlighting`](models/CodeHighlighting.tla) ([`CodeHighlighting.cfg`](models/CodeHighlighting.cfg))         | AST adapter over encapsulated `hexo-util.highlight` + span-balanced `prismHighlight`, `%nohighlight`, callouts, fail-closed `+quotes`/`pass:q`.   |           9,216 |
-| [`IngestionAndScope`](models/IngestionAndScope.tla) ([`IngestionAndScope.cfg`](models/IngestionAndScope.cfg))     | Interleaved `Box` post/asset ingestion (`hexo-hooks`), `dirname(data.path)` `base_dir`, `#footnotes` CSS, and `data.path`-scoped footnotes.       |          18,432 |
+| [`IngestionAndScope`](models/IngestionAndScope.tla) ([`IngestionAndScope.cfg`](models/IngestionAndScope.cfg))     | Interleaved `Box` post/asset ingestion (`hexo-hooks`), absolute/Hexo-rooted `base_dir` (`secure` fallback), `#footnotes` CSS, scoped footnotes.   |          36,864 |
 | [`PostPipelineWitness.cfg`](models/PostPipelineWitness.cfg)                                                       | Witness (`NeverRendersPost`): confirms `hexo-post` reaches `"rendered"` without vacuity.                                                          |             cex |
 | [`PostTagTradeoffCounterexample.cfg`](models/PostTagTradeoffCounterexample.cfg)                                   | Counterexample (`HexoTagExpansionSupported`): disabling Nunjucks preserves AsciiDoc/STEM literals at the cost of `{% asset_img %}` expansion.     |             cex |
 | [`PostRawNunjucksCounterexample.cfg`](models/PostRawNunjucksCounterexample.cfg)                                   | Counterexample (`LiteralAndStemFidelity`): in `pre-plain` (`----`), stashed `{{...}}` bypasses `EncodeBraces` and hits Nunjucks in `onRenderEnd`. |             cex |
@@ -125,7 +125,9 @@ configurations below (4 positive + 1 witness + 10 counterexamples):
 | [`HljsCloseTagsCounterexample.cfg`](models/HljsCloseTagsCounterexample.cfg)                                       | Counterexample (`StrictNestedTokenClassOrder`): `hexo-util.highlight`'s internal `closeTags()` inverts nested cross-line token classes.           |             cex |
 | [`InlineSubsTradeoffCounterexample.cfg`](models/InlineSubsTradeoffCounterexample.cfg)                             | Counterexample (`UnconditionalInlineSubsOnHighlighted`): `+quotes` crosses operator `<span>`s and `pass:q` leaks C1 `\u0096<span>0</span>\u0097`. |             cex |
 | [`AdditiveProcessorAssetRaceCounterexample.cfg`](models/AdditiveProcessorAssetRaceCounterexample.cfg)             | Counterexample (`IngestionAndAssetLaw`): `ProcessAsset -> ProcessPost` drops `post_asset_folder` assets under an additive processor.              |             cex |
-| [`UntrustedInputCounterexample.cfg`](models/UntrustedInputCounterexample.cfg)                                     | Counterexample (`UntrustedInputSafety`): `safe: 'server'` symlinks make untrusted AsciiDoc unsafe without `safe: 'secure'` + HTML sanitization.   |             cex |
+| [`AsciiDocOnlyTaxonomyCounterexample.cfg`](models/AsciiDocOnlyTaxonomyCounterexample.cfg)                         | Counterexample (`IngestionAndAssetLaw`): even with valid `---` YAML (`{}`), AsciiDoc-only `:tags:`/`:categories:` are not materialized.           |             cex |
+| [`NaiveRelativeBaseDirCounterexample.cfg`](models/NaiveRelativeBaseDirCounterexample.cfg)                         | Counterexample (`FilesystemIsolationLaw`): relative `RendererData.path` (`dirname("nested/doc.adoc")`) remains CWD-dependent unless normalized.   |             cex |
+| [`UntrustedInputCounterexample.cfg`](models/UntrustedInputCounterexample.cfg)                                     | Counterexample (`UntrustedInputSafety`): `safe: 'server'` symlinks and raw passthrough HTML make untrusted AsciiDoc unsafe without sandboxing.    |             cex |
 | [`MultiPostDomIdCounterexample.cfg`](models/MultiPostDomIdCounterexample.cfg)                                     | Counterexample (`StrictMultiPostDomIdUniqueness`): `#preamble` / `#intro` / `#footnotes` collide across multi-post index pages.                   |             cex |
 | [`MultiPostSectionXrefCounterexample.cfg`](models/MultiPostSectionXrefCounterexample.cfg)                         | Counterexample (`MultiPostSectionXrefIntegrity`): on a full-body index page, Post 2's `#intro` link resolves to Post 1's heading.                 |             cex |
 
@@ -144,8 +146,10 @@ mise run tla:tlc -- -workers 1 \
 
 1. **Plugin surface (`hexo-hooks`):** use `renderer` + `before/after_post_render`
    with documented upstream Hexo contracts (valid non-null `---` YAML mapping,
-   `_part.adoc` partials unmatched by `config.include` or outside `source_dir`,
-   and `new_post_name: :title.adoc` when `post_asset_folder: true`).
+   `tags` / `categories` authored in YAML front-matter rather than AsciiDoc-only
+   attributes, `_part.adoc` partials unmatched by `config.include` or outside
+   `source_dir`, and `new_post_name: :title.adoc` when
+   `post_asset_folder: true`).
 2. **Nunjucks, braces & filter metadata:** set `renderer.disableNunjucks =
 true`, emit raw `{`/`}` without entity encoding, mask ` ``` ` / `~~~` across
    `backtick_code_block`, fail closed if front-matter forces
@@ -163,7 +167,10 @@ true`, emit raw `{`/`}` without entity encoding, mask ` ``` ` / `~~~` across
    or between `#preamble` paragraphs (stripping `id` when reopening in
    `data.more` and failing closed on `sect1`/composite containers, pre-fold
    footnotes, or `[[more]]`; standard Asciidoctor `:nofootnotes:` is preserved
-   untouched); resolve includes from `dirname(data.path)` (`safe: 'secure'` when
-   `data.path` is absent); scope `_footnotedef_k` / `_footnoteref_k` + `href`s
-   by `data.path` while leaving `#footnotes`, `#preamble`, and `#_section`
+   untouched); resolve `include::` `base_dir` from `dirname(data.path)` when
+   `data.path` is absolute, or `dirname(path.resolve(hexo.base_dir, data.path))`
+   when relative on a Hexo instance, falling back to `safe: 'secure'` when
+   `data.path` is absent or unbound relative (`RendererData.path` in
+   `src/types.ts`); scope `_footnotedef_k` / `_footnoteref_k` + `href`s by
+   `data.path` while leaving `#footnotes`, `#preamble`, and `#_section`
    untouched.
