@@ -45,6 +45,8 @@ internal sealed partial class NativeRuntime : IAsyncDisposable
 
     public long? LeaseId => lease;
 
+    internal bool Started => started;
+
     public async Task<string> StartAsync(
         string kind,
         string evidencePath,

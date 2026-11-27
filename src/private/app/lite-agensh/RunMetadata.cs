@@ -130,18 +130,11 @@ internal sealed class RunMetadata(RunDatabase database)
             return true;
         }
 
-        return Sql.Scalar(
-                connection,
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='process_leases';",
-                transaction
-            )
-                is not null
-            && Sql.Scalar(
-                connection,
-                "SELECT id FROM process_leases WHERE state<>'exited' LIMIT 1;",
-                transaction
-            )
-                is not null;
+        return ProcessRunner.HasUnsettledLeases(
+            connection,
+            transaction,
+            includeLiveHelpers: false
+        );
     }
 
     public bool IsBootstrapConfirmed(string? sessionId) =>

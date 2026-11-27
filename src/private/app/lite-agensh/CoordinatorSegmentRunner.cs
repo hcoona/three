@@ -1540,6 +1540,7 @@ internal sealed class CoordinatorSegmentRunner(
     {
         using SqliteConnection connection = database.Open();
         using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
+        string nowText = database.Now.ToString("O");
         DateTimeOffset deadline = database.Now.AddSeconds(database.Configuration.DurationSeconds);
         if (mode == "reconnect")
         {
@@ -1563,7 +1564,21 @@ internal sealed class CoordinatorSegmentRunner(
                 WHERE ended_at IS NULL;
                 """,
                 transaction,
-                ("$time", database.Now.ToString("O"))
+                ("$time", nowText)
+            );
+        }
+        else if (
+            Sql.Scalar(
+                connection,
+                "SELECT id FROM coordinator_segments WHERE ended_at IS NULL LIMIT 1;",
+                transaction
+            )
+            is not null
+        )
+        {
+            throw new OperationException(
+                "conflict",
+                "An unfinished coordinator segment is already open."
             );
         }
 
@@ -1575,7 +1590,7 @@ internal sealed class CoordinatorSegmentRunner(
             """,
             transaction,
             ("$mode", mode),
-            ("$time", database.Now.ToString("O")),
+            ("$time", nowText),
             ("$deadline", deadline.ToString("O"))
         );
         long id = (long)(
@@ -1584,19 +1599,22 @@ internal sealed class CoordinatorSegmentRunner(
         );
         if (mode == "resume")
         {
-            Sql.Execute(
-                connection,
-                """
-                DELETE FROM meta WHERE key=$key AND value='owner';
-                UPDATE tasks SET state='open',closed_by=NULL,updated_at=$time
-                WHERE id=1 AND state='closed' AND closed_by='owner';
-                """,
-                transaction,
-                ("$key", RunMetadata.RootClosedByKey),
-                ("$time", database.Now.ToString("O"))
-            );
+            CollaborationOperations.ReopenOwnerClosedRoot(connection, transaction, nowText);
         }
 
+        Sql.SetMetadata(connection, transaction, RunMetadata.LifecycleKey, "starting");
+        Sql.SetMetadata(
+            connection,
+            transaction,
+            RunMetadata.DeadlineKey,
+            deadline.ToString("O")
+        );
+        Sql.SetMetadata(
+            connection,
+            transaction,
+            RunMetadata.DeadlineDrainKey(id),
+            BuildDeadlineDrainState(deadline, "not-entered", null).ToJsonString()
+        );
         Sql.Execute(
             connection,
             "UPDATE meta SET value='false' WHERE key=$key;",
@@ -1604,13 +1622,24 @@ internal sealed class CoordinatorSegmentRunner(
             ("$key", RunMetadata.GitFinalizedKey)
         );
         transaction.Commit();
-        database.WriteMetadata(RunMetadata.DeadlineKey, deadline.ToString("O"));
-        RecordDeadlineDrain(id, deadline, "not-entered", null);
         return (id, deadline);
     }
 
     private void RecordDeadlineDrain(
         long segment, DateTimeOffset deadline, string outcome, string? reason,
+        OperationException? accountingStop = null
+    )
+    {
+        database.Meta.WriteJson(
+            RunMetadata.DeadlineDrainKey(segment),
+            BuildDeadlineDrainState(deadline, outcome, reason, accountingStop)
+        );
+    }
+
+    private static JsonObject BuildDeadlineDrainState(
+        DateTimeOffset deadline,
+        string outcome,
+        string? reason,
         OperationException? accountingStop = null
     )
     {
@@ -1629,7 +1658,8 @@ internal sealed class CoordinatorSegmentRunner(
                 ["message"] = accountingStop.Message,
             };
         }
-        database.Meta.WriteJson(RunMetadata.DeadlineDrainKey(segment), state);
+
+        return state;
     }
 
     private void RecordCompletedTurn(long batchId, string worker, string stopReason)

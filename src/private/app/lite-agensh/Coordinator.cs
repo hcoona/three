@@ -63,14 +63,10 @@ public sealed class Coordinator
         nativeEvidenceKind = nativeWorkerFactory is null
             ? "native-sdk"
             : "controlled-native-dependency";
-        using SqliteConnection connection = database.Open();
-        using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
-        string ledgerBinding = CoordinatorRecovery.BindNativeStorage(
-            database, credits, connection, transaction
+        string ledgerBinding = CoordinatorRecovery.EnsureCoordinatorStorage(
+            database,
+            credits
         );
-        CoordinatorSegmentRunner.EnsureSegmentStorage(connection, transaction);
-        CoordinatorControls.EnsureSchema(connection, transaction);
-        transaction.Commit();
         controls = new(database, git, Classify);
         nativeWorkers = nativeWorkerFactory is null
             ? new NativeWorkerFactory(database, processes, credits)
@@ -154,6 +150,9 @@ public sealed class Coordinator
     }
 
     public JsonObject RequestControl(string action) => controls.Request(action);
+
+    internal static JsonObject EnqueueControl(RunDatabase database, string action) =>
+        CoordinatorControls.Enqueue(database, action);
 
     public async Task<JsonObject> PreflightAsync(CancellationToken cancellationToken = default)
     {
@@ -490,7 +489,9 @@ internal sealed class CoordinatorControls(
             transaction
         );
 
-    public JsonObject Request(string action)
+    public JsonObject Request(string action) => Enqueue(database, action);
+
+    public static JsonObject Enqueue(RunDatabase database, string action)
     {
         if (action is not ("pause" or "finalize"))
         {
@@ -502,6 +503,7 @@ internal sealed class CoordinatorControls(
 
         using SqliteConnection connection = database.Open();
         using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
+        EnsureSchema(connection, transaction);
         Sql.Execute(
             connection,
             """

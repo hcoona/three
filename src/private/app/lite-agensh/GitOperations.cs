@@ -60,6 +60,11 @@ public sealed class GitOperations : IGitWorkspace
     internal static void EnsureSchema(RunDatabase database)
     {
         using SqliteConnection connection = database.Open();
+        if (IsSchemaInitialized(connection))
+        {
+            return;
+        }
+
         using SqliteTransactionScope transaction = Sql.BeginTransaction(connection);
         Sql.Execute(
             connection,
@@ -100,6 +105,26 @@ public sealed class GitOperations : IGitWorkspace
         transaction.Commit();
     }
 
+    private static bool IsSchemaInitialized(SqliteConnection connection) =>
+        Convert.ToInt64(
+            Sql.Scalar(
+                connection,
+                """
+                SELECT COUNT(*) FROM sqlite_master
+                WHERE type='table' AND name IN (
+                    'changes','change_comments','reviews','integration_requests',
+                    'checks','git_resources','git_health'
+                );
+                """
+            ),
+            CultureInfo.InvariantCulture
+        ) == 7
+        && Sql.Scalar(
+            connection,
+            "SELECT 1 FROM sqlite_master WHERE type='index' AND name='integration_pending';"
+        )
+            is not null;
+
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         using FileStream ownership = AcquireOwnership();
@@ -125,6 +150,7 @@ public sealed class GitOperations : IGitWorkspace
             }
 
             using var diagnosticActor = SqliteDiagnostics.UseActor(actor);
+            using IDisposable leaseScope = ProcessRunner.UseScope("helper");
             return name switch
             {
                 "change_write" => await WriteChangeAsync(actor, arguments, cancellationToken)
@@ -433,6 +459,14 @@ public sealed class GitOperations : IGitWorkspace
         SqliteTransaction transaction
     )
     {
+        if (ProcessRunner.HasUnsettledLeases(connection, transaction, includeLiveHelpers: true))
+        {
+            throw new OperationException(
+                "conflict",
+                "Unsettled owned processes block finalization and cleanup."
+            );
+        }
+
         if (
             Convert.ToInt64(
                 Sql.Scalar(
@@ -686,6 +720,7 @@ public sealed class GitOperations : IGitWorkspace
 
     private async Task<JsonObject> ReadChangeAsync(JsonObject arguments, CancellationToken token)
     {
+        RequireInitialized();
         Fields(arguments, "id");
         long id = Integer(arguments, "id");
         JsonObject change = Change(id);
@@ -1461,13 +1496,10 @@ public sealed class GitOperations : IGitWorkspace
 
         using SqliteConnection connection = database.Open();
         if (
-            Convert.ToInt64(
-                Sql.Scalar(
-                    connection,
-                    "SELECT COUNT(*) FROM process_leases WHERE state<>'exited';"
-                ),
-                CultureInfo.InvariantCulture
-            ) != 0
+            ProcessRunner.HasUnsettledLeases(
+                connection,
+                includeLiveHelpers: !allowFinalizing
+            )
         )
         {
             throw new OperationException(
@@ -1480,13 +1512,7 @@ public sealed class GitOperations : IGitWorkspace
     private void RequireSettledProcessOwnership()
     {
         using SqliteConnection connection = database.Open();
-        if (
-            Sql.Scalar(
-                connection,
-                "SELECT id FROM process_leases WHERE state='unresolved' LIMIT 1;"
-            )
-            is not null
-        )
+        if (ProcessRunner.HasUnresolvedLease(connection))
         {
             throw new OperationException(
                 "unavailable",

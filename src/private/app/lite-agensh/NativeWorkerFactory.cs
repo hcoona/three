@@ -489,7 +489,7 @@ internal sealed class NativeWorkerFactory(
                         AND usage_path=$path AND baseline_usage='0' AND initialize_json=$sdk);
                     """, snapshot, ("$id", reservation.Id), ("$session", reservation.SessionId),
                     ("$worker", reservation.Worker), ("$path", reservation.UsagePath),
-                    ("$sdk", "sdk:" + NativeSdkSession.SdkVersion))! == 1);
+                    ("$sdk", NativeSdkSession.InitializeMarker))! == 1);
 
             const string missingEvidence = "Required original native limit evidence is missing.";
             string startKey = NoDispatchCancellation.Marker(reservation.Id);
@@ -506,7 +506,7 @@ internal sealed class NativeWorkerFactory(
             JsonObject initial = start["initial"] as JsonObject
                 ?? throw new OperationException("credit_unknown",
                     "Original native start observation is missing.");
-            JsonObject retained = Read($"native:session:{reservation.SessionId}");
+            JsonObject retained = Read(RunMetadata.SessionDiagnosticKey(reservation.SessionId!));
             RequireRecoveryEvidence(
                 start["contract"]?.GetValue<string>() == NoDispatchCancellation.Contract
                 && start["evidenceKind"]?.GetValue<string>() ==

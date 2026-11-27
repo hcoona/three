@@ -59,6 +59,7 @@ internal sealed class NativeSdkHost(
 
             try
             {
+                (int ownerPid, long ownerTicks) = ProcessRunner.CurrentOwnerIdentity();
                 database.Meta.WriteJson(
                     RunMetadata.RuntimeKey(Id),
                     new JsonObject
@@ -66,6 +67,8 @@ internal sealed class NativeSdkHost(
                         ["runtimeId"] = Id,
                         ["state"] = "opening",
                         ["evidencePrefix"] = evidencePath,
+                        ["ownerPid"] = ownerPid,
+                        ["ownerStartTicks"] = ownerTicks,
                     }
                 );
                 runtime = new(database, processes, cwd);
@@ -101,6 +104,10 @@ internal sealed class NativeSdkHost(
             catch (Exception exception)
             {
                 startupFailure = exception;
+                if (runtime?.Started != true)
+                {
+                    RecordState("aborted");
+                }
                 throw;
             }
         }
