@@ -37,11 +37,7 @@ namespace Memoization
         /// <example>
         /// <code>
         /// // Initialize during application startup
-        /// Memoization.DefaultCache = new MemoryCache(new MemoryCacheOptions
-        /// {
-        ///     SizeLimit = 1000,
-        ///     CompactionPercentage = 0.25
-        /// });
+        /// Memoization.DefaultCache = new MemoryCache(new MemoryCacheOptions());
         /// </code>
         /// </example>
 #if !NETSTANDARD2_0 && !NET462
