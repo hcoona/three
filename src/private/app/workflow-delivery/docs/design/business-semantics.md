@@ -283,4 +283,7 @@ variant, substituting a write, suppressing a command failure or blocking a
 legal recovery is not. If a difference rests on a native assumption, resolve
 it against the owning contract rather than changing the model to match the
 code. This is a criterion for a useful abstraction, not a proof that it is
-globally minimal or that the implementation already conforms.
+globally minimal or that the implementation already conforms. For the internal
+white-box decomposition that refines these black-box decisions across `Core`,
+`Engine`, bilateral ports and split-privilege contexts, see
+[component and port contracts](component-contracts.md).
