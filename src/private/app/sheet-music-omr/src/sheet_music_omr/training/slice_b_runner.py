@@ -553,7 +553,7 @@ def _reconstruct_system_results(
 def _system_results_to_crop_assembly(  # noqa: C901, PLR0912, PLR0915
     coords: Sequence[tuple[int, int]],
     systems: Sequence[SystemDecodeResult],
-) -> tuple[SystemCropAssemblyResult, list[float]]:
+) -> tuple[SystemCropAssemblyResult, list[float], dict[tuple[int, int], int]]:
     """Convert decoded Text Score 2 systems into a MusicXML assembly result."""
     if not coords:
         return (
@@ -568,14 +568,18 @@ def _system_results_to_crop_assembly(  # noqa: C901, PLR0912, PLR0915
                 error_reasons={0: "zero predicted system crops"},
             ),
             [],
+            {},
         )
     valid_prefix: list[SystemDocument] = []
     failed_crops: list[int] = []
     error_reasons: dict[int, str] = {}
+    prefix_broken = False
     for idx, res in enumerate(systems):
         if res.valid and res.document is not None and not res.needs_person:
-            valid_prefix.append(res.document)
+            if not prefix_broken:
+                valid_prefix.append(res.document)
         else:
+            prefix_broken = True
             failed_crops.append(idx)
             error_reasons[idx] = str(
                 "review_marker_needs_person"
@@ -613,7 +617,8 @@ def _system_results_to_crop_assembly(  # noqa: C901, PLR0912, PLR0915
         sys_out: list[int] = []
         raw_confs: list[float] = []
         raw_scores: list[float] = []
-        seen_measures: set[int] = set()
+        ord_by_mnum: dict[int, int] = {}
+        local_to_cand: dict[tuple[int, int], int] = {}
         for c_idx in range(best_k):
             doc = valid_prefix[c_idx]
             sys_lp = systems[c_idx].raw_logprob
@@ -624,15 +629,15 @@ def _system_results_to_crop_assembly(  # noqa: C901, PLR0912, PLR0915
             conf_prob = float(
                 math.exp(max(-20.0, min(0.0, per_block_lp / 16.0)))
             )
-            for blk in doc.blocks:
-                if blk.number in seen_measures:
-                    continue
-                seen_measures.add(blk.number)
-                crop_indices.append(c_idx)
-                pages_out.append(coords[c_idx][0])
-                sys_out.append(coords[c_idx][1])
-                raw_confs.append(round(conf_prob, 6))
-                raw_scores.append(round(per_block_lp, 6))
+            for loc_m, blk in enumerate(doc.blocks, 1):
+                if blk.number not in ord_by_mnum:
+                    ord_by_mnum[blk.number] = len(ord_by_mnum) + 1
+                    crop_indices.append(c_idx)
+                    pages_out.append(coords[c_idx][0])
+                    sys_out.append(coords[c_idx][1])
+                    raw_confs.append(round(conf_prob, 6))
+                    raw_scores.append(round(per_block_lp, 6))
+                local_to_cand[(c_idx, loc_m)] = ord_by_mnum[blk.number]
         return (
             SystemCropAssemblyResult(
                 xml_text=best_xml,
@@ -645,12 +650,15 @@ def _system_results_to_crop_assembly(  # noqa: C901, PLR0912, PLR0915
                 error_reasons=error_reasons,
             ),
             raw_scores,
+            local_to_cand,
         )
 
     # Fallback: per-system closed conversion via concat_system_predictions
     specs: list[tuple[int, int, bytes | None]] = []
     confs_map: dict[int, list[float]] = {}
     fallback_scores: list[float] = []
+    fallback_local_to_cand: dict[tuple[int, int], int] = {}
+    running_fb_ord = 0
     for c_idx, (pg, sy) in enumerate(coords):
         res = systems[c_idx]
         xml_bytes: bytes | None = None
@@ -664,7 +672,15 @@ def _system_results_to_crop_assembly(  # noqa: C901, PLR0912, PLR0915
                     s_xml = to_musicxml_text(joined_one.score)
                     _ = validate_candidate_score(s_xml)
                     xml_bytes = s_xml.encode("utf-8")
-                    n_m = len({b.number for b in res.document.blocks})
+                    fb_ord_by_mnum: dict[int, int] = {}
+                    for loc_m, blk in enumerate(res.document.blocks, 1):
+                        if blk.number not in fb_ord_by_mnum:
+                            running_fb_ord += 1
+                            fb_ord_by_mnum[blk.number] = running_fb_ord
+                        fallback_local_to_cand[(c_idx, loc_m)] = fb_ord_by_mnum[
+                            blk.number
+                        ]
+                    n_m = len(fb_ord_by_mnum)
                     sys_lp = res.raw_logprob
                     m_lp = float(sys_lp) / max(1, n_m) if sys_lp else -10.0
                     c_prob = float(math.exp(max(-20.0, min(0.0, m_lp / 16.0))))
@@ -674,7 +690,11 @@ def _system_results_to_crop_assembly(  # noqa: C901, PLR0912, PLR0915
                     xml_bytes = None
         specs.append((pg, sy, xml_bytes))
     assembled = concat_system_predictions(specs, crop_raw_confs=confs_map)
-    return assembled, fallback_scores
+    return (
+        assembled,
+        fallback_scores,
+        fallback_local_to_cand if assembled.parse_valid else {},
+    )
 
 
 def _extract_blind_pages_from_bytes(  # noqa: PLR0913, PLR0915
@@ -996,6 +1016,7 @@ def _score_recognizer_on_traindev(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
     # Phase 1: Assemble blind system crops and read initial drafts
     assemblies: dict[str, SystemCropAssemblyResult] = {}
+    local_to_cand_by_gid: dict[str, dict[tuple[int, int], int]] = {}
     sys_results_by_gid: dict[str, list[SystemDecodeResult]] = {}
     coords_by_gid: dict[str, list[tuple[int, int]]] = {}
     crop_boxes_by_gid: dict[str, list[tuple[float, float, float, float]]] = {}
@@ -1017,8 +1038,9 @@ def _score_recognizer_on_traindev(  # noqa: C901, PLR0912, PLR0913, PLR0915
             "list[dict[str, object]]", pieces_decoded[gid]["systems"]
         )
         sys_res = _reconstruct_system_results(raw_sys)
-        asm, _ = _system_results_to_crop_assembly(coords, sys_res)
+        asm, _, loc_map = _system_results_to_crop_assembly(coords, sys_res)
         assemblies[gid] = asm
+        local_to_cand_by_gid[gid] = loc_map
         sys_results_by_gid[gid] = sys_res
         coords_by_gid[gid] = coords
         crop_boxes_by_gid[gid] = c_boxes
@@ -1212,7 +1234,7 @@ def _score_recognizer_on_traindev(  # noqa: C901, PLR0912, PLR0913, PLR0915
             (gid, d_ord): ((gid, d_ord) in f20)
             for d_ord in range(1, indep_draft_counts[gid] + 1)
         }
-        running_cand_ord = 0
+        loc_cand_map = local_to_cand_by_gid[gid]
         for s_idx, (coords_pair, sys_res, sys_box) in enumerate(
             zip(
                 coords_by_gid[gid],
@@ -1226,10 +1248,10 @@ def _score_recognizer_on_traindev(  # noqa: C901, PLR0912, PLR0913, PLR0915
             conf_by_ms: dict[tuple[int, int], SidecarConfidence] = {}
             if sys_res.valid and sys_res.document is not None:
                 for local_m in range(1, len(sys_res.document.blocks) + 1):
-                    global_c = running_cand_ord + local_m
-                    if global_c in cand_to_draft:
+                    global_c = loc_cand_map.get((s_idx, local_m))
+                    if global_c is not None and global_c in cand_to_draft:
                         local_to_draft[local_m] = cand_to_draft[global_c]
-                    if global_c in cand_to_gold:
+                    if global_c is not None and global_c in cand_to_gold:
                         g_ord = cand_to_gold[global_c]
                         local_to_gold[local_m] = g_ord
                         cc = cal_conf_by_gm.get((gid, g_ord))
@@ -1239,7 +1261,6 @@ def _score_recognizer_on_traindev(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         conf_by_ms[(local_m, st)] = SidecarConfidence(
                             calibrated_confidence=cc
                         )
-                running_cand_ord += len(sys_res.document.blocks)
             s_rows = build_w7_sidecar_rows(
                 sys_res,
                 run_id=run_id,
@@ -1369,7 +1390,7 @@ def _score_recognizer_on_traindev(  # noqa: C901, PLR0912, PLR0913, PLR0915
     }
 
 
-def run_w6_traindev_eval(  # noqa: PLR0913, PLR0915
+def run_w6_traindev_eval(  # noqa: C901, PLR0912, PLR0913, PLR0915
     downloads_dir: Path,
     run_dir: Path,
     *,
@@ -1393,6 +1414,9 @@ def run_w6_traindev_eval(  # noqa: PLR0913, PLR0915
     src = source_state(run_git)
     if formal and src["dirty"]:
         msg = "formal Slice B TRAIN_DEV evaluation requires a clean git tree"
+        raise StopConditionError(msg)
+    if not (1 <= max_new_tokens <= 1536 and 1 <= num_beams <= 3):  # noqa: PLR2004
+        msg = "Slice B requires max_new_tokens <= 1536 and num_beams <= 3"
         raise StopConditionError(msg)
     if mode == "e0" and (
         arm != "arm-a"
@@ -1695,6 +1719,11 @@ def run_w6_traindev_replay_and_preregister(  # noqa: C901, PLR0912, PLR0913, PLR
     src = source_state(run_git)
     if formal and src["dirty"]:
         msg = "formal Slice B replay and pre-registration requires a clean tree"
+        raise StopConditionError(msg)
+    if not (1 <= max_new_tokens <= 1536 and 1 <= num_beams <= 3):  # noqa: PLR2004
+        msg = (
+            "Slice B replay requires max_new_tokens <= 1536 and num_beams <= 3"
+        )
         raise StopConditionError(msg)
     if formal and not tiny_fixture:
         _verify_dataset_belongs_to_packaged_slice_a(ds_dir)
@@ -2022,7 +2051,7 @@ def run_w6_traindev_replay_and_preregister(  # noqa: C901, PLR0912, PLR0913, PLR
                             decoded_map[gid]["systems"],
                         )
                     )
-                    asm, _ = _system_results_to_crop_assembly(coords, sys_r)
+                    asm, _, _ = _system_results_to_crop_assembly(coords, sys_r)
                     boxes_g = {
                         pg: [
                             (sl, (b[0], b[1], b[2], b[3], 2)) for sl, b in plist
@@ -2344,7 +2373,8 @@ def run_w6_pilot_final_test(  # noqa: C901, PLR0912, PLR0913, PLR0915
         msg = "formal W6-pilot-final TEST pass requires a clean git tree"
         raise StopConditionError(msg)
 
-    # Stat-only existence checks BEFORE reserving or touching TEST!
+    # Validate non-TEST metadata, overlays, REQ-012 manifest & T01 archive
+    # join BEFORE reserving or touching TEST!
     t01_reports = desk_study_dir / "omr-finetune-research" / "reports"
     s0_pub_path = s0_dir / "report" / "s0-public.json"
     for req_p in (
@@ -2367,6 +2397,29 @@ def run_w6_pilot_final_test(  # noqa: C901, PLR0912, PLR0913, PLR0915
     if not isinstance(s0_second_reader, dict):
         msg = "Stage S0 public report missing TEST second_reader summary"
         raise StopConditionError(msg)
+    manifest, _ = verify_approved_overlays(s0_dir)
+    all_pieces: list[dict[str, Any]] = manifest["pieces"]
+    test_pieces = [p for p in all_pieces if p["split"] == "TEST"]
+    if {str(p["gold_id"]) for p in test_pieces} != _TEST_GOLD_IDS:
+        msg = "TEST piece set in manifest differs from frozen 7-piece TEST"
+        raise StopConditionError(msg)
+    measure_counts_all = {
+        str(p["gold_id"]): int(p["measure_count"]) for p in all_pieces
+    }
+    _, req012_post_by_m = _load_and_verify_req012_manifest(
+        req012_manifest_path, measure_counts_all, formal=formal
+    )
+    ws_map = {
+        int(p["number"]): str(p["workspace"])
+        for p in json.loads(
+            (immich_dir / "batch-status.json").read_text("utf-8")
+        )["pieces"]
+    }
+    imm_sub = immich_dir / "score-transcription-immich-20261031"
+    eff_immich = imm_sub if imm_sub.is_dir() else immich_dir
+    t01_join = extract_t01_archive_join(
+        t01_reports, eff_immich, ws_map, measure_counts_all
+    )
 
     # Atomically reserve and fsync Slice B ledger + w2-touch-log.jsonl
     # BEFORE opening any TEST page or MusicXML!
@@ -2421,20 +2474,6 @@ def run_w6_pilot_final_test(  # noqa: C901, PLR0912, PLR0913, PLR0915
             if python_override is not None
             else venv_python_path(downloads / "w6-gpu-venv")
         )
-
-        manifest, _ = verify_approved_overlays(s0_dir)
-        all_pieces: list[dict[str, Any]] = manifest["pieces"]
-        test_pieces = [p for p in all_pieces if p["split"] == "TEST"]
-        if {str(p["gold_id"]) for p in test_pieces} != _TEST_GOLD_IDS:
-            msg = "TEST piece set in manifest differs from frozen 7-piece TEST"
-            raise StopConditionError(msg)
-
-        ws_map = {
-            int(p["number"]): str(p["workspace"])
-            for p in json.loads(
-                (immich_dir / "batch-status.json").read_text("utf-8")
-            )["pieces"]
-        }
 
         # Resolve relocated accepted_xml_path / initial_draft_path strictly per
         # piece without scanning unrelated private XML files!
@@ -2552,6 +2591,7 @@ def run_w6_pilot_final_test(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
         # Score blind second-reader BEFORE accepted XML comparison
         assemblies: dict[str, SystemCropAssemblyResult] = {}
+        local_to_cand_by_gid: dict[str, dict[tuple[int, int], int]] = {}
         sys_results_by_gid: dict[str, list[SystemDecodeResult]] = {}
         coords_by_gid: dict[str, list[tuple[int, int]]] = {}
         crop_boxes_by_gid: dict[
@@ -2576,8 +2616,9 @@ def run_w6_pilot_final_test(  # noqa: C901, PLR0912, PLR0913, PLR0915
             sys_r = _reconstruct_system_results(
                 cast("list[dict[str, object]]", decoded_out[gid]["systems"])
             )
-            asm, _ = _system_results_to_crop_assembly(coords, sys_r)
+            asm, _, loc_map = _system_results_to_crop_assembly(coords, sys_r)
             assemblies[gid] = asm
+            local_to_cand_by_gid[gid] = loc_map
             sys_results_by_gid[gid] = sys_r
             coords_by_gid[gid] = coords
             crop_boxes_by_gid[gid] = c_boxes
@@ -2735,25 +2776,6 @@ def run_w6_pilot_final_test(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     else round(rc, 6)
                 )
 
-        # Load T01 & REQ-012 archive join for complete omr-discrepancy-log-v1
-        measure_counts_all = {
-            str(p["gold_id"]): int(p["measure_count"]) for p in all_pieces
-        }
-        _, req012_post_by_m = _load_and_verify_req012_manifest(
-            req012_manifest_path, measure_counts_all, formal=formal
-        )
-        ws_by_num = {
-            int(p["number"]): str(p["workspace"])
-            for p in json.loads(
-                (immich_dir / "batch-status.json").read_text("utf-8")
-            )["pieces"]
-        }
-        imm_sub = immich_dir / "score-transcription-immich-20261031"
-        eff_immich = imm_sub if imm_sub.is_dir() else immich_dir
-        t01_join = extract_t01_archive_join(
-            t01_reports, eff_immich, ws_by_num, measure_counts_all
-        )
-
         logs_dir = run / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
         sidecar_rows: list[dict[str, object]] = []
@@ -2774,7 +2796,7 @@ def run_w6_pilot_final_test(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 (gid, d_o): ((gid, d_o) in f20)
                 for d_o in range(1, indep_draft_counts[gid] + 1)
             }
-            running_c = 0
+            loc_cand_map = local_to_cand_by_gid[gid]
             for s_idx, (coords_pair, sys_res, sys_box) in enumerate(
                 zip(
                     coords_by_gid[gid],
@@ -2788,10 +2810,10 @@ def run_w6_pilot_final_test(  # noqa: C901, PLR0912, PLR0913, PLR0915
                 conf_ms: dict[tuple[int, int], SidecarConfidence] = {}
                 if sys_res.valid and sys_res.document is not None:
                     for loc_m in range(1, len(sys_res.document.blocks) + 1):
-                        gc = running_c + loc_m
-                        if gc in cand_to_draft:
+                        gc = loc_cand_map.get((s_idx, loc_m))
+                        if gc is not None and gc in cand_to_draft:
                             l_to_d[loc_m] = cand_to_draft[gc]
-                        if gc in cand_to_gold:
+                        if gc is not None and gc in cand_to_gold:
                             go = cand_to_gold[gc]
                             l_to_g[loc_m] = go
                             cc = cal_conf_by_gm.get((gid, go))
@@ -2801,7 +2823,6 @@ def run_w6_pilot_final_test(  # noqa: C901, PLR0912, PLR0913, PLR0915
                             conf_ms[(loc_m, st)] = SidecarConfidence(
                                 calibrated_confidence=cc
                             )
-                    running_c += len(sys_res.document.blocks)
                 sidecar_rows.extend(
                     build_w7_sidecar_rows(
                         sys_res,
@@ -2941,7 +2962,7 @@ def run_w6_pilot_final_test(  # noqa: C901, PLR0912, PLR0913, PLR0915
         )
         dyn_forbidden = sorted(
             {
-                *(str(ws) for ws in ws_by_num.values() if ws),
+                *(str(ws) for ws in ws_map.values() if ws),
                 str(Path.home()),
                 str(immich_dir),
                 str(desk_study_dir),
