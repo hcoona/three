@@ -126,6 +126,34 @@ and history.
   independent reviews, `GOV-011` disposition, and ordinary checks; delete this
   entry when the bounded repair is accepted.
 
+### Remediate and formally verify CircularList contracts (#1951, #1796)
+
+- **Work carrier:** [Issue #1951](https://github.com/hcoona/three/issues/1951)
+  and [Issue #1796](https://github.com/hcoona/three/issues/1796), and their
+  linked authorization and implementation pull requests.
+- **Accepted inputs and scope/outcome:** Under
+  [governance](governance/governance-system.md),
+  [record policy](governance/record-system.md),
+  [engineering principles](engineering/engineering-principles.md),
+  [workspaces](engineering/workspaces.md), and
+  [CircularList](../src/public/lib/CircularList/README.md), remediate
+  `CircularList<T>` at `2.0.0-beta.{height}` (`capacity >= 1`,
+  `IReadOnlyList<T>`, documented `AsSpan()` plus zero-allocation `GetSegments()`
+  and `CopyTo(Span<T>)`, non-full `Add` and overflow-free 32-bit indexing/bounds,
+  `Clear()` reference clearing, and fail-fast `Enumerator`), and verify it with
+  `CsCheck` stateful tests (widening CPM/lockfiles), a PEP 723 `Z3` `BitVec(32)`
+  script/`mise` task, a bound `TLA+`/`TLC` model, and `#if PAL` `PAL-CS`
+  annotations verified offline and recorded in `CircularList/docs/validation.md`
+  (routed from `docs/README.md`).
+- **Permitted external/paid effects:** Temporary out-of-repo acquisition and
+  offline execution of public `FStarLang/pal-csharp` and F\*/Pulse tools, plus
+  routine dependency resolution and CI validation; `0` paid model/cloud spend.
+- **Exclusions and closure:** No `Pal.Annotations`/`FSharp.Core` package
+  dependency, new GitHub Actions workflow, #1798 TFM/analyzer migration, #1822
+  `CHANGELOG.md` rewrite, or release/credential/access change. Merge before code
+  PRs; retain required reviews, `GOV-011`, HK/`records:check`, and `Validate`
+  CI, and delete atomically when closing #1951 and #1796.
+
 ### Design and plan sheet-music recognition
 
 - **Work carrier:** [Issue #686](https://github.com/hcoona/three/issues/686),
