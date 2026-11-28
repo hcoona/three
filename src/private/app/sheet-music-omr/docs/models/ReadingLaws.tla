@@ -82,8 +82,9 @@ Calibration ==
     Eligible(FitRows(target,training),target) <=> target \notin training
 Accounting ==
   /\ score.cmp.A \cap mask = {}
-  /\ score.forced \subseteq score.cmp.missing /\ score.errors \subseteq score.denominator
-  /\ ((score.rate = Absent) <=> (score.denominator = {}))
+  /\ score.forced \subseteq score.cmp.missing /\ score.denominator = score.cmp.eligible
+  /\ score.errors = ({q[1] : q \in score.cmp.A} \cup (score.forced \cap score.denominator))
+  /\ score.errors \subseteq score.denominator /\ ((score.rate = Absent) <=> (score.denominator = {}))
   /\ score.cmp.extra = DOMAIN MeasureView(t,{},{}) \ {q[1] : q \in score.cmp.paired}
   /\ LET c == score.cmp
      IN CASE page = "miss" ->

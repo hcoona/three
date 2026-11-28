@@ -97,8 +97,8 @@ ScoreReport(w,p,d,flags,mask) ==
       allowed == AllowedGold(w,p.docs)
       forced == DOMAIN g \ {q[2] : q \in allowed}
       c == Compare(a,g,allowed,mask)
-      den == c.eligible \cup forced
-      errors == {q[1] : q \in c.A} \cup forced
+      den == c.eligible
+      errors == {q[1] : q \in c.A} \cup (forced \cap den)
   IN [cmp |-> c, forced |-> forced, caught |-> Caught(d,g,flags,mask),
       denominator |-> den, errors |-> errors,
       rate |-> IF den = {} THEN Absent ELSE <<Cardinality(errors),Cardinality(den)>>]

@@ -130,10 +130,12 @@ In `miss`, draft flag **2** catches unmatched gold bar **3** through its
 preceding anchor; in `duplicate`, draft flag **3** catches gold error **2**.
 `A` is a content discrepancy, `B` a normalized representation difference,
 `C` layout, and `R` a retracted allegation, not a way to erase a scored
-`A`. Physical mismatch is charged separately; an empty denominator is
-unavailable, not zero. Alignment costs one per differing category and four
-per gap: keeping the slightly different bar costs **5** with the spurious
-neighbor dropped, rather than **7** for keeping the wholly different bar.
+`A`. Physical mismatch remains recorded in `forced` while `denominator`
+and scored `errors` stay restricted to unmasked eligible measures; an
+empty denominator is unavailable, not zero. Alignment costs one per
+differing category and four per gap: keeping the slightly different bar
+costs **5** with the spurious neighbor dropped, rather than **7** for
+keeping the wholly different bar.
 
 Fold exclusion and calibration are value checks, not steps each user runs.
 The development fit excludes its target from the contributing folds and
