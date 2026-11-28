@@ -25,13 +25,18 @@ from sheet_music_omr.evaluation.xml_merge import concat_system_predictions
 from sheet_music_omr.harness.confine import Confinement
 from sheet_music_omr.harness.musescore import MuseScore
 from sheet_music_omr.harness.stops import StopConditionError
-from sheet_music_omr.harness.systems import SystemStart, split_score
+from sheet_music_omr.harness.systems import (
+    SystemLayout,
+    SystemStart,
+    split_score,
+)
 from sheet_music_omr.model import AssembledScore
 from sheet_music_omr.musicxml_forward import to_musicxml_text
 from sheet_music_omr.parser import parse_document
 from sheet_music_omr.synthetic import intake, renderers
 from sheet_music_omr.training import asset_locks, ledgers, packaging
 from sheet_music_omr.training import copista_per_system as baseline
+from sheet_music_omr.training import models as training_models
 from sheet_music_omr.training.asset_locks import (
     LockedMetaFile,
     LockedModelRepo,
@@ -1217,9 +1222,19 @@ def test_packaging_writes_crops_and_cowarped_boxes_with_prior_header(
     """Verify whole shards, gap-free header state and geometry against PNGs."""
     _seed_prior_ledgers(tmp_path / "downloads", monkeypatch)
     run = tmp_path / "runs" / "w6-slice-a-fixture"
+    train_variant = _rendered_fixture("tr", "synth_train")
+    layout = SystemLayout(
+        measures=3, starts=(SystemStart(0, 1, 1), SystemStart(2, 1, 2))
+    )
+    labels = renderers._system_texts(  # noqa: SLF001 - real label producer, no rasterizer
+        to_musicxml_text(_score(3, changed_meter=True)), layout
+    )
     packaging.package_rendered_variants_to_datasets(
         [
-            _rendered_fixture("tr", "synth_train"),
+            replace(
+                train_variant,
+                render=replace(train_variant.render, system_texts=labels),
+            ),
             _rendered_fixture("va", "synth_val"),
         ],
         run,
@@ -1235,6 +1250,16 @@ def test_packaging_writes_crops_and_cowarped_boxes_with_prior_header(
     first, second = map(
         json.loads, (train / "crops.jsonl").read_text().splitlines()
     )
+    tokenizer = training_models.TextScore2DomainTokenizer()
+    for row, expected in zip(
+        (first, second), train_variant.render.system_texts, strict=True
+    ):
+        assert row["target_text_v2"] == expected
+        ids, prompt_length = training_models._arm_b_train_sequence(  # noqa: SLF001 - before GPU work
+            tokenizer, row
+        )
+        assert ids[-1] == tokenizer.eos_token_id
+        assert tokenizer.decode(ids[prompt_length:-1]) == expected
     assert first["schema"] == "omr-w6-crop-dataset-v1"
     assert first["incoming_header_state_text"] == ""
     assert (

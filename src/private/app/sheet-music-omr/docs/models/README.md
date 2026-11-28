@@ -162,6 +162,26 @@ all three serialized documents identical, and parsing and reassembling them
 returns the original canonical whole text. This does not cover other relation
 kinds, more simultaneous slurs, or arbitrary chains of systems.
 
+### What the Python implementation actually writes
+
+The [document scenarios](../../tests/test_documents.py) compare canonical output
+with expected text: voice-line order and `from=0` disappear; written naturals
+and stem directions survive. A local enumeration used one fixed `2/4` system,
+one note per line, voice IDs `{1}`, `{2}` or `{1,2}`, and the target model's
+three note spellings and two stems. Both `from=0` choices and every row order
+gave 168 valid inputs and exactly 48 distinct Arm B target sequences. Decoding
+each target returned its expected canonical text. This checks valid document
+spellings, not which voices a recognizer should infer from paper.
+
+The [assembly scenarios](../../tests/test_assembly.py) join two system documents
+at `1/4` with different incoming voice counts (2 and 1). Two cross-staff
+unison tie pairings both succeed but yield different, independently specified
+whole-score texts. These cuts are supplied to assembly, not inferred by the
+barline-only harness splitter. The [packaging scenario](../../tests/test_w6_packaging_ledgers_copista.py)
+follows the synthetic renderer's system-text producer through the two on-disk
+crop rows and decodes each Arm B target after its prompt. It uses fixture
+geometry, no external rasterizer, model weights, training or private scores.
+
 ### Reproduce the Alloy checks
 
 With the [locked Analyzer](../../../../../../docs/engineering/workspaces.md#alloy),
