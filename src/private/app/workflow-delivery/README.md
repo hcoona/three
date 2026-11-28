@@ -77,6 +77,7 @@ when final bytes match.
 | --------------- | ------------------------------------------------------------------------------- |
 | `CI/`           | Contracts, impact planning, per-ecosystem group execution and result collection |
 | `CI/Callers/`   | Typed CI callers composing each ecosystem's requests and transfers              |
+| `Core/`         | Pure Release decisions for browser-store version reads and submissions          |
 | `Repository/`   | Native fact readers and assemblers, CI scope and Git materialization            |
 | `Release/`      | Release requests, preparation, job inputs, state and completion                 |
 | `Destinations/` | Registry observation, publication and the shared registry HTTP client           |

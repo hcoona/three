@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(CurrentTargetFramework)</TargetFramework>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <GlobalPackageReference Update="Microsoft.SourceLink.GitHub" ExcludeAssets="Runtime;Native" />
+    <InternalsVisibleTo Include="WorkflowDelivery" />
+    <InternalsVisibleTo Include="WorkflowDelivery.Tests" />
+  </ItemGroup>
+</Project>

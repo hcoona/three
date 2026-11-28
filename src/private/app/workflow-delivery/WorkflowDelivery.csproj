@@ -5,9 +5,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <DefaultItemExcludes>$(DefaultItemExcludes);docs/**;README.md</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Core/**;docs/**;README.md</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="Core/WorkflowDelivery.Core.csproj" />
     <InternalsVisibleTo Include="WorkflowDelivery.Tests" />
     <EmbeddedResource Include="Repository/resources/hk-scope-copies.json" LogicalName="HkScopeCopies" />
     <EmbeddedResource Include="../../../../src/public/**/workflow-delivery.release-unit.yml"

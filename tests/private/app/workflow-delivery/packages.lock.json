@@ -298,8 +298,12 @@
           "NuGet.Protocol": "[8.0.0, )",
           "NuGet.Versioning": "[8.0.0, )",
           "System.Security.Cryptography.ProtectedData": "[10.0.14, )",
+          "WorkflowDelivery.Core": "[1.0.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
+      },
+      "workflowdelivery.core": {
+        "type": "Project"
       },
       "Microsoft.Extensions.FileSystemGlobbing": {
         "type": "CentralTransitive",

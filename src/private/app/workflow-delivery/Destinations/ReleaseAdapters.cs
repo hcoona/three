@@ -1,3 +1,4 @@
+using WorkflowDelivery.Core;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
@@ -437,12 +438,15 @@ internal sealed class BrowserStoreDestinationAdapter : IDestinationAdapter
 {
     public DestinationProfile Profile(ReleaseSubject subject) => new(
         DestinationVerificationMode.StoreAccepted,
-        VersionRead: subject.Destination switch
-        {
-            BrowserStorePreparation.FirefoxAmo => DestinationVersionRead.PublisherOnly,
-            BrowserStorePreparation.EdgeAddons => DestinationVersionRead.Unavailable,
-            _ => DestinationVersionRead.BeforeGate,
-        });
+        VersionRead: VersionReadForStore(subject.Destination) ?? DestinationVersionRead.BeforeGate);
+
+    internal static DestinationVersionRead? VersionReadForStore(string? store) => store switch
+    {
+        BrowserStorePreparation.ChromeWebStore => DestinationVersionRead.BeforeGate,
+        BrowserStorePreparation.FirefoxAmo => DestinationVersionRead.PublisherOnly,
+        BrowserStorePreparation.EdgeAddons => DestinationVersionRead.Unavailable,
+        _ => null,
+    };
 
     public void ValidatePreparation(ReleasePreparationResult preparation)
     {
@@ -476,7 +480,8 @@ internal sealed class BrowserStoreDestinationAdapter : IDestinationAdapter
             (prepared.Subject.DryRun
                 ? state != StoreState.Unobserved
                 : state == StoreState.Unobserved &&
-                    preparation.Target!.Store == BrowserStorePreparation.ChromeWebStore))
+                    VersionReadForStore(preparation.Target!.Store) ==
+                        DestinationVersionRead.BeforeGate))
             throw new InvalidDataException("Store observation is not for this request.");
         ReleaseFileState expectedFileState = state switch
         {

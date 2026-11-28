@@ -79,6 +79,7 @@ names may change with all producers and consumers, without compatibility aliases
 | Owner                                                               | Responsibility                                                                                                     |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `src/private/app/workflow-delivery/WorkflowDelivery.csproj`         | Internal CI and Release entry point, native readers, selection, execution, package and destination operations      |
+| [Release decision core](../Core/WorkflowDelivery.Core.csproj)       | Pure read and submission decisions consumed by the browser-store Release path; ships with the CLI                  |
 | `tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj` | Managed scenario, algorithm, transfer and native integration tests                                                 |
 | `tests/private/app/workflow-delivery/Native/{Python,Ruby}/`         | Tests of the corresponding native-language helpers                                                                 |
 | `tests/private/app/workflow-delivery/fixtures/products/`            | Four ordinary npm, NuGet, Python and Ruby inputs, with native manifests, versions and quality/release declarations |
