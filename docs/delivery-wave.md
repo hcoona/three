@@ -6,61 +6,44 @@ for when a grant is needed and how it ends.
 
 ## Authorized Advancements
 
-### Run and repair the LiteAgensh 32-peer user audit
+### Remodel LiteAgensh coordination kernel from TLA+ specifications
 
-- **Work carrier:** [Issue #1552](https://github.com/hcoona/three/issues/1552)
-  and its linked protocol, repair, and outcome pull requests, retaining the
-  accepted equal-peer single-machine boundary from closed
-  [Issue #1542](https://github.com/hcoona/three/issues/1542) and
-  [PR #1530](https://github.com/hcoona/three/pull/1530).
-- **Accepted inputs:** the repository governance, record, and
-  [engineering principles](engineering/engineering-principles.md) authorities,
-  and LiteAgensh's [portal](../src/private/app/lite-agensh/README.md),
+- **Work carrier:** [Issue #1943](https://github.com/hcoona/three/issues/1943)
+  and its linked authorization and stacked specification/implementation pull
+  requests (superseding the suspended
+  [Issue #1552](https://github.com/hcoona/three/issues/1552) audit grant until
+  the remodeled kernel and a refreshed audit protocol are accepted).
+- **Accepted inputs and scope/outcome:** Under
+  [governance](governance/governance-system.md),
+  [record policy](governance/record-system.md),
+  [engineering principles](engineering/engineering-principles.md), and
+  LiteAgensh's [portal](../src/private/app/lite-agensh/README.md),
   [requirements](../src/private/app/lite-agensh/docs/requirements.md),
   [architecture](../src/private/app/lite-agensh/docs/architecture.md),
   [implementation contracts](../src/private/app/lite-agensh/docs/implementation-contracts.md),
   [migration map](../src/private/app/lite-agensh/docs/upstream-migration.md),
-  [validation basis](../src/private/app/lite-agensh/docs/validation.md), and
-  [user-audit protocol](../src/private/app/lite-agensh/docs/user-audit-protocol.md).
-- **Advancement and outcome:** execute the read-only migration review with 32
-  equal peers and one shared Chinese goal in a foreground `psmux` coordinator,
-  diagnose retained failures, and apply bounded, reviewed source/record repairs
-  within LiteAgensh's accepted single-machine peer-cooperation model (no
-  permanent worker role assignment or central intelligent scheduler) until the
-  real user journey succeeds—stabilizing first on small-peer Luna runs (startup,
-  peer cooperation, post-quiescence report convergence, and complete
-  process/usage settlement) before advancing to GPT-6.1 Terra, and delivering
-  substantive source-backed findings with a Chinese final summary in team state
-  and owned private output.
-- **Permitted external and paid effects:** paid use of the existing Windows
-  Copilot SDK and installed Copilot CLI (without CLI version gates; record
-  observed CLI version and verify required interfaces before dependent native
-  work; disabled runtime acquisition and auto-updates) using Luna for
-  stabilization and GPT-6.1 Terra thereafter via exact native identifiers
-  without fallback or provider substitution; owned worktree/state/process
-  creation, worker-bound local MCP cooperation, ordinary dependency preparation
-  per [user-audit protocol](../src/private/app/lite-agensh/docs/user-audit-protocol.md#dependency-preparation),
-  read-only public upstream inspection, private audit output, and owned
-  process/aggregate host memory counter inspection. Ceilings: `32` workers,
-  `1,800`-second per-run deadline, `20,000` AI Credits per initialized attempt,
-  and `100,000` AI Credits cumulatively across all trials (counting calibration,
-  failed attempts, repetitions, and diagnostics) in the single authorized
-  forward-only ledger while preserving the prior ledger and its unknown
-  reservations unchanged; apply the accepted
-  [verified pre-dispatch cancellation](../src/private/app/lite-agensh/docs/implementation-contracts.md#verified-pre-dispatch-cancellation)
-  (`actual08 worker28` per
-  [protocol](../src/private/app/lite-agensh/docs/user-audit-protocol.md#verified-pre-dispatch-accounting)
-  plus qualifying fresh sessions) and
-  [SDK-native recovery boundary](../src/private/app/lite-agensh/docs/implementation-contracts.md#sdk-native-recovery-boundary)
-  only after their owning records and implementation are accepted on `main`.
-- **Exclusions and closure:** workers must not edit protected repository/workflow
-  inputs, commit/push, mutate GitHub, invoke nested agents/models, or inspect
-  unrelated host/credential/account/session data; no reopening the former
-  development campaign, general 32-worker support claim, provider substitution,
-  authentication/access/host-setting change, release/publication dispatch, or
-  second ledger reset. Retain applicable independent reviews, `GOV-011`
-  disposition, and `Validate` CI; close by merged Wave deletion after owner
-  acceptance or explicit stop.
+  and [validation basis](../src/private/app/lite-agensh/docs/validation.md):
+  (1) specify and `TLC`-verify LiteAgensh's concurrent kernel in TLA+
+  (`src/private/app/lite-agensh/specs/`) across per-worker event dispatch and
+  tool-boundary notice piggybacking, optimistic Git worktree CAS integration,
+  and single-coordinator run/cohort lifecycle; (2) contract LiteAgensh's CLI,
+  configuration schema, and owning records onto equal-peer core primitives
+  (`Tasks`, `Messages`, `Typed Shared Board`, and `Git Worktree CAS Integration`
+  with configured checks and optional peer/protected-path review) plus per-run
+  wall-clock and native SDK soft-credit guardrails—retiring `campaignLedgerPath`,
+  `calibrate`, `reconcile`, pre-dispatch cancellation proofs, compaction-fenced
+  credit windows, SQLite contention sidecars, `planningSeconds`, `HealthGate`,
+  and superseded operational protocols; and (3) rewrite the C# runtime and
+  controlled scenario/invariant suite from the verified model across
+  self-consistent stacked pull requests.
+- **Exclusions and closure:** No paid native model calls, live audit execution
+  under [Issue #1552](https://github.com/hcoona/three/issues/1552), reopening or
+  deletion of retained historical ledgers, new external dependencies, central
+  task schedulers, alternate agent backends, or release/credential/access
+  changes. Merge this authorization before substantive contract or code pull
+  requests; retain applicable independent reviews, `GOV-011` disposition,
+  `records:check`, HK conformance, and `Validate` CI, and delete this entry
+  atomically in the final remodel pull request.
 
 ### Reconcile Workflow V1, V2 and V3 documentation
 
