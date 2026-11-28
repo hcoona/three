@@ -478,14 +478,20 @@ internal static class ReleaseEngine
                 anchorFinal, anchorPublication);
         }
 
+        bool verifiedConflict =
+            primary.Outcome.State == ReleaseBusinessState.Unsatisfied &&
+                (final ?? publication?.After)?.Observation.HasConflict() == true ||
+            anchorResult.Outcome.State == ReleaseBusinessState.Unsatisfied &&
+                anchorFinal?.Observation.HasConflict() == true;
         ReleaseBusinessState combinedState =
-            primary.Outcome.State == ReleaseBusinessState.Satisfied &&
-                anchorResult.Outcome.State == ReleaseBusinessState.Satisfied
-                    ? ReleaseBusinessState.Satisfied
-                    : primary.Outcome.State == ReleaseBusinessState.Unknown ||
-                        anchorResult.Outcome.State == ReleaseBusinessState.Unknown
-                            ? ReleaseBusinessState.Unknown
-                            : ReleaseBusinessState.Unsatisfied;
+            (primary.Outcome.State, anchorResult.Outcome.State) switch
+            {
+                (ReleaseBusinessState.Satisfied, ReleaseBusinessState.Satisfied) =>
+                    ReleaseBusinessState.Satisfied,
+                (ReleaseBusinessState.Unknown, _) or (_, ReleaseBusinessState.Unknown)
+                    when !verifiedConflict => ReleaseBusinessState.Unknown,
+                _ => ReleaseBusinessState.Unsatisfied,
+            };
         string[] combinedReasons = combinedState == ReleaseBusinessState.Satisfied ? []
             : [.. primary.Outcome.Reasons,
                 .. anchorResult.Outcome.State == ReleaseBusinessState.Satisfied ? []
@@ -545,7 +551,9 @@ internal static class ReleaseEngine
             if (!initiallyMissing) return new(outcome, false);
             return new(outcome with
             {
-                State = ReleaseBusinessState.Unknown,
+                State = profile.Verification == DestinationVerificationMode.ExactBytes &&
+                    final.Observation.HasConflict()
+                        ? ReleaseBusinessState.Unsatisfied : ReleaseBusinessState.Unknown,
                 Reasons = [.. outcome.Reasons,
                     "Required publication result is missing; effects remain unknown."],
             }, null);

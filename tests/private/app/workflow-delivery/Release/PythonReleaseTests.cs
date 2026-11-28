@@ -172,6 +172,21 @@ public sealed class PythonReleaseTests(TestContext context)
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
+    public void ConflictingOriginalDisprovesCompletionEvenWhenEvidenceIsMissing(bool receiptPresent)
+    {
+        using var f = new Fixture();
+        ReleaseObservationResult initial = f.Observe();
+        ReleasePublicationResult? publication = receiptPresent
+            ? f.Publish(initial, f.Exact()) : null;
+        ReleaseCompletionResult result = f.Complete(initial,
+            f.Observe(ReleaseFileState.Conflict, ReleaseFileState.Unknown), publication, 1);
+        Assert.AreEqual(ReleaseBusinessState.Unsatisfied, result.Outcome.State);
+        Assert.AreEqual(receiptPresent ? false : (bool?)null, result.MutationAttempted);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
     public async Task PublishCancellationWithoutResultLeavesEffectsUnknown(bool duringUpload)
     {
         using var f = new Fixture();
