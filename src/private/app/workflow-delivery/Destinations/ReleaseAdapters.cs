@@ -437,7 +437,12 @@ internal sealed class BrowserStoreDestinationAdapter : IDestinationAdapter
 {
     public DestinationProfile Profile(ReleaseSubject subject) => new(
         DestinationVerificationMode.StoreAccepted,
-        PublisherOnlyRead: subject.Destination != BrowserStorePreparation.ChromeWebStore);
+        VersionRead: subject.Destination switch
+        {
+            BrowserStorePreparation.FirefoxAmo => DestinationVersionRead.PublisherOnly,
+            BrowserStorePreparation.EdgeAddons => DestinationVersionRead.Unavailable,
+            _ => DestinationVersionRead.BeforeGate,
+        });
 
     public void ValidatePreparation(ReleasePreparationResult preparation)
     {
@@ -501,12 +506,17 @@ internal sealed class BrowserStoreDestinationAdapter : IDestinationAdapter
             _ => ["upload edge-zip", "submit"],
         };
 
-    internal static ReleaseObservationResult Unobserved(ReleasePreparationResult preparation) =>
-        StoreHttp.Observation(preparation.Prepared.Subject, preparation.Target!,
-            preparation.Prepared.Files[0].Version, StoreState.Unobserved,
-            [preparation.Prepared.Subject.DryRun
-                ? ReleaseEngine.StoreNotObservedInDryRun
+    internal static ReleaseObservationResult Unobserved(ReleasePreparationResult preparation)
+    {
+        ReleaseSubject subject = preparation.Prepared.Subject;
+        BrowserStoreTarget target = preparation.Target!;
+        string version = preparation.Prepared.Files[0].Version;
+        if (!subject.DryRun && target.Store == BrowserStorePreparation.EdgeAddons)
+            return EdgeAddons.Unobserved(subject, target, version);
+        return StoreHttp.Observation(subject, target, version, StoreState.Unobserved,
+            [subject.DryRun ? ReleaseEngine.StoreNotObservedInDryRun
                 : "Only the credentialed publisher can read this store."], []);
+    }
 
     internal static async Task<StoreFile[]> OriginalsAsync(ReleasePreparationResult preparation,
         string directory, CancellationToken token)

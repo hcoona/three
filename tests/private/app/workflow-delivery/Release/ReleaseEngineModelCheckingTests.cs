@@ -89,14 +89,19 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
         DestinationProfile profile,
         int fileCount,
         bool usesContainer = false,
-        DestinationReadbackMode readback = DestinationReadbackMode.None,
-        bool blindInitialStore = false) : IDestinationAdapter
+        DestinationReadbackMode readback = DestinationReadbackMode.None) : IDestinationAdapter
     {
         internal string Name => name;
         internal int FileCount => fileCount;
         internal bool UsesContainer => usesContainer;
         internal DestinationReadbackMode Readback => readback;
-        internal bool BlindInitialStore => blindInitialStore;
+        internal bool IsEdge => name == BrowserStorePreparation.EdgeAddons;
+        internal bool PublisherReportsStoreState =>
+            IsEdge || name == BrowserStorePreparation.FirefoxAmo;
+
+        internal static ModelSpec ForStore(string store, int fileCount) =>
+            new(store, ReleaseAdapters.BrowserStore.Profile(ModelSubject(store, dryRun: false)),
+                fileCount);
 
         public DestinationProfile Profile(ReleaseSubject subject) => profile;
 
@@ -116,7 +121,7 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
             if (profile.Verification == DestinationVerificationMode.StoreAccepted)
             {
                 if (observed.StoreState is null ||
-                    !preparation.Prepared.Subject.DryRun && !profile.PublisherOnlyRead &&
+                    !preparation.Prepared.Subject.DryRun && !PublisherReportsStoreState &&
                         observed.StoreState == StoreState.Unobserved)
                     throw new InvalidDataException("Invalid modeled store observation.");
             }
@@ -149,15 +154,9 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
             new(DestinationVerificationMode.ExactBytes, DestinationVisibilityMode.Immediate,
                 OrderedKinds: ["kind-0", "kind-1"], AllowsContainer: true),
             fileCount: 2, usesContainer: true),
-        new("StoreExternallyReadable",
-            new(DestinationVerificationMode.StoreAccepted, PublisherOnlyRead: false),
-            fileCount: 1),
-        new("StorePublisherOnlyReadable",
-            new(DestinationVerificationMode.StoreAccepted, PublisherOnlyRead: true),
-            fileCount: 2),
-        new("StorePublisherBlindInitial",
-            new(DestinationVerificationMode.StoreAccepted, PublisherOnlyRead: true),
-            fileCount: 1, blindInitialStore: true),
+        ModelSpec.ForStore(BrowserStorePreparation.ChromeWebStore, fileCount: 1),
+        ModelSpec.ForStore(BrowserStorePreparation.FirefoxAmo, fileCount: 2),
+        ModelSpec.ForStore(BrowserStorePreparation.EdgeAddons, fileCount: 1),
     ];
 
     [TestMethod]
@@ -183,7 +182,7 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
     [TestMethod]
     public async Task StoreExceptionRetainsPriorCompletedStepsAndValidationRejectsMismatchedKinds()
     {
-        ModelSpec storeSpec = Specs.Single(s => s.Name == "StoreExternallyReadable");
+        ModelSpec storeSpec = Specs.Single(s => s.Name == BrowserStorePreparation.ChromeWebStore);
         ReleasePreparationResult storePrep = BuildPreparation(storeSpec, dryRun: false);
         ReleaseObservationResult initialAbsent = Observe(storeSpec, storePrep.Prepared,
             new(ArtifactTruth.Absent, ArtifactTruth.Absent, false, 0, StoreState.Absent), true);
@@ -283,6 +282,10 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
             bool initialProceeds = ReleaseEngine.ObservationProceeds(profile,
                 initialObs.Observation);
             bool writeNeeded = ReleaseEngine.WriteNeeded(spec, livePrep, initialObs);
+            if (spec.PublisherReportsStoreState)
+                AssertInvariant(initialObs.StoreState == StoreState.Unobserved &&
+                    initialProceeds && writeNeeded,
+                    "Unobserved initial store state must reach the gated publisher", root);
 
             if (!initialProceeds)
             {
@@ -368,7 +371,7 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
         // recovery convergence (Theorem 5).
         foreach ((WorldState postWorld, TraceNode originTrace) in visitedPostRun1)
         {
-            if (spec.BlindInitialStore) continue; // Edge WD-REL-008: manual Partner Center check.
+            if (spec.IsEdge) continue; // WD-REL-008: manual Partner Center check.
 
             WorldState settled = postWorld.Settled();
             bool hasConflictOrCorruption = HasAnyConflictOrUnreadable(spec, settled);
@@ -380,8 +383,7 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
             if (hasConflictOrCorruption)
             {
                 // Corrupted or conflicting external state must NEVER falsely satisfy on recovery.
-                if (profile.Verification == DestinationVerificationMode.StoreAccepted &&
-                    profile.PublisherOnlyRead)
+                if (spec.PublisherReportsStoreState)
                 {
                     (ReleasePublicationResult recPub, WorldState afterRec, int writes) =
                         await ExecuteCleanPublisherAsync(spec, livePrep, recInitial, settled);
@@ -438,7 +440,7 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
                     "Recovery re-submitted an already accepted store version", recoveryRoot);
             }
 
-            ReleaseObservationResult? recFinal = profile.PublisherOnlyRead
+            ReleaseObservationResult? recFinal = spec.PublisherReportsStoreState
                 ? null
                 : Observe(spec, livePrep.Prepared, finalWorld.Settled(), unprivilegedPhase: false);
             ReleaseCompletionResult converged = ReleaseEngine.Complete(spec, livePrep, recInitial,
@@ -462,7 +464,7 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
             ? currentWorld.Settled() : currentWorld;
 
         ReleaseObservationResult? finalObs = null;
-        if (!profile.PublisherOnlyRead && vFault != VerificationFault.MissingFinalObservation)
+        if (!spec.PublisherReportsStoreState && vFault != VerificationFault.MissingFinalObservation)
         {
             if (profile.Visibility == DestinationVisibilityMode.BoundedSettle &&
                 currentWorld.LagMask != 0 &&
@@ -542,7 +544,7 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
         }
 
         visitedPostRun1.TryAdd(effectiveWorld, node);
-        if (!spec.BlindInitialStore)
+        if (!spec.IsEdge)
         {
             if (enqueuedWorlds.Add(effectiveWorld))
                 queue.Enqueue(new("NextRunFromPostState", effectiveWorld, node));
@@ -580,18 +582,23 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
 
         if (profile.Verification == DestinationVerificationMode.StoreAccepted)
         {
-            StoreState[] postOutcomes = spec.BlindInitialStore
+            StoreState[] postOutcomes = spec.IsEdge
                 ? [StoreState.Received, StoreState.Unknown, StoreState.Conflict]
                 : [StoreState.InReview, StoreState.Published, StoreState.Unknown,
                     StoreState.Conflict];
-            foreach (StoreState outcome in postOutcomes)
+            ReleaseObservationResult observed = Observe(spec, prep.Prepared, startWorld,
+                unprivilegedPhase: false);
+            var branches = postOutcomes.Select(outcome => (Before: observed, Outcome: outcome));
+            // Exercise the common port returning no fresh AMO read, not a native API response.
+            if (spec.Name == BrowserStorePreparation.FirefoxAmo)
+                branches = branches.Append((initial, StoreState.InReview));
+            foreach ((ReleaseObservationResult before, StoreState outcome) in branches)
             {
                 WorldState world = startWorld;
                 int writes = 0;
                 ReleasePublicationResult pub = await ReleaseEngine.PublishAsync(spec, prep,
                     "/originals", initial, new(
-                        ObserveAsync: (_, _) => Task.FromResult(
-                            Observe(spec, prep.Prepared, world, unprivilegedPhase: false)),
+                        ObserveAsync: (_, _) => Task.FromResult(before),
                         SubmitStoreAsync: (steps, _) =>
                         {
                             writes++;
@@ -600,12 +607,17 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
                             world = world with { Store = outcome };
                             steps.Add(ReleaseWriteStep.FromStore("submit", ok,
                                 ok ? "ok" : "failed"));
-                            ReleaseObservationResult? after = profile.PublisherOnlyRead
-                                ? Observe(spec, prep.Prepared, world, unprivilegedPhase: false)
-                                : null;
+                            ReleaseObservationResult? after = spec.PublisherReportsStoreState
+                                ? StoreReport(prep.Prepared, outcome) : null;
                             return Task.FromResult(after);
                         }), CancellationToken.None);
-                results.Add(($"StorePublish({outcome})", pub, world, writes));
+                string label = $"StorePublish(before={before.StoreState},outcome={outcome})";
+                bool shouldSubmit = before.StoreState == (spec.IsEdge
+                    ? StoreState.Unobserved : StoreState.Absent);
+                AssertInvariant(writes == (shouldSubmit ? 1 : 0),
+                    $"{spec.Name}: {writes} submissions from {before.StoreState}",
+                    new(label, world, parent));
+                results.Add((label, pub, world, writes));
             }
             return results;
         }
@@ -700,8 +712,8 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
                         writes++;
                         world = world with { Store = StoreState.InReview };
                         steps.Add(ReleaseWriteStep.FromStore("submit", true, "ok"));
-                        ReleaseObservationResult? after = profile.PublisherOnlyRead
-                            ? Observe(spec, prep.Prepared, world, unprivilegedPhase: false) : null;
+                        ReleaseObservationResult? after = spec.PublisherReportsStoreState
+                            ? StoreReport(prep.Prepared, world.Store) : null;
                         return Task.FromResult(after);
                     }), CancellationToken.None);
             return (storePub, world, writes);
@@ -782,7 +794,7 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
     {
         if (spec.Profile(default!).Verification == DestinationVerificationMode.StoreAccepted)
         {
-            StoreState[] states = spec.BlindInitialStore
+            StoreState[] states = spec.IsEdge
                 ? [StoreState.Unobserved]
                 : [StoreState.Absent, StoreState.InReview, StoreState.Published,
                     StoreState.Conflict, StoreState.Unknown];
@@ -832,7 +844,7 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
 
     private static Contention[] ContentionBranches(ModelSpec spec, WorldState world)
     {
-        if (spec.BlindInitialStore) return [Contention.None];
+        if (spec.IsEdge) return [Contention.None];
         if (spec.Profile(default!).Verification == DestinationVerificationMode.StoreAccepted)
             return [Contention.None, Contention.ExternalMatchingComplete,
                 Contention.ExternalConflictFirst];
@@ -867,7 +879,7 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
 
     private static VerificationFault[] VerificationFaultsForSkippedPublisher(ModelSpec spec) =>
         spec.Profile(default!).Verification == DestinationVerificationMode.StoreAccepted &&
-        !spec.Profile(default!).PublisherOnlyRead
+        !spec.PublisherReportsStoreState
             ? [VerificationFault.SettledRead, VerificationFault.MissingFinalObservation]
             : [VerificationFault.SettledRead];
 
@@ -882,7 +894,7 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
         if (world.LagMask != 0)
             list.Add(VerificationFault.LagPersistsAtFinalRead);
         if (spec.Profile(default!).Verification == DestinationVerificationMode.StoreAccepted &&
-            !spec.Profile(default!).PublisherOnlyRead)
+            !spec.PublisherReportsStoreState)
             list.Add(VerificationFault.MissingFinalObservation);
         return [.. list];
     }
@@ -893,27 +905,11 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
         DestinationProfile profile = spec.Profile(prepared.Subject);
         if (profile.Verification == DestinationVerificationMode.StoreAccepted)
         {
-            StoreState state = unprivilegedPhase &&
-                (prepared.Subject.DryRun || profile.PublisherOnlyRead)
+            StoreState state = prepared.Subject.DryRun || spec.IsEdge ||
+                unprivilegedPhase && spec.PublisherReportsStoreState
                     ? StoreState.Unobserved
                     : world.Store;
-            ReleaseFileState fileState = state switch
-            {
-                StoreState.Absent => ReleaseFileState.Absent,
-                StoreState.Received or StoreState.InReview or StoreState.Published =>
-                    ReleaseFileState.Accepted,
-                StoreState.Unobserved => ReleaseFileState.Unobserved,
-                StoreState.Conflict => ReleaseFileState.Conflict,
-                _ => ReleaseFileState.Unknown,
-            };
-            ReleaseCheckStatus checkStatus = state is StoreState.Conflict or StoreState.Unknown
-                ? ReleaseCheckStatus.Failed : ReleaseCheckStatus.Passed;
-            return new(new(prepared.Subject,
-                [.. prepared.Files.Select(f => new ReleaseFileObservation(f.Output, f.Name,
-                    f.Version, fileState, null, null))],
-                ["store-status"], [new("store-status", checkStatus)],
-                state is StoreState.Conflict or StoreState.Unknown ? ["store-blocked"] : null),
-                [], StoreState: state);
+            return StoreReport(prepared, state);
         }
 
         var files = new ReleaseFileObservation[prepared.Files.Length];
@@ -943,6 +939,27 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
         return new(new(prepared.Subject, files, ["remote-check"],
             [new("remote-check", checkPassed ? ReleaseCheckStatus.Passed
                 : ReleaseCheckStatus.Failed)]), [], ReleaseId: releaseId);
+    }
+
+    private static ReleaseObservationResult StoreReport(PreparedRelease prepared, StoreState state)
+    {
+        ReleaseFileState fileState = state switch
+        {
+            StoreState.Absent => ReleaseFileState.Absent,
+            StoreState.Received or StoreState.InReview or StoreState.Published =>
+                ReleaseFileState.Accepted,
+            StoreState.Unobserved => ReleaseFileState.Unobserved,
+            StoreState.Conflict => ReleaseFileState.Conflict,
+            _ => ReleaseFileState.Unknown,
+        };
+        ReleaseCheckStatus checkStatus = state is StoreState.Conflict or StoreState.Unknown
+            ? ReleaseCheckStatus.Failed : ReleaseCheckStatus.Passed;
+        return new(new(prepared.Subject,
+            [.. prepared.Files.Select(f => new ReleaseFileObservation(f.Output, f.Name,
+                f.Version, fileState, null, null))],
+            ["store-status"], [new("store-status", checkStatus)],
+            state is StoreState.Conflict or StoreState.Unknown ? ["store-blocked"] : null),
+            [], StoreState: state);
     }
 
     private static ReleaseObservationResult ObserveCleanExact(ModelSpec spec,
@@ -993,16 +1010,10 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
         string destination = profile.Verification switch
         {
             DestinationVerificationMode.VersionAvailable => "nugetorg",
-            DestinationVerificationMode.StoreAccepted when !profile.PublisherOnlyRead =>
-                "chrome-web-store",
-            DestinationVerificationMode.StoreAccepted when spec.BlindInitialStore =>
-                "edge-addons",
-            DestinationVerificationMode.StoreAccepted => "firefox-amo",
+            DestinationVerificationMode.StoreAccepted => spec.Name,
             _ => "model-destination",
         };
-        var subject = new ReleaseSubject(new string('a', 40), "refs/heads/main", "model-unit",
-            "src/public/lib/model/workflow-delivery.release-unit.yml", "official", destination,
-            dryRun);
+        ReleaseSubject subject = ModelSubject(destination, dryRun);
         var files = Enumerable.Range(0, spec.FileCount).Select(i =>
         {
             byte[] payload = Encoding.UTF8.GetBytes($"payload-{spec.Name}-{i}");
@@ -1014,6 +1025,11 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
             [new("qualify", ReleaseCheckStatus.Passed)]);
         return new(prepared, new(StringComparer.Ordinal), [], []);
     }
+
+    private static ReleaseSubject ModelSubject(string destination, bool dryRun) =>
+        new(new string('a', 40), "refs/heads/main", "model-unit",
+            "src/public/lib/model/workflow-delivery.release-unit.yml", "official", destination,
+            dryRun);
 
     private static void AssertInvariant(bool condition, string message, TraceNode trace)
     {

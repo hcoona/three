@@ -296,11 +296,12 @@ and native campaigns are not alternate operational entries.
 The [browser-store caller](../../../../.github/workflows/workflow-delivery-v3-browser-store-release.yml)
 builds `steam-account-history-to-csv` once with WXT and qualifies the selected
 store's zips (`prepare-browser-store`). The Chrome Web Store, Firefox AMO and
-Edge Add-ons are Official only; Buddy is a dry run. The CWS is observed and
-verified with a read-only Workload Identity Federation token outside the
-publisher; AMO and Edge are observed only inside their gated publisher. A store
-reporting the version as received, in review or published satisfies the
-request. The [browser-store integration](docs/integration/browser-store.md)
+Edge Add-ons are Official only; Buddy is a dry run. No dry run acquires a store
+credential. Live Chrome pre-gate and final reads use a read-only Workload Identity
+Federation token. AMO reads the version only inside its gated publisher. Edge has
+no version read; its publisher polls the submission operation for receipt. A store
+reporting the version as received, in review or published satisfies the store
+condition. The [browser-store integration](docs/integration/browser-store.md)
 owns the store contracts and the owner setup.
 
 ## Validation and Evidence Limits

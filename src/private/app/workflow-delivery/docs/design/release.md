@@ -162,9 +162,10 @@ stage transfer envelopes (`ReleasePreparationResult`,
 [`IDestinationAdapter`](../../Destinations/ReleaseAdapters.cs) declares its
 `DestinationProfile` (`ExactBytes`, `VersionAvailable` or `StoreAccepted`
 verification; `Immediate`, `EventualIndex` or `BoundedSettle` visibility;
-optional `PublisherOnlyRead` and ordered multi-file kinds) and owns native
-identity, endpoint, response and partial-set semantics. Do not encode npm tags
-as universal identity or Python's two-file behavior as a universal transaction.
+`BeforeGate`, `PublisherOnly` or `Unavailable` version reads; and optional ordered
+multi-file kinds) and owns native identity, endpoint, response and partial-set
+semantics. Do not encode npm tags as universal identity or Python's two-file
+behavior as a universal transaction.
 A supported interface does not require each method to have its own class or
 record.
 

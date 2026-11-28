@@ -24,12 +24,22 @@ internal enum DestinationReadbackMode
     AllowCancellation,
 }
 
+internal enum DestinationVersionRead
+{
+    BeforeGate,
+    PublisherOnly,
+    Unavailable,
+}
+
 internal sealed record DestinationProfile(
     DestinationVerificationMode Verification,
     DestinationVisibilityMode Visibility = DestinationVisibilityMode.Immediate,
-    bool PublisherOnlyRead = false,
+    DestinationVersionRead VersionRead = DestinationVersionRead.BeforeGate,
     string[]? OrderedKinds = null,
-    bool AllowsContainer = false);
+    bool AllowsContainer = false)
+{
+    internal bool PublisherReportsCompletion => VersionRead != DestinationVersionRead.BeforeGate;
+}
 
 internal interface IDestinationAdapter
 {
@@ -90,7 +100,14 @@ internal static class ReleaseEngine
             IsSatisfiedState(profile, file.State) ||
             profile.Verification == DestinationVerificationMode.StoreAccepted &&
                 file.State == ReleaseFileState.Unobserved &&
-                (observation.Subject.DryRun || profile.PublisherOnlyRead));
+                (observation.Subject.DryRun ||
+                    profile.VersionRead != DestinationVersionRead.BeforeGate));
+
+    private static bool StoreMaySubmit(DestinationProfile profile,
+        ReleaseObservationResult before) =>
+        before.StoreState == (profile.VersionRead == DestinationVersionRead.Unavailable
+            ? StoreState.Unobserved : StoreState.Absent) &&
+        ObservationProceeds(profile, before.Observation);
 
     internal static bool WriteNeeded(ReleaseObservation observation) =>
         observation.Files.Any(file =>
@@ -192,9 +209,16 @@ internal static class ReleaseEngine
         {
             string[] writes = adapter.CustomDryRunWrites(preparation)
                 ?? MissingOutputs(observed.Observation, profile.OrderedKinds, prepared);
-            return new(prepared.Subject, true, writes,
-                [StoreNotObservedInDryRun,
-                    "A live request observes the store before any submission."]);
+            string live = profile.VersionRead switch
+            {
+                DestinationVersionRead.PublisherOnly =>
+                    "The live publisher must observe the version as absent before submission.",
+                DestinationVersionRead.Unavailable =>
+                    "Edge has no version read. A first submission can proceed; after an unknown " +
+                    "outcome, the owner must confirm in Partner Center that it was not received.",
+                _ => "A live request observes the store before any submission.",
+            };
+            return new(prepared.Subject, true, writes, [StoreNotObservedInDryRun, live]);
         }
         return ReleaseCompletion.Describe(prepared, observed.Observation,
             ObservationProceeds(profile, observed.Observation)
@@ -271,7 +295,9 @@ internal static class ReleaseEngine
             return new(subject, before, [], sameAfter, []);
         }
 
-        if (!ObservationProceeds(profile, before.Observation))
+        bool mayProceed = profile.Verification == DestinationVerificationMode.StoreAccepted
+            ? StoreMaySubmit(profile, before) : ObservationProceeds(profile, before.Observation);
+        if (!mayProceed)
         {
             ReleaseObservationResult? blockedAfter =
                 plan.Readback == DestinationReadbackMode.Required ? before : null;
@@ -378,13 +404,12 @@ internal static class ReleaseEngine
             return false;
         if (profile.Verification == DestinationVerificationMode.StoreAccepted)
         {
-            ValidateStorePublication(primaryAdapter, preparation, primaryPublication);
+            ValidateStorePublication(primaryAdapter, profile, preparation, primaryPublication);
             if (primaryPublication.Errors.Length != 0)
                 return false;
             if (primaryPublication.After is { } storeAfter)
                 return AllSatisfied(profile, storeAfter.Observation);
-            return !profile.PublisherOnlyRead &&
-                ObservationProceeds(profile, primaryPublication.Before.Observation) &&
+            return !profile.PublisherReportsCompletion &&
                 primaryPublication.Steps is
                 [
                 { Target: "upload", Succeeded: true, Acknowledged: true },
@@ -686,13 +711,16 @@ internal static class ReleaseEngine
     }
 
     private static void ValidateStorePublication(IDestinationAdapter adapter,
-        ReleasePreparationResult preparation, ReleasePublicationResult publication)
+        DestinationProfile profile, ReleasePreparationResult preparation,
+        ReleasePublicationResult publication)
     {
         if (publication.Subject != preparation.Prepared.Subject ||
             publication.Steps.Any(step => step.Kind != "store" || step.Command is not null ||
                 !double.IsFinite(step.DurationSeconds) || step.DurationSeconds < 0))
             throw new InvalidDataException("Publication is not for this request.");
         adapter.ValidateObservation(preparation, publication.Before);
+        if (publication.Steps.Length != 0 && !StoreMaySubmit(profile, publication.Before))
+            throw new InvalidDataException("Store write steps are not permitted from this state.");
         if (publication.After is not null)
             adapter.ValidateObservation(preparation, publication.After);
     }
@@ -704,12 +732,13 @@ internal static class ReleaseEngine
     {
         ReleaseSubject subject = preparation.Prepared.Subject;
         if (publication is not null)
-            ValidateStorePublication(adapter, preparation, publication);
-        if (profile.PublisherOnlyRead && final is not null)
+            ValidateStorePublication(adapter, profile, preparation, publication);
+        if (profile.PublisherReportsCompletion && final is not null)
             throw new InvalidDataException(
                 "Store has no verification observation outside its publisher.");
 
-        ReleaseObservationResult? verified = profile.PublisherOnlyRead ? publication?.After : final;
+        ReleaseObservationResult? verified = profile.PublisherReportsCompletion
+            ? publication?.After : final;
         if (verified is not null) adapter.ValidateObservation(preparation, verified);
 
         StoreState state = verified?.StoreState ?? StoreState.Unknown;
@@ -717,7 +746,7 @@ internal static class ReleaseEngine
         bool? attempted = publication is null ? (initialSatisfied ? false : null)
             : publication.Steps.Length > 0;
 
-        if (!profile.PublisherOnlyRead && verified is null)
+        if (!profile.PublisherReportsCompletion && verified is null)
             return new(new(subject, ReleaseBusinessState.Unknown, [],
                 [.. publication?.Errors ?? [], attempted == false
                     ? "Required Chrome Web Store verification observation is missing."

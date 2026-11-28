@@ -309,13 +309,15 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         var store = new EdgeAddons(client, preparation.Prepared.Subject, preparation.Target!,
             Version, "key", "client", (_, _) => Task.CompletedTask, attempts: 2);
 
-        ReleaseObservationResult initial = await store.ObserveAsync(context.CancellationToken);
+        ReleaseObservationResult initial = BrowserStoreDestinationAdapter.Unobserved(preparation);
         Assert.AreEqual(StoreState.Unobserved, initial.StoreState!.Value);
-        Assert.IsEmpty(handler.Requests);
+        Assert.Contains("no version read", string.Join(" ", initial.Observation.Reasons ?? []));
         ReleasePublicationResult publication = await PublishAsync(
             preparation, files, initial, store, context.CancellationToken);
         ReleaseCompletionResult completion = Complete(preparation, initial, null, publication);
 
+        Assert.AreEqual(StoreState.Unobserved, publication.Before.StoreState!.Value);
+        Assert.IsEmpty(publication.Before.Reads);
         Assert.AreEqual(Enum.Parse<StoreState>(state), completion.StoreState!.Value);
         Assert.AreEqual(state switch
         {
@@ -340,11 +342,15 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    public void DryRunDoesNotResolveStoreCredentialsAndDescribesFirefoxOutputs()
+    [DataRow("chrome-web-store", "upload chrome-zip", "publish", "observes the store")]
+    [DataRow("firefox-amo", "upload firefox-zip", "create version with firefox-sources",
+        "publisher must observe")]
+    [DataRow("edge-addons", "upload edge-zip", "submit", "no version read")]
+    public void DryRunDescribesTheStoreWithoutResolvingCredentials(string store, string upload,
+        string submit, string liveRead)
     {
-        const string Store = "firefox-amo";
-        using var files = new Originals(BrowserStorePreparation.StoreOutputs(Store));
-        ReleasePreparationResult preparation = files.Preparation(Store);
+        using var files = new Originals(BrowserStorePreparation.StoreOutputs(store));
+        ReleasePreparationResult preparation = files.Preparation(store);
         string root = Directory.CreateTempSubdirectory("browser-store-dry-").FullName;
         try
         {
@@ -373,9 +379,10 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
             Assert.AreEqual(StoreState.Unobserved, ReleaseCli.Read(observation,
                 TransferJson.Default.ReleaseObservationResult).StoreState!.Value);
             Assert.IsTrue(result.Ready);
-            Assert.HasCount(2, result.HypotheticalWrites);
+            CollectionAssert.AreEqual(new[] { upload, submit }, result.HypotheticalWrites);
             Assert.AreEqual("The store was not observed: a dry run acquires no store " +
                 "credential.", result.Reasons[0]);
+            Assert.Contains(liveRead, string.Join(" ", result.Reasons));
             Assert.ThrowsExactly<InvalidDataException>(() => ReleaseEngine.Describe(
                 ReleaseAdapters.BrowserStore, preparation,
                 Observation(preparation, StoreState.Absent)));
@@ -425,6 +432,44 @@ public sealed class BrowserStoreReleaseTests(TestContext context)
         Assert.IsTrue(completion.MutationAttempted);
         Assert.AreEqual(ReleaseBusinessState.Unknown,
             Complete(preparation, initial, null, null).Outcome.State);
+    }
+
+    [TestMethod]
+    [DataRow("firefox-amo", "Unobserved")]
+    [DataRow("edge-addons", "Unknown")]
+    public async Task PublisherDoesNotSubmitWithoutAnAuthorizingPrestate(string store, string state)
+    {
+        using var files = new Originals(BrowserStorePreparation.StoreOutputs(store));
+        ReleasePreparationResult preparation = files.Preparation(store, live: true);
+        ReleaseObservationResult initial = BrowserStoreDestinationAdapter.Unobserved(preparation);
+        var port = new FakeStore(Observation(preparation, Enum.Parse<StoreState>(state)),
+            Observation(preparation, StoreState.Received));
+
+        ReleasePublicationResult publication = await PublishAsync(
+            preparation, files, initial, port, context.CancellationToken);
+
+        Assert.AreEqual(0, port.Publications);
+        Assert.IsEmpty(publication.Steps);
+        Assert.IsNotEmpty(publication.Errors);
+        Assert.AreEqual(ReleaseBusinessState.Unknown,
+            Complete(preparation, initial, null, publication).Outcome.State);
+    }
+
+    [TestMethod]
+    public void AmoWriteReceiptWithoutAFreshVersionReadCannotEstablishCompletionOrOpenTheAnchor()
+    {
+        using var files = new Originals(["firefox-zip", "firefox-sources"]);
+        ReleasePreparationResult preparation = files.Preparation("firefox-amo", live: true);
+        ReleaseObservationResult initial = BrowserStoreDestinationAdapter.Unobserved(preparation);
+        var receipt = new ReleasePublicationResult(preparation.Prepared.Subject, initial,
+            [ReleaseWriteStep.FromStore("upload", true, "Validated."),
+                ReleaseWriteStep.FromStore("create-version", true, "Created.")],
+            Observation(preparation, StoreState.InReview), []);
+
+        Assert.ThrowsExactly<InvalidDataException>(() => Complete(preparation, initial, null,
+            receipt));
+        Assert.ThrowsExactly<InvalidDataException>(() => ReleaseEngine.AnchorAllowed(
+            ReleaseAdapters.BrowserStore, preparation, initial, receipt));
     }
 
     [TestMethod]
