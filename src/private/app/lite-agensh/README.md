@@ -1,114 +1,109 @@
 # LiteAgensh
 
-LiteAgensh is a C# single-machine adaptation of
-[microsoft/Agensh](https://github.com/microsoft/Agensh), retaining upstream's
-equal-peer collaboration model while replacing hosted infrastructure with
-SQLite, local Git worktrees, and worker-bound stdio MCP over the official
-Copilot .NET SDK.
+LiteAgensh is a single-machine C# realization of the self-organized multi-agent
+organization model from
+[_Agensh: Scaling Organizational Intelligence to 1,024 Agents_](https://arxiv.org/html/2609.26781v1)
+([`microsoft/Agensh`][upstream]). Equal peer coding agents execute a
+prompt-owned cooperation loop (`Gather -> Claim -> Act -> Verify -> Merge`)
+over a formally verified four-plane coordination kernel, refined onto SQLite,
+isolated Git worktrees, actor-bound stdio MCP, and one shared owned Copilot
+`.NET` SDK runtime per epoch.
 
-## Current status and evidence boundaries
+[upstream]: https://github.com/microsoft/Agensh/tree/2dae4e14a653da48549fd9aa093f834841475d6c
 
-- **Implemented capabilities (covered by controlled SQLite, Git, MCP, and SDK-seam scenarios):**
-  one shared owned SDK runtime/client per operation with independent peer
-  sessions and cohort-settlement staging
-  ([native host](docs/architecture.md#native-sdk-mcp-and-instruction-boundary));
-  editable YAML configuration (`examples/run.yaml` + `schemas/run.schema.json`)
-  with separate Markdown goals (`examples/goal.md`) alongside legacy JSON
-  ([input contract](docs/implementation-contracts.md#configuration-input));
-  configurable cold-worker ramp-up (`workerStartIntervalSeconds`); opt-in
-  `creditAllocation: shared` renewable windows (`per-session` default) with
-  compaction-fenced settlement
-  ([shared windows](docs/implementation-contracts.md#shared-spending-windows),
-  [settlement](docs/implementation-contracts.md#usage-evidence-and-settlement));
-  separate work-admission expiry and [bounded deadline drain](docs/implementation-contracts.md#bounded-deadline-drain);
-  bounded `<database-path>.diagnostics` [SQLite contention and I/O capture](docs/implementation-contracts.md#sqlite-contention-evidence);
-  non-dispatch [SDK-native recovery](docs/implementation-contracts.md#sdk-native-recovery-boundary)
-  (`reconnect` on closed failed runs using the
-  [zero-origin cap profile](docs/implementation-contracts.md#exact-recovery-limit-coordinates))
-  and accounting-only `reconcile` for
-  [verified pre-dispatch cancellation](docs/implementation-contracts.md#verified-pre-dispatch-cancellation);
-  and normal reviewed CPM/Renovate SDK upgrades (currently MCP `2.4.0`;
-  [recheck](docs/upstream-migration.md#mcp-240-interface-recheck)) plus use of
-  the installed Copilot CLI without version allowlists while preserving exact
-  original-session SDK identity checks
-  ([dependencies](docs/implementation-contracts.md#application-and-dependencies),
-  [CLI lineage](docs/implementation-contracts.md#retained-cli-10105-to-selected-cli-10107)).
-- **Evidence limits:** [PR #1530](https://github.com/hcoona/three/pull/1530)
-  ([Issue #1526](https://github.com/hcoona/three/issues/1526), under the closed
-  [fixture protocol](docs/native-acceptance-protocol.md#sdk-campaign-baseline))
-  retains initial two-worker Windows fixture observations. Controlled scenarios
-  and configured-check substitutes
-  ([evidence allocation](docs/validation.md#configured-check-and-process-evidence))
-  establish application logic only—they do not establish other operating systems
-  or backends, native timing or memory claims, installed-native recovery
-  effectiveness, zero provider billing on unmeasured sessions, or a completed
-  32-peer user audit (tracked on
-  [Issue #1552](https://github.com/hcoona/three/issues/1552) under
-  [`user-audit-protocol.md`](docs/user-audit-protocol.md)). Unknown reservations
-  in an active persistent ledger block further paid admission without automatic
-  release or reset.
+## Current remodel status and evidence boundaries
 
-## User and primary journey
+- **Abstract-machine specification ([Issue #1943](https://github.com/hcoona/three/issues/1943)):**
+  LiteAgensh's coordination semantics are specified as a **three-tier vertical
+  refinement $\times$ three-plane horizontal composition** TLA+ lattice under
+  [`specs/`](specs/) and exhaustively verified by `TLC`:
+    - **Tier 0 (`What` — [`AtomicOrganization.tla`](specs/AtomicOrganization.tla)):**
+      single-step observational specification over per-peer `acked` index sets,
+      atomic `open -> integrated` + `targetRef` updates, and abstract
+      epoch/meter states—with zero cursors, channel tokens, `committing` states,
+      OS scopes, or ghost variables.
+    - **Tier 1 (`How` — Horizontal Planes + Unified Composition):**
+        - [`CausalStream.tla`](specs/CausalStream.tla): refines Tier-0 `acked`
+          via `MappedAcked` over one append-only causal `log`, co-axial cursors
+          `0 <= baseCursor <= immCursor <= |log|`, atomic `PeerToolCall`
+          piggybacking, and `(needsBootstrap, signed chan, InTurn)`.
+        - [`WorkspaceCas.tla`](specs/WorkspaceCas.tla): refines Tier-0 atomic
+          integration via `MappedProposals` (`committing` linearized by
+          `head \in ancestors[targetRef]`) over three-step cross-store CAS,
+          `PeerSyncMerge`, and `ancestors` crash reconciliation.
+        - [`EpochLifecycle.tla`](specs/EpochLifecycle.tla): refines Tier-0
+          `Spec` (safety + liveness) over `runEpoch`, abstract `scopeState`,
+          three-state `peerExec`, and unclamped sum-type `meter`.
+        - [`AgenshOrganization.tla`](specs/AgenshOrganization.tla): simultaneously
+          verifies horizontal sub-plane composition (`Spec => SubPlane!SafetySpec`)
+          and vertical full-spec refinement (`Spec => HighOrg!Spec`).
+    - **Tier 2 (OS/SQLite Scope Protocol — [`OsScopeRefinement.tla`](specs/OsScopeRefinement.tla)):**
+      refines Tier-1 `EpochLifecycle` (`THEOREM Spec => Tier1Lifecycle!SafetySpec`)
+      via `AbstractScope` onto root-only write-ahead `PrePidAmbiguous`
+      (failing closed without a persisted PID), pre-`Main` `mcp` spawning +
+      surviving-POSIX `mcp Main` `(pid, start_ticks, Active)` self-registration
+      without pre-PID self-lock, sibling/check-descendant containment, and
+      Windows `KILL_ON_JOB_CLOSE` / cooperative POSIX `setsid` group-emptiness
+      teardown ([#1756](https://github.com/hcoona/three/issues/1756)).
+- **Implementation transition:** [`docs/`](docs/) defines the downward
+  refinement onto C#, SQLite, Git, MCP, and the Copilot SDK. `schemas/run.schema.json`,
+  `examples/run.yaml`, the C# executable, and `LiteAgensh.Tests` transition onto
+  these contracts in the stacked Layer 3 implementation PR under
+  [Issue #1943](https://github.com/hcoona/three/issues/1943).
+- **Historical and suspended operational evidence:** Paid 32-peer user-audit
+  execution under [Issue #1552](https://github.com/hcoona/three/issues/1552) is
+  suspended until the v2 runtime and refreshed audit protocol merge. Closed
+  fixture observations ([#1526](https://github.com/hcoona/three/issues/1526) /
+  [#1530](https://github.com/hcoona/three/pull/1530)) and retired v1 protocols
+  remain in Git history at
+  [`a83cd1da436d8df55f1290706c1c86b7f363a1a3`](https://github.com/hcoona/three/tree/a83cd1da436d8df55f1290706c1c86b7f363a1a3/src/private/app/lite-agensh/docs).
 
-A developer supplies a goal, base revision, worker count, checks, and finite run
-budget to coordinate multiple coding agents on one local repository without a
-Git, chat, database, or container server. Peers claim tasks, exchange findings,
-and submit checked candidates to a local delivery branch while supporting
-`status`, `pause`, `resume`, and crash `reconnect` without losing partial work
-(motivating [`requirements.md`](docs/requirements.md); acceptance criteria live
-in [`validation.md`](docs/validation.md)).
+## Target v2 CLI journey (Layer 3)
 
-## Running and checking the application
-
-Use the repository-selected .NET SDK and existing installed Copilot CLI under
-[`implementation-contracts.md`](docs/implementation-contracts.md) (SDK runtime
-acquisition and native auto-updates are disabled). Edit [`examples/run.yaml`](examples/run.yaml)
-and [`examples/goal.md`](examples/goal.md): relative repository, state, ledger,
-and `goalFile` paths resolve from the YAML file's directory; keep state and
-ledger outside the target checkout (`init` snapshots configuration and goal into
-SQLite). Worktrees isolate edits rather than host permissions.
-
-Build once and reuse the exact binary across preflight, paid calibration (30-credit
-tool-disabled soft cap), and execution:
+In the target v2 contract ([`docs/implementation-contracts.md`](docs/implementation-contracts.md)),
+a developer supplies a YAML configuration and Markdown goal to coordinate equal
+coding peers without a separate paid `calibrate` gate, and unified `run` handles
+initial execution, `Paused` continuation, and crash reconnect automatically (note
+that until the stacked Layer 3 C# implementation under
+[Issue #1943](https://github.com/hcoona/three/issues/1943) lands, the unchanged
+v1 executable still enforces `calibrate`—currently suspended under
+[Issue #1552](https://github.com/hcoona/three/issues/1552)—and separate `run`,
+`resume`, and `reconnect` subcommands):
 
 ```powershell
 dotnet build src\private\app\lite-agensh\LiteAgensh.csproj
 $app = (Resolve-Path src\private\app\lite-agensh\bin\Debug\net10.0\LiteAgensh.dll).Path
 dotnet $app init --config C:\Work\LiteAgensh\run.yaml
 dotnet $app preflight --state C:\Work\LiteAgensh\run
-dotnet $app calibrate --state C:\Work\LiteAgensh\run
 dotnet $app run --state C:\Work\LiteAgensh\run
+dotnet $app finalize --state C:\Work\LiteAgensh\run
 ```
 
-`run` stays in the foreground terminal and owns worker subprocesses; invoke
-`status` or `pause` from another terminal with `--state`, wait for process
-settlement before `resume` (fresh summarized sessions), use `reconnect` after a
-crash or for authorized [closed failed-run settlement](docs/implementation-contracts.md#closed-failed-run-reconnect),
-and use `finalize` / `cleanup` to inspect or remove owned state. For an
-authorized pre-dispatch reservation (`--evidence` required on legacy state
-without a dispatch-contract marker):
+Verify all TLA+ specifications and managed tests locally:
 
 ```powershell
-dotnet $app reconcile --state C:\Work\LiteAgensh\run --reservation RESERVATION_ID
-```
-
-Run the credential-free controlled test suite:
-
-```powershell
+$specs = "src/private/app/lite-agensh/specs"
+mise run tla:tlc -- -workers auto -lncheck final -config "$specs/AtomicOrganization.cfg" "$specs/AtomicOrganization.tla"
+mise run tla:tlc -- -workers auto -lncheck final -config "$specs/CausalStream.cfg" "$specs/CausalStream.tla"
+mise run tla:tlc -- -workers auto -lncheck final -config "$specs/WorkspaceCas.cfg" "$specs/WorkspaceCas.tla"
+mise run tla:tlc -- -workers auto -lncheck final -config "$specs/EpochLifecycle.cfg" "$specs/EpochLifecycle.tla"
+mise run tla:tlc -- -workers auto -lncheck final -config "$specs/AgenshOrganization.cfg" "$specs/AgenshOrganization.tla"
+mise run tla:tlc -- -workers auto -lncheck final -config "$specs/AgenshOrganizationWorkspace.cfg" "$specs/AgenshOrganization.tla"
+mise run tla:tlc -- -workers auto -lncheck final -config "$specs/OsScopeRefinement.cfg" "$specs/OsScopeRefinement.tla"
 dotnet test --project tests\private\app\lite-agensh\LiteAgensh.Tests.csproj
 ```
 
 ## Records and authority
 
-| Reader question                                                     | Authority                                                                                                                                                                                                           |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| What must the local product do, and what is unsupported?            | [Requirements](docs/requirements.md)                                                                                                                                                                                |
-| How do C#, SQLite, native processes, MCP and Git fit together?      | [Architecture and integration boundaries](docs/architecture.md)                                                                                                                                                     |
-| What replaces each upstream responsibility and collaboration tool?  | [Complete migration map and source evidence](docs/upstream-migration.md)                                                                                                                                            |
-| What evidence permits implementation and an eventual support claim? | [Validation basis](docs/validation.md)                                                                                                                                                                              |
-| Where is upstream attribution retained?                             | [Third-party notice](THIRD-PARTY-NOTICES.txt)                                                                                                                                                                       |
-| What concrete boundaries do independent implementation units share? | [Implementation contracts](docs/implementation-contracts.md)                                                                                                                                                        |
-| What governed the closed fixture-only acceptance campaign?          | [Windows native acceptance protocol](docs/native-acceptance-protocol.md)                                                                                                                                            |
-| What governs the owner's actual 32-peer user-audit execution loop?  | [Real user audit protocol](docs/user-audit-protocol.md)                                                                                                                                                             |
-| What work is currently authorized?                                  | Repository [Delivery Wave](../../../../docs/delivery-wave.md) and [record policy](../../../../docs/governance/record-system.md)                                                                                     |
-| Where are audit progress, closed refinement, and original runs?     | [User audit #1552](https://github.com/hcoona/three/issues/1552), closed [refinement #1542](https://github.com/hcoona/three/issues/1542), and closed [acceptance #1526](https://github.com/hcoona/three/issues/1526) |
+| Reader question                                                        | Authority                                                                           |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| What pure abstract machines and invariants govern coordination?        | [TLA+ specifications](specs/)                                                       |
+| What capabilities must the product satisfy, and what is out of scope?  | [Requirements](docs/requirements.md)                                                |
+| How does the four-plane abstract machine refine onto local primitives? | [Architecture and refinement mapping](docs/architecture.md)                         |
+| What concrete CLI, YAML, SQLite, MCP, and SDK contracts apply?         | [Implementation contracts](docs/implementation-contracts.md)                        |
+| How does this model relate to the Agensh paper, repo, and SDK sources? | [Conceptual provenance and interface evidence](docs/upstream-migration.md)          |
+| What formal, unit, scenario, and native evidence is required?          | [Validation basis](docs/validation.md)                                              |
+| Where is upstream license attribution retained?                        | [Third-party notice](THIRD-PARTY-NOTICES.txt)                                       |
+| What work is currently authorized?                                     | [Delivery Wave](../../../../docs/delivery-wave.md) and [Issue #1943][remodel-issue] |
+
+[remodel-issue]: https://github.com/hcoona/three/issues/1943

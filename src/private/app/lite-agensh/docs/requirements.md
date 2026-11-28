@@ -1,273 +1,205 @@
 # LiteAgensh Requirements
 
-These are required behaviors for the initial local product, not claims about
+These are required behaviors for the single-machine product, not claims about
 an existing implementation. The [README](../README.md) supplies user context;
-[architecture](architecture.md) owns realization and
-[validation](validation.md) owns the required evidence.
+[`specs/`](../specs/) and [architecture](architecture.md) own the abstract
+coordination model and its downward refinement; [validation](validation.md) owns
+required evidence; and [conceptual provenance](upstream-migration.md) records
+how the model relates to [_Agensh_](https://arxiv.org/html/2609.26781v1).
 
-The migration outcome is a bounded single-repository, trusted single-user
-product using Copilot first. Its full upstream treatment is recorded in the
-[migration map](upstream-migration.md), including deliberate omissions.
-
-## Runtime and collaboration
+## Organization and observation plane
 
 ### LA-REQ-001: Local single-user host
 
-The product shall operate on one machine with one coordinator per run, local
-persistent coordination state and owned native runtimes hosting worker sessions. Its implementation
-shall be C#. Initial real-platform acceptance shall target Windows and the
-repository-selected .NET toolchain; no other operating-system support is
-implied. It shall not require hosted Git/chat/database services or Docker.
+The product shall coordinate equal coding peers on one machine using local
+persistent state, local Git worktrees, and owned native agent runtimes. Its
+implementation shall be C# targeting the repository-selected .NET toolchain,
+with initial real-platform acceptance on Windows and no hosted Git, chat,
+database, or container server requirement.
 
-### LA-REQ-002: Native agent responsibility
+### LA-REQ-002: Native single-agent loop delegation
 
-The initial backend shall be Copilot through its official .NET SDK and native
-runtime interface. Reasoning, editing, shell tools, model calls and compaction
-remain native-agent responsibilities. The host shall verify required
-capabilities and applied settings at the documented boundary, and report
-unavailable required capabilities rather than patching runtime internals or
-silently substituting another backend. ACP compatibility, AHP hosting and a
-second model/tool loop are not required.
+Each peer's reasoning, file/shell tool execution, model transport, and context
+compaction shall remain delegated to the underlying Copilot runtime via its
+official .NET SDK. Admitted peers within an active epoch may share a parent
+runtime scope while retaining isolated conversations, working directories,
+actor-bound MCP channels, soft credit caps, and session-level usage readings.
+Verified missing capabilities or violated session boundaries shall fail closed
+without runtime patching or silent backend substitution.
 
-Each admitted peer retains its own conversation, working directory, local MCP
-actor, applied settings, finite credit window and cumulative usage. Reusing an
-owned runtime must not merge these identities or serialize all peers behind
-one conversation. A session-scoped operation must not dispose another peer's
-healthy session; loss of the shared runtime stops its affected cohort.
+### LA-REQ-003: Fenced epoch ownership and recoverable state
 
-### LA-REQ-003: Recoverable run identity and state
+Run identity, resolved configuration, base artifact state, causal log entries,
+peer cursors, workspace proposals, and hierarchical effect-scope states shall
+persist locally across controller restarts (`EpochLifecycle.tla`). Exclusive
+controller epochs shall be fenced monotonically: a new epoch, final verification
+pass, or resource cleanup shall never start while any predecessor effect scope
+(parent `runtime` host, child `channel:<peer>` MCP helper process, or `verify`
+check runner) remains `Active` or `Ambiguous`. Storage errors shall fail closed
+with explicit error diagnostics without silently recreating state.
 
-The product shall retain the exact repository/base, run, worker, branch/worktree,
-native-session and owned-process associations, configuration, lifecycle segments
-and end reason. Tasks, messages, board revisions, queued delivery, reviews and
-check identities shall survive a coordinator restart. An ambiguous surviving
-writer shall block replacement until ownership is resolved.
+### LA-REQ-004: Self-organized equal-peer work selection
 
-### LA-REQ-004: Peer work selection
+Peers shall self-organize without a central task scheduler, privileged planner
+stage, or exclusive task locks: multiple peers may publish advisory expiring
+claims and negotiate overlaps directly. An optional nonnegative
+`workerStartIntervalSeconds` setting staggers peer admissions into an open epoch
+without preassigning roles or opening sessions for unadmitted peers.
 
-Agents shall coordinate through tasks, team/direct/threaded messages, shared
-findings and local changes. Preserve peer work selection and advisory expiring
-claims: multiple agents may claim a task. Do not turn claims into exclusive
-locks or introduce a central intelligent scheduler. When planning is enabled,
-wake the initial planner before peers and release peers on plan integration or
-the configured planning timeout.
+### LA-REQ-005: Asynchronous communication and operator participation
 
-Support an operator-configurable interval between ordinary worker admissions.
-An omitted or zero interval preserves simultaneous dispatch eligibility; a
-positive interval admits the first worker immediately and subsequent workers
-gradually, without preassigning their work. Admitted peers continue cooperating
-while later peers wait. Stops remain responsive during ramp-up, and workers
-not yet admitted shall not acquire native sessions that require usage settlement.
+The product shall provide shared task tracking, organization-wide announcements,
+targeted urgent direct messages, and operator messages/reviews/stop requests
+under run-scoped identities (`owner` and `worker1..workerN`). Operator questions
+or messages shall not block unrelated peers from progressing.
 
-### LA-REQ-005: Local communication and owner control
+### LA-REQ-006: Typed shared context
 
-The product shall support task creation/update/comment/closure, message
-post/read/search/thread access, known-member lookup and operator messages,
-review/approval decisions and lifecycle requests. Local identities are
-run-scoped; no Gitea/Mattermost account or artificial direct-channel creation
-step is required. An owner question need not block all other agents' work.
+Peers shall publish concise typed shared-context entries (`FACT`, `OBSERVED`,
+`FAIL`, `CLAIM`, and `PATCH_SUMMARY`) with optional expandable detail, advisory
+claim expiry, replacement/invalidation, bounded recent-window projection, and
+boolean/literal full-history search. Concrete length/window tuning bounds belong
+to configuration/policy defaults rather than altering stream invariants, and
+published text is never treated as an executed verification check.
 
-### LA-REQ-006: Typed shared board
+### LA-REQ-007: Single causal log and co-axial cursor projection
 
-Preserve `FACT`, `OBSERVED`, `FAIL`, `CLAIM` and `PATCH_SUMMARY`, the upstream
-deterministic text-admission rules, expiry, replacement/invalidation, boolean
-history search and detail expansion. Regular gists have a 100-character cap,
-patch summaries 300, claims default to one hour, and the recent view retains at
-most 2,000 entries. Persist admitted history separately from the recent view.
-Text admission shall not be represented as execution of an agent's reported
-checks. These constants come from the pinned
-[board source](upstream-migration.md#source-locations).
+Deferred notifications and immediate observations (urgent direct messages and
+peer shared-context entries) shall share one global append-only causal log
+consumed through two co-axial per-peer durable cursors
+`0 <= baseCursor <= immCursor <= |log|` (`CausalStream.tla`), preserving global
+causal order across normal and immediate events without duplicate stream/entity
+tables. At turn start `T = |log|`, `UnreadTurnIdx` over `(baseCursor..T]`
+excludes `imm` items in `(baseCursor..immCursor]` already piggybacked in a prior
+turn, preserves every visible non-keyed item (`NoKey`) verbatim, and folds keyed
+state updates (`task:<id>`, `proposal:<id>`) across `(baseCursor..T]` (including
+newer `imm` updates `<= immCursor`) to the latest visible sequence index. Turn
+aborts—from timeout, `pause`, drain expiry, soft cost cutoff, or crash
+recovery—discard only ephemeral active-turn cursors (`turnSnap := -1`,
+`inflightImm := immCursor`) with zero persistent cursor writes, zero attempt
+penalties, and zero "dead-letter" drops; persistent execution faults trip
+`FaultedClosed`.
 
-### LA-REQ-007: Durable serialized delivery
+### LA-REQ-008: Algebraic channel fencing and bootstrap state
 
-Serialize turns per worker while permitting different workers to progress.
-Persist recipient deduplication and pending/sending/sent/failed/retrying state,
-acknowledge a batch after its completed turn, and preserve the upstream
-five-attempt bound and retry schedule. Interrupted sending batches may return
-to pending; recovery does not guarantee exactly-once agent actions. Domain
-changes and their required events shall be committed together.
+Local collaboration MCP tool calls and returns during an active turn shall
+piggyback newly appended immediate `log` items `(inflightImm..|log|]` and
+advance `inflightImm` atomically, fenced by `InTurn(peer)` (`turnSnap >= 0`) and
+the peer's signed monotonic channel token `chan` (`+k` when bound at attachment
+`k`, `-k` when unbound after `k`) so stale pre-reconnect or post-abort helpers
+cannot mutate state or advance cursors (`ABA` safety) and completed turns
+commit `(baseCursor := turnSnap, immCursor := inflightImm)` without spawning
+duplicate turns. Conversational bootstrap state (`needsBootstrap`) remains
+independent of channel recycling: single-turn timeouts and crash reconnects
+advance `|chan| + 1` while preserving `needsBootstrap` and saved conversational
+memory, whereas `Paused` continuation or safe fresh-session fallback sets
+`needsBootstrap := true` until a turn commits (`AgenshOrganization.tla`).
 
-### LA-REQ-008: Notices at real tool boundaries
+### LA-REQ-009: Minimal native collaboration MCP surface
 
-Direct/urgent messages and fresh board gists shall be available in the results
-of local infrastructure MCP operations, using snapshots, notice leases,
-recipient cursors and shown-notice reconciliation. Reading a snapshot, showing
-a notice and completing a turn are distinct events. This is not an arbitrary
-interrupt during a native command or model reasoning.
+Expose a concise, actor-bound local stdio MCP surface directly representing the
+organization's core primitives—organization status, tasks, messages, shared
+context, and workspace proposals—rather than cloning hosted Gitea or Mattermost
+REST endpoints. Tool inputs shall never override the helper's bound run, actor,
+or channel-epoch fence token.
 
-### LA-REQ-009: Truthful local MCP surface
+## Workspace integration, lifecycle, and guardrails
 
-Map every upstream allowlisted collaboration tool to a local capability or an
-explicit removal, as listed in the [complete tool map](upstream-migration.md#collaboration-mcp-map).
-Tool names and descriptions shall describe actual local tasks, changes,
-checks, members, messages and board operations. Neither upstream tool names
-nor wire compatibility is required. Prompts and tool descriptions shall migrate
-together; do not claim hosted repository/team discovery that is absent.
+### LA-REQ-010: Immutable base checkout and isolated worktrees
 
-## Git, validation and lifecycle
+Bind each run to an explicit local base revision (`baseRef`), allocating a
+dedicated target integration ref, check worktree, and isolated per-peer branches
+and worktrees (`WorkspaceCas.tla`). Never mutate the user's original checkout,
+index, untracked files, global Git config, or tracked `AGENTS.md`. Creating a
+new target repository requires explicit `createRepository: true`.
 
-### LA-REQ-010: Preserve the user's checkout
+### LA-REQ-011: Two-phase cross-store CAS and emergent peer integration
 
-Bind a run to an explicit local base revision. Use a dedicated integration
-branch/worktree and separate worker branches/worktrees without changing the
-user's original checkout, index, untracked work or global Git configuration.
-Keep target-repository instructions; generated cooperation instructions shall
-not overwrite a tracked target `AGENTS.md`. Empty-project initialization shall
-be explicit rather than an accidental prerequisite for an existing repository.
+Peers may author multi-commit branches, merge the latest target ref locally into
+their peer branch (`PeerSyncMerge`) to resolve divergence while preserving local
+branch history, open multiple proposals, and act as authors or emergent Peer
+Integrators to request integration of an `open` proposal (`WorkspaceCas.tla`).
+Conflicting (delegating multi-base and three-way merge conflict detection to
+Git), unapproved, or check-failing requests shall clear `requested := false`
+without losing peer commits or spinning in a livelock. Cross-store integration
+shall execute as an explicit two-phase protocol—metadata pre-commit
+(`committing`) $\to$ atomic Git target-ref CAS to the verified merged commit
+$\to$ metadata completion (`integrated` or `open`)—completing in-flight
+`committing` CAS steps cleanly across `Draining`/`Settling` and reconciling
+mid-step crashes solely from target-ref ancestry (`ancestors[targetRef]`).
 
-### LA-REQ-011: Candidate-bound integration
+### LA-REQ-012: State-diff review gates and distinct check stages
 
-Changes and reviews shall identify the exact candidate commit. The coordinator
-shall serialize integration, validate the actual proposed merged tree, and
-check that the integration head and reviewed candidate have not moved before
-updating the integration branch. A conflict or stale review/check shall preserve
-work and return a visible non-success outcome, not force a merge.
+Keep candidate, integration, and final verification checks distinct with
+retained command, tree/commit, exit code, and log evidence. Non-author peer
+approval of the exact candidate head shall be enforced whenever
+`requirePeerReview` is true or the per-path net state difference
+`ProtectedDiff(snapTarget, mergedTree)` touches configured `protectedPaths`. No
+time-based broken-main bypass timer is included.
 
-### LA-REQ-012: Separate quality and final acceptance
+### LA-REQ-013: Unified epoch activation, bounded drain, and bottom-up teardown
 
-Keep candidate, integration-branch and final-delivery checks distinct. Persist
-the declared command, checked commit/tree, result and retained log location.
-Preserve peer/protected-path review rules through the local integration path.
-Port the upstream broken-main policy accurately: fix-main restriction, team
-alert after 15 minutes and restriction lift after 60 minutes. That lift is not
-a passing check and never bypasses required candidate/final acceptance.
+Expose a unified lifecycle CLI (`init`, `preflight`, `run`, `status`, `pause`,
+`finalize`, `cleanup`), where `run` implements `ActivateEpoch`
+(`EpochLifecycle.tla`): starting an `Idle` run, resuming a `Paused` run with
+`needsBootstrap := true` and a durable state summary, or reconnecting an
+interrupted epoch (preserving `needsBootstrap` while advancing `|chan| + 1` on
+channel re-attachment) once all predecessor effect scopes are `Stopped`.
+Fresh-session fallback on reconnect is permitted only when `peerExec !=
+'Unmeasured'`; otherwise—or whenever an epoch settles into `Quiescent` with any
+non-`Idle` `peerExec`—the sum-type meter transitions to `Indeterminate`
+(`FaultedClosed`).
 
-### LA-REQ-013: Cancellation and recovery
+Normal time-budget expiry transitions `Open -> Draining` (closing new channel
+and turn admission while granting a bounded drain window for in-flight turns and
+in-flight workspace evaluations) before `Settling`; `Paused` or `FaultedClosed`
+transitions directly to `Settling`. Parent `runtime` scopes shall never be
+marked `Stopped` until all registered child `channel:<peer>` helper scopes under
+them have `Stopped`.
 
-Support run, status, pause, resume, finalize and explicit cleanup operations.
-Support a separately bounded, explicitly targeted accounting-only reconciliation
-of retained pre-dispatch state without dispatching or reopening native sessions.
-It shall not restart or relabel an ended unresolved lifecycle.
-Pause/cancellation shall stop further dispatch, request native cancellation and
-settle owned processes before reporting a quiescent state. Timeouts or ambiguous
-children shall remain visible and block replacement/cleanup, not establish
-success. Crash reconnect attempts the exact saved session when supported;
-explicit resume starts fresh native sessions with durable project-state
-summaries. These paths shall not be conflated.
+### LA-REQ-014: Algebraic epistemic meter and stop reasons
 
-Normal work-budget expiry shall first stop admission of new sessions, turns
-and spending windows. Already-dispatched requests may finish within the
-separately bounded deadline drain defined by the
-[lifecycle contract](implementation-contracts.md#bounded-deadline-drain),
-including their existing acknowledgement and usage verification. Expiry of
-that bound requests cancellation and retains existing uncertainty on missing
-terminal or accounting evidence. Operator/caller cancellation, ownership or
-accounting ambiguity, and other safety failures shall not wait for this grace.
-Draining shall not send a finalization prompt or manufacture a completed review.
+Model and enforce per-run wall-clock (`durationSeconds`), autonomous idle
+wakeups, and soft AI-credit guardrails (`runAiCreditAllowance`) over a sum-type
+epistemic meter `Exact(cost) | Indeterminate` (`EpochLifecycle.tla`),
+distinguishing terminal stop reasons `GoalConverged`, `Paused`, `TimeLimit`,
+`SoftCostLimit`, and `FaultedClosed`. Native SDK soft caps may overshoot in
+flight; unreadable, incomplete, or regressing usage on a dispatched turn
+transitions `meter` to `Indeterminate` (`FaultedClosed`) without fabricating
+zero spend or requiring offline reconciliation commands.
 
-For an ended failed run whose lifecycle remains unresolved, explicit `reconnect`
-shall also support bounded, non-dispatch recovery of associated native usage.
-Resolve ownership and verify exact saved sessions before measured settlement;
-do not reopen lifecycle segments, create worker loops, replay delivery or send
-prompts. Return a distinct settlement-only result and preserve the original
-failed outcome, report and preflight/calibration receipts. This branch shall
-finish normally without depending on a later paid-admission gate rejection.
-It does not authorize resuming work or waive receipts for subsequent paid use.
-The [credit contract](implementation-contracts.md#closed-failed-run-reconnect)
-owns selection, idempotence and rejection conditions.
+### LA-REQ-015: Crash-idempotent final verification and explicit cleanup
 
-When sessions share a runtime, stop dispatch and settle their session operations
-before stopping that runtime once. Final accounting and a quiescent outcome
-require settlement of the owned runtime, not merely disposal of one session.
-Unknown ownership or usage blocks replacement; reuse is not permission to
-weaken the existing recovery or accounting guarantees.
-
-Distinguish verified cancellation before first dispatch from provider-measured
-reconciliation. The [credit contract](implementation-contracts.md#verified-pre-dispatch-cancellation)
-owns the fresh-session proof and failure conditions. Preserve raw usage and
-missing completeness; an eligible cancellation shall not fabricate complete
-zero billing. Missing proof or ambiguous ownership remains unresolved.
-
-### LA-REQ-014: Budgets, liveness and stop meaning
-
-Support a finite wall-clock budget, operator stop, lifecycle timing/reminders
-and bounded liveness recovery. Native connection silence alone shall not establish that a
-tool or process is dead. Task closure and budget expiry are stop reasons, not
-proof that final checks passed. Do not claim an aggregate token-request cutoff
-or exact spend metering without a verified native interface.
-
-Distinguish the work-admission deadline from the fixed, finite deadline-drain
-bound and subsequent existing process/accounting settlement. Startup and
-waiting consume the work budget; drain never restarts it. Work completed while
-draining remains inside the same run/campaign credit allowances and native
-limits. Retain the stop reason and whether drain completed, exhausted its
-bound or was interrupted earlier, including the actual interruption reason.
-No drain outcome alone establishes successful task delivery.
-
-Support an explicitly selected shared AI-credit allocation mode. Workers draw
-from one finite run allowance and the same continuing campaign allowance,
-not permanent equal per-worker shares. A local spending window may be renewed
-only against available shared credit; exhausting that window alone shall not
-stop the team while the shared pool can fund further work. Waiting workers
-shall not lock fixed shares of the pool. Preserve cancellation, complete
-cumulative usage, unknown-usage stops and the native soft-limit evidence
-boundary. Existing configurations retain their per-session allocation mode.
-
-Unused authorization from a verified pre-dispatch cancellation may return to
-the same finite pool only after session and common-runtime settlement. It shall
-not reset cumulative spend, grant an extra allowance or release unrelated
-historical unknowns.
-
-### LA-REQ-015: Retained local delivery
-
-Finalization shall retain the local delivery branch, partial work, SQLite state
-and native-session associations, and report base/final commits, check outcomes
-and unresolved work. A failed final check shall be reported as failed delivery,
-not successful acceptance. Cleanup shall be separately requested, explicit and
-limited to owned resources after outcome inspection. Retained same-host files
-are not a portable sealed backup.
+`finalize` shall reconcile any stopped interrupted epoch record and execute
+declared `finalChecks` under an owned verification scope without clobbering a
+settled `stopReason`, remaining idempotent if interrupted and re-run
+(`EpochLifecycle.tla`). A `Passed` final verdict requires settled scopes,
+`Exact` metering, a non-faulted stop reason, and passing `finalChecks`; state
+and the local target ref remain retained until explicit `cleanup` after
+finalization.
 
 ### LA-REQ-016: Trusted-host boundary and attribution
 
-The operator supplies a trusted repository, check commands and existing native
-backend configuration. Worktrees are edit separation, not process/network or
-credential isolation. Local review gates are cooperative rather than protection
-against arbitrary same-user actions. The product shall not provision, copy,
-redistribute or rewrite model credentials, override enterprise policy, or
-automatically publish local diagnostics. Retain the upstream copyright and MIT
-notice for derived material, and separate source findings from runtime evidence.
+Agent sessions and configured checks run under the operator's OS account with
+explicit `nativePermissionPolicy` (`deny` or `trusted`); worktrees isolate edits
+rather than OS permissions or credentials. Never copy or proxy model secrets,
+override enterprise policy, or upload local state. Retain the Microsoft MIT
+notice in [`THIRD-PARTY-NOTICES.txt`](../THIRD-PARTY-NOTICES.txt).
 
-### LA-REQ-017: Human-editable run configuration
+### LA-REQ-017: Declarative YAML and Markdown configuration
 
-The operator shall be able to initialize a run from YAML configuration and a
-separate Markdown goal, with JSON Schema guidance for ordinary VS Code YAML
-editing. Existing JSON configurations shall remain compatible. Relative
-repository, state, campaign-ledger and goal-file paths in YAML shall resolve
-against the configuration file, not the launching terminal. Existing JSON
-path semantics shall remain unchanged.
+`init --config` shall accept a strict single-document YAML configuration
+(`.yaml`/`.yml`, validated by `schemas/run.schema.json`) paired with a non-empty
+Markdown `goalFile`, resolving relative `repositoryPath`, `statePath`, and
+`goalFile` paths against the YAML directory and snapshotting the resolved
+configuration into run state before creating worktrees or starting runtimes.
 
-Validate input before creating run state or admitting paid work. Report
-malformed, duplicate, unknown, missing or incorrectly typed configuration
-fields and missing or empty goal files as configuration failures. Persist the
-resolved configuration and goal at initialization; later input-file edits
-shall not silently change a running or resumed run. Editor integration shall
-be optional and shall not require a custom LiteAgensh VS Code extension.
-
-### LA-REQ-018: Automatic local SQLite contention evidence
-
-When application-owned SQLite access fails with a busy or locked result, retain
-bounded local diagnostic evidence automatically, without requiring a later
-operator to reproduce the failure. Identify the failed operation, connection,
-process lifetime, transaction phase, elapsed time and primary/extended result
-codes, together with available recent application-owned transaction activity.
-Preserve the original operation failure and distinguish observed activity from
-an inferred competing lock holder; missing coverage remains explicit.
-
-Diagnostics shall not depend on another write to the contended database,
-include SQL parameters, goals, messages or credentials, or inspect unrelated
-host processes. Diagnostic persistence failure shall remain visible without
-replacing the original database failure. Retaining evidence does not authorize
-automatic retry, recovery, ledger disposition, diagnostic upload or paid work.
+### LA-REQ-018: Retired - current authority: LA-REQ-003
 
 ## Explicitly unsupported in this outcome
 
-Other agent backends; multi-host coordination; untrusted/mutually hostile
-workers; hosted Git/chat administration or arbitrary repository/team discovery;
-full chat edits/deletes/reactions; automatic remote push/PR delivery; a model
-HTTP gateway, private credential shielding or uniform cross-backend
-token/truncation guarantees; portable sealed archives; history-hiding or
-held-out/private-evaluator access guarantees; ProgramBench reproduction.
-
-These are deliberate scope boundaries, not promises of equivalent replacements.
-Adding one requires an owner scope decision and accepted authorization, not
-merely extending an adapter.
+Legacy inline JSON configuration; cross-run credit ledgers, paid calibration, or
+offline pre-dispatch cancellation commands; mutable per-recipient event queues
+with retry-exhaustion message drops; privileged planner stages or broken-main
+timers; Gitea/Mattermost compatibility shims; alternate agent backends;
+multi-host or untrusted-sandbox execution; and ProgramBench reproduction.
