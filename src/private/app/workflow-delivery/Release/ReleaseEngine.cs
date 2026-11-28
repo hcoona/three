@@ -115,6 +115,13 @@ internal static class ReleaseEngine
         return [.. ordered.Where(missing.Contains)];
     }
 
+    private static bool EnlargesReviewedWrites(DestinationProfile profile,
+        ReleaseObservationResult initial, string[] intended, ReleaseObservationResult before,
+        string[] missing) =>
+        profile.AllowsContainer && initial.ReleaseId is not null && before.ReleaseId is null ||
+        initial.Observation.Files.All(file => file.State != ReleaseFileState.Unobserved) &&
+            missing.Any(output => !intended.Contains(output, StringComparer.Ordinal));
+
     internal static string[] PlannedOutputs(IDestinationAdapter adapter,
         ReleasePreparationResult preparation, ReleaseObservationResult observed,
         string blockedMessage)
@@ -242,7 +249,7 @@ internal static class ReleaseEngine
         adapter.VerifyOriginals(preparation, originalsDirectory);
 
         DestinationProfile profile = adapter.Profile(subject);
-        string[]? intended = null;
+        string[] intended = [];
         if (initial is not null)
         {
             adapter.ValidateObservation(preparation, initial);
@@ -275,9 +282,8 @@ internal static class ReleaseEngine
         }
 
         string[] missing = MissingOutputs(before.Observation, profile.OrderedKinds, prepared);
-        if (intended is not null && initial!.Observation.Files.All(
-                file => file.State != ReleaseFileState.Unobserved) &&
-            missing.Any(output => !intended.Contains(output, StringComparer.Ordinal)))
+        if (initial is not null && EnlargesReviewedWrites(profile, initial, intended, before,
+                missing))
             return new(subject, before, [], null,
                 ["Current state would enlarge the reviewed writes."]);
 
@@ -385,10 +391,7 @@ internal static class ReleaseEngine
                 { Target: "publish", Succeeded: true, Acknowledged: true },
                 ];
         }
-        string[] initialMissing = MissingOutputs(initial.Observation, profile.OrderedKinds,
-            preparation.Prepared);
-        ValidatePublication(primaryAdapter, profile, preparation, initialMissing,
-            primaryPublication);
+        ValidatePublication(primaryAdapter, profile, preparation, initial, primaryPublication);
         if (primaryPublication.Errors.Length != 0)
             return false;
         if (primaryPublication.After is { } after && AllSatisfied(profile, after.Observation))
@@ -448,6 +451,9 @@ internal static class ReleaseEngine
         ReleaseCompletionResult anchorResult;
         if (anchorFinal is null)
         {
+            if (anchorPublication is not null)
+                ValidatePublication(ReleaseAdapters.GithubAnchor, anchorProfile, anchorPrep,
+                    anchorInitial, anchorPublication);
             var unknownAnchor = new ReleaseOutcome(anchorPrep.Prepared.Subject,
                 ReleaseBusinessState.Unknown, anchorPublication?.Uploads ?? [],
                 ["Required GitHub Release anchor observation is missing; effects remain unknown."]);
@@ -535,12 +541,8 @@ internal static class ReleaseEngine
         if (!ObservationProceeds(profile, initial.Observation))
             throw new InvalidDataException("Initial observation could not proceed.");
 
-        string[] initialMissing = MissingOutputs(initial.Observation, profile.OrderedKinds,
-            prepared);
-        bool initiallyMissing = initialMissing.Length != 0;
-
         if (publication is not null)
-            ValidatePublication(adapter, profile, preparation, initialMissing, publication);
+            ValidatePublication(adapter, profile, preparation, initial, publication);
 
         ReleaseUpload[] uploads = publication?.Uploads ?? [];
         ReleaseOutcome outcome = ReleaseCompletion.Evaluate(prepared, final.Observation, uploads,
@@ -548,7 +550,8 @@ internal static class ReleaseEngine
 
         if (publication is null)
         {
-            if (!initiallyMissing) return new(outcome, false);
+            if (MissingOutputs(initial.Observation, profile.OrderedKinds, prepared).Length == 0)
+                return new(outcome, false);
             return new(outcome with
             {
                 State = profile.Verification == DestinationVerificationMode.ExactBytes &&
@@ -619,10 +622,12 @@ internal static class ReleaseEngine
     }
 
     private static void ValidatePublication(IDestinationAdapter adapter,
-        DestinationProfile profile, ReleasePreparationResult preparation, string[] initialMissing,
-        ReleasePublicationResult publication)
+        DestinationProfile profile, ReleasePreparationResult preparation,
+        ReleaseObservationResult initial, ReleasePublicationResult publication)
     {
         PreparedRelease prepared = preparation.Prepared;
+        string[] initialMissing = MissingOutputs(initial.Observation, profile.OrderedKinds,
+            prepared);
         if (publication.Subject != prepared.Subject || initialMissing.Length == 0)
             throw new InvalidDataException("Mismatched or unnecessary publication result.");
         adapter.ValidateObservation(preparation, publication.Before);
@@ -635,15 +640,11 @@ internal static class ReleaseEngine
             adapter.ValidateObservation(preparation, publication.After);
         }
 
-        ReleaseWriteStep[] containers = [.. publication.Steps.Where(s => s.Kind == "container")];
-        ReleaseWriteStep[] writes = [.. publication.Steps.Where(s => s.Kind != "container")];
-        if (containers.Length > 1 ||
-            containers.Length == 1 && publication.Before.ReleaseId is not null)
-            throw new InvalidDataException("Unsupported repeated container creation.");
-
+        ReleaseWriteStep[] steps = publication.Steps;
+        if (steps.Length == 0) return;
         string expectedWriteKind = profile.Visibility == DestinationVisibilityMode.BoundedSettle
             ? "push" : "upload";
-        foreach (ReleaseWriteStep step in publication.Steps)
+        foreach (ReleaseWriteStep step in steps)
         {
             bool validKind = step.Kind == expectedWriteKind &&
                     (expectedWriteKind == "push" ? step.Command is null
@@ -655,22 +656,31 @@ internal static class ReleaseEngine
                 throw new InvalidDataException("Unsupported or incomplete write step.");
         }
 
-        if (writes.Length == 0) return;
-
         if (!ObservationProceeds(profile, publication.Before.Observation))
             throw new InvalidDataException("Unsupported write from non-proceeding state.");
-        if (publication.Before.ReleaseId is null && containers is [{ Acknowledged: false }])
-            throw new InvalidDataException("Unsupported asset write after failed container.");
 
         string[] planned = MissingOutputs(publication.Before.Observation, profile.OrderedKinds,
             prepared);
-        if (writes.Length > planned.Length)
-            throw new InvalidDataException("Unsupported excess write steps.");
-        for (int i = 0; i < writes.Length; i++)
+        int firstOutput = 0;
+        if (profile.AllowsContainer)
         {
-            if (writes[i].Target != planned[i] ||
-                !initialMissing.Contains(writes[i].Target, StringComparer.Ordinal) ||
-                i > 0 && !writes[i - 1].Acknowledged)
+            if (EnlargesReviewedWrites(profile, initial, initialMissing, publication.Before,
+                    planned))
+                throw new InvalidDataException("Publication enlarged the reviewed writes.");
+            if (publication.Before.ReleaseId is null && planned.Length != 0)
+            {
+                if (steps[0] is not { Kind: "container", Target: "release" })
+                    throw new InvalidDataException("Missing release creation before asset upload.");
+                firstOutput = 1;
+            }
+        }
+        if (steps.Length - firstOutput > planned.Length)
+            throw new InvalidDataException("Unsupported excess write steps.");
+        for (int i = firstOutput; i < steps.Length; i++)
+        {
+            if (steps[i].Kind != expectedWriteKind || steps[i].Target != planned[i - firstOutput] ||
+                !initialMissing.Contains(steps[i].Target, StringComparer.Ordinal) ||
+                i > 0 && !steps[i - 1].Acknowledged)
                 throw new InvalidDataException("Unsupported write sequence.");
         }
     }
