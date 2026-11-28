@@ -142,27 +142,6 @@ for when a grant is needed and how it ends.
   mutation, or publication/credential/access change without its own accepted
   Wave entry. Close only on an explicit further repository-owner request.
 
-### Introduce native Alloy tooling and model Text Score 2 assembly
-
-- **Work carrier:** [Issue #1991](https://github.com/hcoona/three/issues/1991)
-  and its linked PRs; the first model serves the
-  [sheet-music design work](#design-and-plan-sheet-music-recognition) in #686.
-- **Scope and outcome:** follow the [native TLA+ toolchain](engineering/workspaces.md#tla)
-  and [HK execution boundary](engineering/hk-execution.md#ci-execution-contract):
-  use the upstream Alloy Analyzer for fast syntax and type checking in HK;
-  run bounded model checks explicitly outside hooks. Model the
-  [Text Score 2 assembly contract](../src/private/app/sheet-music-omr/docs/text-format.md#assembly)
-  on invented scores, comparing legal cuts with the unsplit event and relation
-  graph. Include a multi-voice cross-staff witness and a swapped-tie-endpoint
-  counterexample; state the bounds without claiming Python or MusicXML correctness.
-- **Permitted effects:** provision one official Alloy 6 release JAR, locked by
-  SHA-256 through `mise` on `linux-x64` and `windows-x64`, using the existing
-  Java runtime and bundled solver. Only routine local and CI checks are in scope.
-- **Exclusions and closure:** no external solver service, private scores, OMR
-  application changes, training, paid runs, release or access changes. Preserve
-  the existing OMR grants and their limits. Remove this entry with the accepted
-  tooling and bounded model checks, or on an explicit owner stop.
-
 ### Execute OMR GPU training and evaluation on local RTX 4090 (W6 Slice B)
 
 - **Carrier and scope:** [#1498](https://github.com/hcoona/three/issues/1498)

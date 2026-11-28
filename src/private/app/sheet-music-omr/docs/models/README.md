@@ -83,6 +83,86 @@ See the [carry and assembly](../text-format.md#carry-state-and-assembly),
 [constrained decoding](../training-protocol.md#training-detector-and-constrained-decoding-contracts)
 and [conversion contract](../requirements.md#omr-req-008-forward-and-reverse-conversion).
 
+## Text Score 2: one target for one determined reading
+
+The original [W1 design rationale](https://github.com/hcoona/three/issues/1488)
+calls the format the canonical target trained readers emit. The accepted
+[canonical form](../requirements.md#omr-req-005-canonical-form) and
+[crop/target pairing](../requirements.md#omr-req-017-overlay-qa-normalized-system-crops-and-printed-system-slices)
+make the distinction concrete: two transcribers who read the same marks alike
+should not supply different target sequences just because they list voices in
+a different order. A grammar can accept both sequences; it cannot choose the
+training label. The [synthetic renderer](../../src/sheet_music_omr/synthetic/renderers.py)
+writes each system with `write_document`; the [packager](../../src/sheet_music_omr/training/packaging.py)
+records `target_text_v2`, and the [Arm B training sequence](../../src/sheet_music_omr/training/models.py)
+tokenizes that field after the prompt. Canonicalization removes an arbitrary
+choice from supervision; this is not a measured accuracy improvement.
+
+[TextScoreTarget](TextScoreTarget.als) distinguishes two decisions:
+
+- **Transcription from paper.** For a fixed header, carry and crop, one
+  determined printed event belongs to voice 1 regardless of stem; for two
+  simultaneous events on this staff, the up-stem belongs to voice 1 and the
+  down-stem to voice 2. A target exists for each modeled reading and every
+  spelling that transcribes it yields that target (`OneTargetPerDeterminedReading`).
+  Valid text alone cannot enforce the [paper-dependent choice](../text-format.md#transcription-rules).
+- **Writing a valid document.** `OneLosslessSpelling` checks that normalization
+  is idempotent, preserves the reading, and gives equal targets **if and only
+  if** the voice-keyed written notes and encoded stem hints agree. The writer
+  sorts the actual line slots and omits the redundant `from=0` option. Two
+  reversed line orders with and without that option produce the same target;
+  `C4` and `Cn4` with the same voice and stem do not, although both sound C
+  natural when no alteration is in effect (`SoundFixesTarget`).
+
+The target here is an ordered token template, not Python output or tokenizer
+IDs. Each line contains one fixed-duration note; modeled pitches are `C4`,
+`Cn4`, `D4`. Different system cuts or incoming context are not interchangeable
+training targets. Undetermined paper uses the [review-marker rules](../text-format.md#undetermined-content);
+it is outside this uniqueness claim.
+
+## Text Score 2: does a system cut preserve the whole score?
+
+[TextScoreAssembly](TextScoreAssembly.als) models the
+[assembly contract](../requirements.md#omr-req-007-system-carry-state-and-assembly)
+for an unsplit measure and an interior cut common to all voices; no note
+crosses the cut. In the split view, the right fragment has _local_ event
+indices. Assembly adds each voice's own count from the left fragment and
+joins its local relation labels through
+the carried start and kind, not the pitch. The unsplit reference independently
+numbers events over the whole voice and counts spans by kind and endpoint pair.
+Two slurs with identical endpoints count twice. Label atoms abstract the names,
+not the format's lexical `rN` numbering algorithm.
+
+`LegalCutPreservesGraph` compares the two results. `PitchAndClosureSuffice`
+deliberately exchanges the destinations of two cross-cut unison ties: both
+pairings meet the local pitch, staff, timing and closure checks, but they
+connect different voices. Both are legal scores; only one preserves the input.
+Witnesses also exercise different per-voice carry counts, interchangeable
+parallel slurs and a closed relation's label reused in the next document.
+The abstraction keeps each single-note event's payload intact; it does not
+parse text, compute pitch inheritance, model chords or decide a pending arc's
+kind.
+
+### Reproduce the Alloy checks
+
+With the [locked Analyzer](../../../../../../docs/engineering/workspaces.md#alloy),
+run from the repository root:
+
+```shell
+mise run alloy:exec -- src/private/app/sheet-music-omr/docs/models/TextScoreTarget.als
+mise run alloy:exec -- src/private/app/sheet-music-omr/docs/models/TextScoreAssembly.als
+```
+
+On Linux x64, Alloy 6.2.0 with bundled SAT4J found no counterexample (UNSAT)
+to the two target laws or the assembly law. Both deliberately false assertions
+produced counterexamples, and all five `run` witnesses were SAT. As a sensitivity
+check, changing the writer to emit only up-stems produced counterexamples to
+both target laws. The target checks compare up to two spellings and two printed
+heads. The main assembly check uses four time positions, up to two voices, two
+staves, two pitches, six notes and three spans; the separate label-reuse witness
+uses five positions and one voice. These are bounded design checks, not a proof
+for arbitrary scores, a training run, or implementation conformance evidence.
+
 ## Independent clients of the first reading
 
 `P0` is the actual first `T`, with no draft, gold, budget or score. The
