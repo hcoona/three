@@ -121,6 +121,31 @@ for when a grant is needed and how it ends.
   mutation, or publication/credential/access change without its own accepted
   Wave entry. Close only on an explicit further repository-owner request.
 
+### Inspect four TRAIN_DEV fragments for Text Score 2 representation gaps
+
+- **Carrier and outcome:** [#686](https://github.com/hcoona/three/issues/686)
+  and its linked pilot PR. Check whether a determined printed distinction is
+  missing, ambiguous in the specification, or lost in transcription or tooling.
+  Report observations per fragment privately, not an estimated coverage rate.
+- **Starting state:** owner-supplied, read-only `TRAIN_DEV` staging only. Check
+  the manifest against the accepted inventory digest and selected files against
+  their manifest hashes before use. Apply [OMR privacy](../src/private/app/sheet-music-omr/docs/requirements.md#omr-req-015-privacy-and-fixture-provenance).
+- **Bounds:** one lead-agent desk review, at most four source pages, four
+  fragments and four corresponding accepted gold files cumulatively, including
+  failed selections; about 50,000 tokens is the first stop. Select pages by
+  anonymous ordinal before reading gold; choose two ordinary and two
+  notation-dense fragments from those pages where available. Record what the
+  ink requires before opening gold, then compare with its Text Score 2 rendering.
+  Reproduce suspected format gaps only with independently invented examples.
+- **Effects and closure:** allow owner-approved model-service viewing in this
+  session only; no subagents receiving private material, separate uploads,
+  private-input mutation, W6 runner/ledger use, training, GPU or paid jobs,
+  or `TEST` reads. Use owner-only temporary storage; remove derived crops after
+  review. Stop on access, privacy, digest or scope mismatch, or at the cap.
+  Keep all fragment-level observations private. Public reporting is aggregate
+  only, without score content or identities. Retire on delivery or owner stop;
+  expansion needs separate authorization. Other grants and limits are unchanged.
+
 ### Introduce native Alloy tooling and model Text Score 2 assembly
 
 - **Work carrier:** [Issue #1991](https://github.com/hcoona/three/issues/1991)
