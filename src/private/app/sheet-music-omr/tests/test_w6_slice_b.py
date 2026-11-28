@@ -1096,6 +1096,81 @@ def test_slice_b_vision_lora_regex_incremental_bpe_platt_and_incomplete_read(
         )
     assert counter[0] == 5
 
+    # Qwen3.5 EOS restores the trailing LF stripped by chat_template `|trim`
+    class _StubArr:
+        def __init__(self, rows: list[list[int]] | list[list[float]]) -> None:
+            self._rows = np.asarray(rows)
+            self.shape = self._rows.shape
+
+        def __getitem__(self, idx: Any) -> Any:
+            return self._rows[idx]
+
+    class _StubGenOut:
+        sequences = _StubArr([[99, 1, 2, 248046]])
+        scores = ()
+        beam_indices = None
+
+    class _StubQwen35Tok:
+        eos_token_id = 248046
+        pad_token_id = 248044
+
+        def decode(
+            self, ids: list[int], *, clean_up_tokenization_spaces: bool = False
+        ) -> str:
+            del clean_up_tokenization_spaces
+            mp = {1: "m 1\n", 2: "1.1: C4/1"}
+            return "".join(mp.get(i, "") for i in ids)
+
+    class _StubQwen35Model:
+        class generation_config:  # noqa: N801
+            eos_token_id = 248044
+
+        def eval(self) -> None:
+            return None
+
+        def generate(self, **kwargs: Any) -> _StubGenOut:
+            assert kwargs["eos_token_id"] == [248044, 248046]
+            return _StubGenOut()
+
+        def compute_transition_scores(self, *_a: Any, **_kw: Any) -> _StubArr:
+            return _StubArr([[-0.1, -0.1, -0.1]])
+
+    class _StubProc:
+        tokenizer = _StubQwen35Tok()
+
+    class _StubInferenceTorch:
+        inference_mode = nullcontext
+
+    monkeypatch.setattr(
+        slice_b_worker, "format_arm_a_chat", lambda *_a, **_kw: "chat"
+    )
+    monkeypatch.setattr(
+        slice_b_worker,
+        "_arm_a_batch",
+        lambda *_a, **_kw: {"input_ids": _StubArr([[99]])},
+    )
+    monkeypatch.setattr(
+        slice_b_worker,
+        "import_module",
+        lambda n: _StubInferenceTorch if n == "torch" else __import__(n),
+    )
+    q35_cands = slice_b_worker._generate_arm_a_beams(
+        _StubQwen35Model(),
+        _StubProc(),
+        "qwen3_5",
+        Image.new("RGB", (28, 28)),
+        SystemPromptState(
+            page_system_tuple=(1, 1),
+            incoming_header_state_text="",
+            carry_in_text=_INITIAL_CARRY,
+        ),
+        carry_measure_tokens=0,
+        num_beams=1,
+    )
+    assert len(q35_cands) == 1
+    assert q35_cands[0].tokens == ("m 1\n", "1.1: C4/1\n")
+    assert not q35_cands[0].length_capped
+
 
 def test_slice_b_monkeyocrv2_arm_b_beam_generation() -> None:
     """Exercise real MonkeyOCRv2EncoderDecoder beam generation with torch."""
