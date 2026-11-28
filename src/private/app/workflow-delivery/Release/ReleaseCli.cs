@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using WorkflowDelivery.Core;
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Platform;
 
@@ -520,8 +521,9 @@ internal static class ReleaseCli
         _ = BrowserStoreDestinationAdapter.OriginalsAsync(preparation, originals,
             CancellationToken.None).GetAwaiter().GetResult();
         ReleaseObservationResult result;
-        if (preparation.Target?.Store == BrowserStorePreparation.ChromeWebStore &&
-            !preparation.Prepared.Subject.DryRun)
+        if (ReleaseDecisions.CanReadBeforeGate(
+                BrowserStoreDestinationAdapter.VersionReadForStore(preparation.Target?.Store),
+                preparation.Prepared.Subject.DryRun))
         {
             using HttpClient client = RegistryHttpClient.CreateNoRedirect();
             IBrowserStore store = (overrides?.BrowserStoreFactory ?? CreateBrowserStore)(

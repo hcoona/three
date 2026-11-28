@@ -5,9 +5,6 @@ using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Destinations;
 
-// Store-reported state of one exact submitted version (the WD-REL-009 store exception).
-// Received, InReview and Published complete a request; Unobserved means no read was possible.
-internal enum StoreState { Absent, Received, InReview, Published, Conflict, Unknown, Unobserved }
 internal sealed record StoreFile(string Output, string Path);
 
 // One store adapter. The publisher context supplies its credential; observation reads are

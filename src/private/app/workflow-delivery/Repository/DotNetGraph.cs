@@ -135,8 +135,8 @@ internal static class DotNetGraph
         {
             ProjectInstance project = node.ProjectInstance;
             DotNetNodeIdentity consumer = identities[node];
-            bool control = Path.GetRelativePath(root, project.FullPath).Replace('\\', '/') ==
-                NodeGroupReader.ControlProject;
+            bool control = Path.GetRelativePath(root, project.FullPath).Replace('\\', '/') is
+                NodeGroupReader.ControlProject or ControlInputs.CoreProject;
             if (control)
             {
                 foreach (string name in UnsupportedControlIndirectInputs)

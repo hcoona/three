@@ -116,6 +116,44 @@ public sealed class ControlTestInputsTests(TestContext context)
         Assert.Contains("dependencies require a concrete adapter", failure.Message);
     }
 
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void CoreInputsFollowTheEvaluatedProjectReference(bool referenced)
+    {
+        const string coreRoot = "src/private/app/workflow-delivery/Core/";
+        const string source = coreRoot + "ReleaseDecisions.cs";
+        const string restoreLock = coreRoot + "packages.lock.json";
+        const string configuration = coreRoot + "version.json";
+        DotNetRevisionInputs inputs = EvaluatedControl();
+        DotNetGraphNode cli = Assert.ContainsSingle(inputs.Nodes).Native;
+        var core = cli with { Identity = new("/checkout/" + ControlInputs.CoreProject, new()) };
+        inputs = inputs with
+        {
+            Revision = inputs.Revision with
+            {
+                Entries = [.. inputs.Revision.Entries,
+                    NodeScenario.File(ControlInputs.CoreProject), NodeScenario.File(source),
+                    NodeScenario.File(restoreLock)],
+            },
+            Graph = inputs.Graph with
+            { Edges = referenced ? [new(cli.Identity, core.Identity)] : [] },
+            Nodes = [.. inputs.Nodes, new(ControlInputs.CoreProject, core, [source])],
+            Inputs = [.. inputs.Inputs, new(restoreLock, new("/checkout/" + restoreLock,
+                "RestoreLock", "LockedRestore", core.Identity))],
+            SelectionInputs = [.. inputs.SelectionInputs, new(configuration,
+                [ControlInputs.CoreProject])],
+        };
+
+        ControlSourceInput[] coreInputs = ControlInputs.Read(inputs, true)!.Sources
+            .Where(input => input.Path.StartsWith(coreRoot, StringComparison.Ordinal)).ToArray();
+        ControlSourceInput[] expected = referenced
+            ? [new(source, "ControlSource", true), new(restoreLock, "RestoreLock", true),
+                new(configuration, "ControlConfiguration", false)]
+            : [];
+        CollectionAssert.AreEquivalent(expected, coreInputs);
+    }
+
     private static DotNetRevisionInputs EvaluatedControl()
     {
         string project = NodeGroupReader.ControlProject;

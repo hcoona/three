@@ -223,6 +223,9 @@
         "resolved": "10.0.8",
         "contentHash": "w9sjhVDe4AKkyswUctVK3oCmZHaA7g+ZUG/xDmzgbsOGxmeRQA6lCQeAh6r75K0lcsLlfBzZXmsNblndyNJhxw=="
       },
+      "workflowdelivery.core": {
+        "type": "Project"
+      },
       "System.IO.Hashing": {
         "type": "CentralTransitive",
         "requested": "[10.0.14, )",

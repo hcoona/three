@@ -1,3 +1,4 @@
+using WorkflowDelivery.Core;
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Platform;
 
@@ -22,13 +23,6 @@ internal enum DestinationReadbackMode
     None,
     Required,
     AllowCancellation,
-}
-
-internal enum DestinationVersionRead
-{
-    BeforeGate,
-    PublisherOnly,
-    Unavailable,
 }
 
 internal sealed record DestinationProfile(
@@ -100,14 +94,13 @@ internal static class ReleaseEngine
             IsSatisfiedState(profile, file.State) ||
             profile.Verification == DestinationVerificationMode.StoreAccepted &&
                 file.State == ReleaseFileState.Unobserved &&
-                (observation.Subject.DryRun ||
-                    profile.VersionRead != DestinationVersionRead.BeforeGate));
+                !ReleaseDecisions.CanReadBeforeGate(profile.VersionRead,
+                    observation.Subject.DryRun));
 
     private static bool StoreMaySubmit(DestinationProfile profile,
         ReleaseObservationResult before) =>
-        before.StoreState == (profile.VersionRead == DestinationVersionRead.Unavailable
-            ? StoreState.Unobserved : StoreState.Absent) &&
-        ObservationProceeds(profile, before.Observation);
+        ReleaseDecisions.MaySubmit(profile.VersionRead, before.StoreState,
+            ObservationProceeds(profile, before.Observation));
 
     internal static bool WriteNeeded(ReleaseObservation observation) =>
         observation.Files.Any(file =>

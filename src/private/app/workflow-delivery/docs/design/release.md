@@ -154,9 +154,16 @@ use bounded reads. This does not remove fresh manual same-revision recovery.
 For NuGet, the [native publisher source basis](../research/nuget-native-publisher.md)
 records the accepted integration boundary and the selected client's behavior.
 
-Release owns permission to proceed and business completion through the pure
-[`ReleaseEngine`](../../Release/ReleaseEngine.cs) protocol core and four shared
-stage transfer envelopes (`ReleasePreparationResult`,
+For browser stores, the [Release decision core](../../Core/ReleaseDecisions.cs)
+decides whether a request can read the version before the gate and whether
+the publisher's fresh observation permits submission. Store adapters describe
+the read capability and supply native evidence; the core performs no I/O.
+The CLI uses the read decision before acquiring credentials.
+[`ReleaseEngine`](../../Release/ReleaseEngine.cs) applies the submission
+decision both before writing and when validating a write receipt.
+
+Release coordinates publication and business completion through four
+shared stage transfer envelopes (`ReleasePreparationResult`,
 `ReleaseObservationResult`, `ReleasePublicationResult` and
 `ReleaseCompletionResult`). Each concrete
 [`IDestinationAdapter`](../../Destinations/ReleaseAdapters.cs) declares its
