@@ -113,6 +113,28 @@ for when a grant is needed and how it ends.
   presentation, qualification, and dry-run acceptance; version transition and
   Official dispatch remain owner directed. Retain reviews, `GOV-011`, and `Validate`.
 
+### Extract the Workflow Delivery Release read and write decisions
+
+- **Work carrier:** [Issue #1947](https://github.com/hcoona/three/issues/1947)
+  and its linked implementation pull request.
+- **Accepted inputs:** Workflow Delivery's [requirements](../src/private/app/workflow-delivery/docs/requirements.md),
+  [Release design](../src/private/app/workflow-delivery/docs/design/release.md)
+  and [native contracts](../src/private/app/workflow-delivery/docs/middle-level-design.md#integration-mapping).
+  The [component and port specification](../src/private/app/workflow-delivery/docs/design/component-contracts.md)
+  provides an independent comparison; it does not replace those contracts.
+- **Advancement and outcome:** move the existing decisions about when a
+  destination can be read and when a fresh observation permits a write into a
+  C# core with no third-party dependencies. Use it from the existing Release
+  publisher for the browser stores; leave native reads, writes and completion
+  evidence with their existing owners. Include only the build, test selection
+  and design updates needed by this first production consumer.
+- **Exclusions and closure:** preserve caller behavior, transfer formats and
+  native approval. No CI engine, plugin migration, new verification gate,
+  release dispatch, publication, credential/access change or live proving.
+  Use ordinary credential-free local and PR checks; retain independent review
+  and `GOV-011` disposition. Remove this entry with the accepted extraction,
+  or on an explicit owner stop. Further stages of #1947 need their own grant.
+
 ### Design and plan sheet-music recognition
 
 - **Work carrier:** [Issue #686](https://github.com/hcoona/three/issues/686),
