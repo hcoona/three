@@ -2,9 +2,12 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using WorkflowDelivery.Core;
 using WorkflowDelivery.Destinations;
+using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
+using WorkflowDelivery.Repository;
 using WorkflowDelivery.Tests.CI;
 using GitFixture = WorkflowDelivery.Tests.Repository.GitReaderTests.GitFixture;
 
@@ -13,6 +16,8 @@ namespace WorkflowDelivery.Tests.Release;
 [TestClass]
 public sealed class BrowserStorePreparationTests(TestContext context)
 {
+    private static readonly string[] AllOutputs = ["chrome-zip", "firefox-zip", "firefox-sources",
+        "edge-zip"];
     private static GitFixture? shared;
     private static string sharedRevision = "";
 
@@ -39,7 +44,7 @@ public sealed class BrowserStorePreparationTests(TestContext context)
     [DataRow("chrome-web-store", "chrome-zip")]
     [DataRow("firefox-amo", "firefox-sources,firefox-zip")]
     [DataRow("edge-addons", "edge-zip")]
-    public async Task OneUnprivilegedBuildQualifiesOnlyTheStoreOriginals(string store,
+    public async Task OneUnprivilegedUnitBuildProjectsOnlyTheSelectedStoreOriginals(string store,
         string outputs)
     {
         using Fixture fixture = new(store);
@@ -67,10 +72,47 @@ public sealed class BrowserStorePreparationTests(TestContext context)
             result.Prepared.Anchor.ReleaseNotes);
         Assert.AreEqual(4, result.Prepared.Anchor.Assets.Length +
             result.Prepared.Anchor.AllowedSiblingAssets!.Length);
+        string[] siblings = Directory.GetFiles(Path.Combine(fixture.Scratch, "original"))
+            .Select(path => Path.GetFileName(path))
+            .Except(result.Prepared.Files.Select(file => Path.GetFileName(file.Path))).ToArray();
+        CollectionAssert.AreEquivalent(siblings, result.Prepared.Anchor.AllowedSiblingAssets);
         Assert.IsTrue(result.Prepared.Anchor.Assets.All(file => file.Version == "1.2.0-dev.7" &&
             file.Name.StartsWith("steam-account-history-to-csv-1.2.0-dev.7-",
                 StringComparison.Ordinal)));
         ReleaseAdapters.BrowserStore.ValidatePreparation(result);
+    }
+
+    [TestMethod]
+    public async Task NativeProducerReturnsAllBoundOriginalsWithoutAStoreRequest()
+    {
+        using Fixture fixture = new("chrome-web-store");
+        QualifiedUnitOriginals? result = await fixture.RunNativeAsync((_, run) => run(),
+            context.CancellationToken);
+
+        Assert.IsNotNull(result);
+        Assert.AreEqual(sharedRevision, result.Subject.Revision);
+        CollectionAssert.AreEquivalent(
+            AllOutputs, result.Files.Select(file => file.Output.Id).ToArray());
+        foreach (UnitOriginal file in result.Files)
+        {
+            Assert.AreEqual("1.2.0.7", file.Version);
+            Assert.IsTrue(OwnedFile.Matches(file.Path, file.Size, file.Sha256));
+        }
+    }
+
+    [TestMethod]
+    public async Task ChangedSiblingAfterConsumerInvalidatesTheEntireNativeBuild()
+    {
+        using Fixture fixture = new("chrome-web-store");
+        InvalidDataException failure = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            fixture.RunNativeAsync(async (name, run) =>
+            {
+                if (name == "original-bytes")
+                    File.AppendAllText(Directory.GetFiles(Path.Combine(fixture.Scratch, "original"),
+                        "*-edge.zip").Single(), "changed");
+                await run();
+            }, context.CancellationToken));
+        Assert.AreEqual("Qualified original changed during checks.", failure.Message);
     }
 
     [TestMethod]
@@ -259,6 +301,19 @@ public sealed class BrowserStorePreparationTests(TestContext context)
         internal Task<ReleasePreparationResult> RunAsync(CancellationToken token) =>
             BrowserStorePreparation.PrepareAsync(Request, ExecuteAsync,
                 (_, _, _, _) => new("1.2.0.7", "1.2.0-dev.7"), token);
+
+        internal Task<QualifiedUnitOriginals?> RunNativeAsync(RecordNativeCheck check,
+            CancellationToken token)
+        {
+            BrowserStoreUnit unit = BrowserStorePreparation.DefaultUnit;
+            ReleaseBuild build = unit.Source.Builds.Single();
+            var subject = new UnitBuildSubject(sharedRevision, unit.Id, unit.Declaration, build.Id,
+                build.EntryPoint,
+                [.. build.Outputs.Select(o => new UnitOutput(o.Id, o.Role, o.Kind))]);
+            return BrowserExtensionPackage.QualifyAsync(subject, checkout, Scratch,
+                unit.ProductDirectory, new(unit.ManifestName, "1.2.0.7", "1.2.0-dev.7"),
+                check, command => ExecuteAsync(command, token), token);
+        }
 
         private Task<NativeCommandResult> ExecuteAsync(NativeCommand command,
             CancellationToken token)

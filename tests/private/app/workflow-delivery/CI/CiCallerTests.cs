@@ -185,7 +185,7 @@ public sealed class CiCallerTests(TestContext context)
         string path = Run(0, "caller-dotnet", "prepare", source, state, endpoints).Output.Trim();
         var request = files.Read(path, TransferJson.Default.DotNetGroupRequest);
         Assert.AreEqual(request.CandidateFiles, request.BasisFiles);
-        Assert.AreEqual(files.At("transfer/control/WorkflowDelivery.dll"),
+        Assert.AreEqual(files.At("transfer/control/WorkflowDelivery.DotNet.dll"),
             request.CandidateFiles.Assembly);
         Assert.AreEqual(endpoint, request.Candidate);
         Assert.AreEqual(source, request.Completion.Checkout);
@@ -193,6 +193,9 @@ public sealed class CiCallerTests(TestContext context)
         Assert.IsEmpty(Directory.EnumerateFileSystemEntries(request.Completion.Scratch));
         Run(2, "caller-dotnet", "bootstrap", source, files.At("checkout/state"), transfer);
         Run(2, "caller-dotnet", "bootstrap", source, files.Root, transfer);
+        File.Delete(files.At("transfer/control/WorkflowDelivery.DotNet.dll"));
+        Assert.Contains("lacks its .NET task assembly", Run(2, "caller-dotnet", "bootstrap",
+            source, files.At("no-task"), transfer).Error);
         File.Delete(files.At("transfer/control/WorkflowDelivery.deps.json"));
         Run(2, "caller-dotnet", "bootstrap", source, files.At("incomplete"), transfer);
     }

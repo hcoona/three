@@ -24,6 +24,13 @@ internal static class DotNetPackageArchive
         return new NuspecReader(nuspec).GetIdentity();
     }
 
+    internal static bool MatchesIdentity(string path, string name, string version) =>
+        PackageIdentityComparer.Default.Equals(
+            Identity(path), new(name, NuGetVersion.Parse(version)));
+
+    internal static void RequireIdentity(string path, Dictionary<string, string> expected) =>
+        RequireIdentity(Identity(path), expected);
+
     // A null framework set is the single-framework smoke recipe without dependencies;
     // otherwise each declared framework has one library group and dependency groups stay
     // within that set.

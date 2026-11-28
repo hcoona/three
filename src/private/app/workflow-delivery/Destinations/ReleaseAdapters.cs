@@ -99,8 +99,7 @@ internal sealed class NuGetDestinationAdapter : IDestinationAdapter
             file.Size, file.Sha256);
         DotNetPackageConsumer.RequireFile(original.Path);
         DotNetPackageArchive.RequireOriginal(original);
-        DotNetPackageArchive.RequireIdentity(DotNetPackageArchive.Identity(original.Path),
-            preparation.Native);
+        DotNetPackageArchive.RequireIdentity(original.Path, preparation.Native);
         return original;
     }
 

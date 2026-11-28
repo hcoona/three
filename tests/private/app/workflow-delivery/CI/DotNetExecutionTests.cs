@@ -68,12 +68,12 @@ public sealed class DotNetExecutionTests(TestContext context)
         Assert.IsNotNull(result.BatchBuild);
         DotNetBuildRequest request = JsonSerializer.Deserialize(await File.ReadAllTextAsync(
             Path.Combine(fixture.Scratch, "build-request.json"), context.CancellationToken),
-            TransferJson.Default.DotNetBuildRequest)!;
+            DotNetNativeJson.Default.DotNetBuildRequest)!;
         Assert.AreEqual("true", Assert.ContainsSingle(request.Entries).Globals["IsGraphBuild"]);
         Assert.Contains("-target:TestSelected", fixture.Commands[1].Arguments);
         DotNetTestRequest tests = JsonSerializer.Deserialize(await File.ReadAllTextAsync(
             Path.Combine(fixture.Scratch, "test-request.json"), context.CancellationToken),
-            TransferJson.Default.DotNetTestRequest)!;
+            DotNetNativeJson.Default.DotNetTestRequest)!;
         DotNetTestEntry test = Assert.ContainsSingle(tests.Entries);
         Assert.AreEqual(target, test.TestTarget);
         CollectionAssert.AreEquivalent(request.Entries[0].Globals, test.Identity.Globals);

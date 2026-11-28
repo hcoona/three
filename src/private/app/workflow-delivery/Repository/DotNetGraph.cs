@@ -125,13 +125,13 @@ internal static class DotNetGraph
             .Select(group => group.ToArray()))
             if (variants.Any(node => !node.RequiredTools!.SequenceEqual(
                 variants[0].RequiredTools!)))
-                throw Unavailable(variants[0].Identity, DotNetTools.Item,
+                throw Unavailable(variants[0].Identity, DotNetRequiredTools.Item,
                     "Variants of one project declare different required tools.");
         DotNetGraphEdge[] edges = retained.SelectMany(node =>
             node.ProjectReferences.Where(dependency => !helpers.Contains(dependency))
             .Select(dependency =>
                 new DotNetGraphEdge(identities[node], identities[dependency]))).ToArray();
-        var control = ControlInputs.Reachable(root, nodes, edges, required: false);
+        var control = DotNetRepositoryReader.ReachableControl(root, nodes, edges, required: false);
         DotNetGraphInput[] inputs = retained.SelectMany(node =>
         {
             ProjectInstance project = node.ProjectInstance;
@@ -214,19 +214,19 @@ internal static class DotNetGraph
 
         string[] RequiredTools(ProjectInstance project, DotNetNodeIdentity identity)
         {
-            ProjectItemInstance[] items = project.GetItems(DotNetTools.Item).ToArray();
+            ProjectItemInstance[] items = project.GetItems(DotNetRequiredTools.Item).ToArray();
             if (items.Length == 0) return [];
             // Metadata includes item-definition metadata but not built-in item metadata.
             if (items.Any(item => item.Metadata.Any()))
-                throw Unavailable(identity, DotNetTools.Item,
+                throw Unavailable(identity, DotNetRequiredTools.Item,
                     "Required tool declarations do not accept metadata.");
             if (TestCapability(project, identity) == "None")
-                throw Unavailable(identity, DotNetTools.Item,
+                throw Unavailable(identity, DotNetRequiredTools.Item,
                     "Only test projects declare required tools.");
-            try { return DotNetTools.Names(items.Select(item => item.EvaluatedInclude)); }
+            try { return DotNetRequiredTools.Names(items.Select(item => item.EvaluatedInclude)); }
             catch (InvalidDataException error)
             {
-                throw Unavailable(identity, DotNetTools.Item, error.Message);
+                throw Unavailable(identity, DotNetRequiredTools.Item, error.Message);
             }
         }
 
@@ -234,7 +234,7 @@ internal static class DotNetGraph
             new($"Native fact unavailable at revision {request.Revision}, endpoint {root}, " +
                 $"project {identity.Project}, globals " +
                 System.Text.Json.JsonSerializer.Serialize(identity.Globals,
-                    TransferJson.Default.DictionaryStringString) +
+                    DotNetNativeJson.Default.DictionaryStringString) +
                 $", role {role}: {reason}");
 
         DotNetRestoreInputs[] RestoreInputs(ProjectGraphNode node)
@@ -426,12 +426,12 @@ public sealed class DotNetGraphTask : ITask
     public bool Execute()
     {
         DotNetGraphRequest request = JsonSerializer.Deserialize(File.ReadAllText(RequestFile),
-            TransferJson.Default.DotNetGraphRequest)
+            DotNetNativeJson.Default.DotNetGraphRequest)
             ?? throw new InvalidDataException("Missing native graph request.");
         DotNetGraphResponse response = DotNetGraph.Read(request);
         using var output = new FileStream(request.Destination, FileMode.CreateNew,
             FileAccess.Write, FileShare.None);
-        JsonSerializer.Serialize(output, response, TransferJson.Default.DotNetGraphResponse);
+        JsonSerializer.Serialize(output, response, DotNetNativeJson.Default.DotNetGraphResponse);
         using var diagnostics = new StreamWriter(new FileStream(
             request.Destination + ".host.log", FileMode.CreateNew, FileAccess.Write,
             FileShare.None));

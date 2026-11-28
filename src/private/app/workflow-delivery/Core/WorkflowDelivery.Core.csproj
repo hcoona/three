@@ -10,5 +10,6 @@
     <InternalsVisibleTo Include="WorkflowDelivery" />
     <InternalsVisibleTo Include="WorkflowDelivery.Engine" />
     <InternalsVisibleTo Include="WorkflowDelivery.Tests" />
+    <InternalsVisibleTo Include="WorkflowDelivery.DotNet;WorkflowDelivery.Node;WorkflowDelivery.Python;WorkflowDelivery.Ruby" />
   </ItemGroup>
 </Project>

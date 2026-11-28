@@ -57,7 +57,7 @@ internal static class NuGetPublisher
         if (!PackageIdentityComparer.Default.Equals(identity,
                 new PackageIdentity(file.Name, NuGetVersion.Parse(file.Version))) ||
             !OwnedFile.Matches(path, file.Size, file.Sha256) ||
-            !PackageIdentityComparer.Default.Equals(identity, DotNetPackageArchive.Identity(path)))
+            !DotNetPackageArchive.MatchesIdentity(path, identity.Id, file.Version))
             throw new InvalidDataException("Original NuGet package identity or bytes changed.");
         cancellation.ThrowIfCancellationRequested();
         using var standard = new HttpClientHandler

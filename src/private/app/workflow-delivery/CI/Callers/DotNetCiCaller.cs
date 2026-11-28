@@ -37,6 +37,7 @@ internal static class DotNetCiCaller
     {
         CiCallerTransfer.External(root, directory);
         string application = CiCallerTransfer.Application(transfer);
+        _ = DotNetTaskHost.InDistribution(application);
         if (!File.Exists(Path.Combine(transfer, "python-control.zip")) ||
             !File.Exists(Path.Combine(transfer, "ruby", "facts.rb")))
             throw new InvalidDataException("Candidate native helper transfer is incomplete.");
@@ -66,7 +67,8 @@ internal static class DotNetCiCaller
         if (endpoints.Full && endpoints.Basis.Reference != endpoints.Candidate.Reference)
             throw new InvalidDataException("Explicit full has a different basis.");
         string state = CiCallerTransfer.Fresh(Path.Combine(directory, "planning"));
-        DotNetReadFiles files(string name) => new(control.Application,
+        DotNetReadFiles files(string name) => new(
+            DotNetTaskHost.InDistribution(control.Application),
             Path.Combine(state, name + ".proj"), Path.Combine(state, name + "-graph-request.json"),
             Path.Combine(state, name + "-graph.json"), 900);
         DotNetReadFiles candidateFiles = files("candidate");
@@ -90,7 +92,8 @@ internal static class DotNetCiCaller
             TransferJson.Default.DotNetGroupRequest);
         ControlTestInputRequest controlRequest = CiCallerTransfer.Read(controlRequestPath,
             TransferJson.Default.ControlTestInputRequest);
-        if (CiCallerTransfer.Application(transfer) != request.CandidateFiles.Assembly ||
+        if (DotNetTaskHost.InDistribution(CiCallerTransfer.Application(transfer)) !=
+            request.CandidateFiles.Assembly ||
             controlRequest.Comparison != new CiComparison(request.Basis.Reference,
                 request.Candidate.Reference, request.Full))
             throw new

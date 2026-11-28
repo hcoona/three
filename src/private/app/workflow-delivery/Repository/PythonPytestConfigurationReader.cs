@@ -1,5 +1,4 @@
 using System.Text.Json;
-using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Repository;
@@ -49,7 +48,7 @@ internal sealed class PythonPytestConfigurationReader
                 throw new InvalidDataException(
                     "Native pytest configuration input is not absolute.");
             string input = Path.GetRelativePath(directory, configuration).Replace('\\', '/');
-            ImpactPlanner.ValidatePath(input);
+            OwnedPath.RequireRepositoryRelative(input);
             string[] targets = facts.GetProperty("testpaths").EnumerateArray().Select(Text)
                 .ToArray();
             if (targets.Length == 0 || targets.Distinct(StringComparer.Ordinal).Count() !=
@@ -58,7 +57,7 @@ internal sealed class PythonPytestConfigurationReader
                     "Native pytest requires explicit unique test paths.");
             foreach (string target in targets)
             {
-                ImpactPlanner.ValidatePath(target);
+                OwnedPath.RequireRepositoryRelative(target);
                 if (target.IndexOfAny(['*', '?', '[', ']']) >= 0)
                     throw new InvalidDataException("Unsupported native pytest target shape.");
             }

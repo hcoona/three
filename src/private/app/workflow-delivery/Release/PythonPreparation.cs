@@ -41,7 +41,6 @@ internal static class PythonPreparation
         // Validate Git-free scratch before creating any owned execution state.
         PythonPackageOperations.RequireGitFreeScratch(scratch);
         var qualification = new ReleaseQualification(execute, token);
-        var files = new List<ReleaseFile>();
         var native = new Dictionary<string, string>(StringComparer.Ordinal);
         Dictionary<string, string?> environment = EnvironmentFor(scratch, checkout,
             request.Subject);
@@ -50,7 +49,6 @@ internal static class PythonPreparation
         PythonPackageOperations? operations = null;
         string[] required = Required;
         ReleaseBuild? build = null;
-        PythonDistribution[] originals = [];
         string name = "", version = "";
         string? releaseNotes = null;
 
@@ -99,34 +97,11 @@ internal static class PythonPreparation
             native.Add("python", pythonVersion);
             native.Add("uv", uvVersion);
         });
-        await qualification.CheckAsync("build", async () => originals =
-            await operations!.BuildAsync(name, version, ExecuteAsync, token));
-        await qualification.CheckAsync("contents", () =>
-            operations!.ContentsAsync(originals, name, version, ExecuteAsync, token));
-        await qualification.CheckAsync("wheel-consumer", () =>
-            operations!.ConsumeAsync("python-wheel", originals, name, version, ExecuteAsync,
-                token));
-        await qualification.CheckAsync("sdist-consumer", () =>
-            operations!.ConsumeAsync("python-sdist", originals, name, version, ExecuteAsync,
-                token));
-        if (required.Contains("tests"))
-            await qualification.CheckAsync("tests", () =>
-                operations!.TestReleaseAsync(ExecuteAsync, token));
-        await qualification.CheckAsync("original-bytes", () =>
-        {
-            foreach (PythonDistribution original in originals)
-                PythonPackageOperations.RequireOriginal(original);
-            foreach (PythonDistribution original in originals)
-            {
-                ReleaseOutput output = build!.Outputs.Single(value => value.Kind == original.Kind);
-                files.Add(new(build.Id, output.Id, original.Kind, name, version,
-                    Path.GetRelativePath(scratch, original.Path).Replace('\\', '/'),
-                    original.Length, original.Sha256));
-            }
-            return Task.CompletedTask;
-        });
+        ReleaseFile[] files = await UnitPreparation.QualifyAsync(request.Subject, build, scratch,
+            qualification, required, subject => operations!.QualifyAsync(subject, name, version,
+                qualification.CheckAsync, ExecuteAsync, token));
         PreparedGithubAnchor? anchor = releaseNotes is not null &&
-            qualification.Errors.Length == 0 && files.Count > 0
+            qualification.Errors.Length == 0 && files.Length > 0
                 ? new([.. files.Select(file => file with { Name = Path.GetFileName(file.Path) })],
                     releaseNotes)
                 : null;

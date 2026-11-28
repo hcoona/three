@@ -1,7 +1,5 @@
 using System.Reflection;
 using System.Text.Json;
-using System.Xml;
-using Microsoft.Build.Construction;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 using WorkflowDelivery.Repository;
@@ -20,8 +18,11 @@ internal sealed record NuGetReleaseUnit(string Id, string Declaration, string En
 
 internal sealed record NpmReleaseUnit(string Id, string Declaration, string SourceName,
     string BuddyName, string OfficialName, string Main, bool RegistryDependencies,
-    string[] Required, string Probe, ReleaseUnitDeclaration Source)
+    bool TestBeforeBuild, string Probe, ReleaseUnitDeclaration Source)
 {
+    internal NpmPackRecipe Native =>
+        new(SourceName, Main, RegistryDependencies, Probe, TestBeforeBuild);
+    internal string[] Required => Native.Required;
     internal string PackageName(ReleaseSubject subject) =>
         subject.Channel == "buddy" ? BuddyName : OfficialName;
 
@@ -30,10 +31,7 @@ internal sealed record NpmReleaseUnit(string Id, string Declaration, string Sour
             ? package[(slash + 1)..] : package;
 
     internal NativeCommand Import(string directory, string package, int deadlineSeconds = 60) =>
-        new("node", Path.Combine(directory, "consumer"),
-            ["--input-type=module", "--eval",
-                Probe.Replace("@@PACKAGE@@", package, StringComparison.Ordinal)],
-            deadlineSeconds);
+        NpmPackageOperations.Import(directory, package, Probe, deadlineSeconds);
 }
 
 internal sealed record PythonReleaseUnit(string Id, string Declaration, string ProjectDirectory,
@@ -52,12 +50,8 @@ internal sealed record GithubReleaseUnit(string Id, string Declaration, string P
     internal const string OfficialDestination = "github-release";
     internal const string BuildDefinition = "dotnet/github-release-assets-v1";
 
-    internal string Asset(string kind, string version) => kind switch
-    {
-        "inno-installer" => $"{AssetPrefix}-{version}-win-x64-setup.exe",
-        "portable-zip" => $"{AssetPrefix}-{version}-win-x64-portable.zip",
-        _ => throw new InvalidDataException("Unsupported GitHub Release asset kind."),
-    };
+    internal WindowsAssetsRecipe Native => new(AssetPrefix, Executable, Editor);
+    internal string Asset(string kind, string version) => Native.Asset(kind, version);
 
     internal static string Tag(ReleaseSubject subject, string version) =>
         (subject.Channel == "buddy" ? "buddy/" : "release/") + subject.Unit + "/v" + version;
@@ -85,6 +79,10 @@ internal static class ReleaseUnitCatalog
 
     internal static IEnumerable<NpmReleaseUnit> NpmUnits =>
         ByDefinition("node/npm-package-v1").Select(ToNpm);
+
+    internal static NativeCommand AdoptedNpmImport(string directory) =>
+        NpmUnits.Single(unit => unit.OfficialName == AdoptedNpmPackage.PackageName)
+            .Import(directory, AdoptedNpmPackage.PackageName, deadlineSeconds: 30);
 
     internal static IEnumerable<PythonReleaseUnit> PythonUnits =>
         ByDefinition("python/distribution-set-v1").Select(ToPython);
@@ -200,10 +198,17 @@ internal static class ReleaseUnitCatalog
     }
 
     internal static PythonPackageOperations PythonPackage(string id, PythonPackageTools tools,
-        string root) => new(Python(id), tools, root);
+        string root)
+    {
+        PythonReleaseUnit unit = Python(id);
+        return new(new(unit.Id, unit.ProjectDirectory, unit.StaticVersion, unit.RuntimeClosure,
+            unit.Tests, unit.Api), tools, root);
+    }
 
     internal static RubyPackageOperations RubyPackage(RubyReleaseUnit unit, RubyFactTools tools,
-        string gem, string nbgv, string state) => new(unit, tools, gem, nbgv, state);
+        string gem, string nbgv, string state) =>
+        new(new(unit.Id, unit.Require, unit.NbgvEnv, unit.LockedBundle, unit.Dependencies,
+            unit.Probe, unit.Preset == RubyPackageChecks.RSpecPreset), tools, gem, nbgv, state);
 
     // Returns the unit's own directory plus ProjectReference companion directories from its
     // embedded .csproj manifest.
@@ -214,28 +219,6 @@ internal static class ReleaseUnitCatalog
         foreach (string companion in unit.CompanionDirectories)
             roots.Add(companion);
         return [.. roots];
-    }
-
-    internal static IEnumerable<string> CompanionDirectoriesFromCsproj(string projectDirectory,
-        string csprojXml)
-    {
-        ProjectRootElement root = OpenProjectRoot(csprojXml);
-        foreach (ProjectItemElement item in root.Items
-                     .Where(el => el.ItemType == "ProjectReference" &&
-                         string.IsNullOrEmpty(el.Include) is false))
-        {
-            string combined = NormalizeRelativePath(projectDirectory + "/" +
-                item.Include.Replace('\\', '/'));
-            yield return ParentDirectory(combined);
-        }
-    }
-
-    private static ProjectRootElement OpenProjectRoot(string csprojXml)
-    {
-        using var collection = new Microsoft.Build.Evaluation.ProjectCollection();
-        using var textReader = new StringReader(csprojXml);
-        using var xmlReader = XmlReader.Create(textReader);
-        return ProjectRootElement.Create(xmlReader, collection);
     }
 
     internal static string NormalizeRelativePath(string path)
@@ -277,22 +260,17 @@ internal static class ReleaseUnitCatalog
         string csprojXml = store.TryGetValue(manifestPath, out string? xml)
             ? xml
             : throw new InvalidDataException($"Missing embedded .csproj manifest {manifestPath}.");
-        ProjectRootElement root = OpenProjectRoot(csprojXml);
+        DotNetProjectManifest manifest = DotNetProjectManifest.Read(csprojXml);
         string stem = Path.GetFileNameWithoutExtension(build.EntryPoint);
-        string packageId = ReadUnconditionalProperty(root, "PackageId") ?? stem;
-        string assemblyName = ReadUnconditionalProperty(root, "AssemblyName") ?? stem;
-        string[] companions = [.. CompanionDirectoriesFromCsproj(projectDirectory, csprojXml)
+        string packageId = manifest.PackageId ?? stem;
+        string assemblyName = manifest.AssemblyName ?? stem;
+        string[] companions = [.. manifest.ProjectReferences.Select(reference => ParentDirectory(
+            NormalizeRelativePath(projectDirectory + "/" + reference.Replace('\\', '/'))))
             .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
+        var qual = (NuGetQualification?)build.Qualification;
         return new(decl.Id, decl.SourcePath, build.EntryPoint, packageId, assemblyName,
-            build.Qualification?.Probe, build.Qualification?.Analyzers ?? [],
-            build.Qualification?.Declarations, companions, decl);
+            qual?.Probe, qual?.Analyzers ?? [], qual?.Declarations, companions, decl);
     }
-
-    private static string? ReadUnconditionalProperty(ProjectRootElement root,
-        string propertyName) =>
-        root.Properties.FirstOrDefault(prop => prop.Name == propertyName
-            && string.IsNullOrEmpty(prop.Condition))?.Value.Trim() is { Length: > 0 } value
-                ? value : null;
 
     private static NpmReleaseUnit ToNpm(ReleaseUnitDeclaration decl)
     {
@@ -312,21 +290,16 @@ internal static class ReleaseUnitCatalog
             && deps.ValueKind == JsonValueKind.Object && deps.EnumerateObject().Any();
         string buddyName = sourceName.StartsWith("@hcoona/", StringComparison.Ordinal)
             ? sourceName : "@hcoona/" + sourceName;
-        ReleaseQualificationSpec qual = build.Qualification
+        NpmQualification qual = build.Qualification as NpmQualification
             ?? throw new InvalidDataException($"Missing npm qualification on {decl.Id}.");
-        string[] required = qual.TestBeforeBuild
-            ? ["native-input", "test", "build", "pack", "contents", "consumer", "original-bytes"]
-            : ["native-input", "build", "test", "pack", "contents", "consumer", "original-bytes"];
         return new(decl.Id, decl.SourcePath, sourceName, buddyName, sourceName,
-            main, registryDeps, required,
-            qual.Probe ?? throw new InvalidDataException($"Missing npm probe on {decl.Id}."),
-            decl);
+            main, registryDeps, qual.TestBeforeBuild, qual.Probe, decl);
     }
 
     internal static PythonReleaseUnit ToPython(ReleaseUnitDeclaration decl)
     {
         ReleaseBuild build = decl.Builds.Single();
-        ReleaseQualificationSpec? qual = build.Qualification;
+        var qual = (PythonQualification?)build.Qualification;
         bool staticVersion = qual?.StaticVersion ?? false;
         if (staticVersion && decl.Id != "nbgv-python")
             throw new InvalidDataException(
@@ -341,24 +314,21 @@ internal static class ReleaseUnitCatalog
     private static RubyReleaseUnit ToRuby(ReleaseUnitDeclaration decl)
     {
         ReleaseBuild build = decl.Builds.Single();
-        ReleaseQualificationSpec qual = build.Qualification
+        RubyQualification qual = build.Qualification as RubyQualification
             ?? throw new InvalidDataException($"Missing Ruby qualification on {decl.Id}.");
         return new(decl.Id, decl.SourcePath,
             qual.RSpec ? RubyPackageChecks.RSpecPreset : RubyPackageChecks.Preset,
-            qual.Require ?? decl.Id, qual.NbgvEnv, qual.LockedBundle, qual.Dependencies ?? [],
-            qual.Probe ?? throw new InvalidDataException($"Missing Ruby probe on {decl.Id}."),
-            decl);
+            qual.Require ?? decl.Id, qual.NbgvEnv, qual.LockedBundle, qual.Dependencies,
+            qual.Probe, decl);
     }
 
     private static GithubReleaseUnit ToGithubRelease(ReleaseUnitDeclaration decl)
     {
         ReleaseBuild build = decl.Builds.Single();
-        ReleaseQualificationSpec qual = build.Qualification
+        WindowsAssetsQualification qual = build.Qualification as WindowsAssetsQualification
             ?? throw new InvalidDataException("Missing GitHub Release qualification.");
         return new(decl.Id, decl.SourcePath, ParentDirectory(decl.SourcePath), build.EntryPoint,
-            qual.AssetPrefix ?? throw new InvalidDataException("Missing asset-prefix."),
-            qual.Executable ?? throw new InvalidDataException("Missing executable."),
-            qual.Editor ?? throw new InvalidDataException("Missing editor."), decl);
+            qual.AssetPrefix, qual.Executable, qual.Editor, decl);
     }
 
     internal static BrowserStoreUnit ToBrowserStore(ReleaseUnitDeclaration decl)
@@ -367,10 +337,10 @@ internal static class ReleaseUnitCatalog
             throw new InvalidDataException(
                 "Browser stores must remain Official-only for live releases.");
         ReleaseBuild build = decl.Builds.Single();
-        ReleaseQualificationSpec qual = build.Qualification
+        BrowserExtensionQualification qual = build.Qualification as BrowserExtensionQualification
             ?? throw new InvalidDataException($"Missing browser-store qualification on {decl.Id}.");
         return new(decl.Id, decl.SourcePath, ParentDirectory(decl.SourcePath),
-            qual.ManifestName ?? throw new InvalidDataException("Missing manifest-name."), decl);
+            qual.ManifestName, decl);
     }
 
     private sealed record CatalogSnapshot(

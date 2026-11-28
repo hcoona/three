@@ -285,31 +285,69 @@
       "workflowdelivery": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Build": "[18.9.6, )",
-          "Microsoft.Build.Framework": "[18.9.6, )",
-          "Microsoft.Build.Utilities.Core": "[18.9.6, )",
           "Microsoft.Extensions.FileSystemGlobbing": "[10.0.14, )",
           "Newtonsoft.Json": "[13.0.4, )",
-          "NuGet.Commands": "[8.0.0, )",
           "NuGet.Configuration": "[8.0.0, )",
-          "NuGet.Frameworks": "[8.0.0, )",
           "NuGet.Packaging": "[8.0.0, )",
-          "NuGet.ProjectModel": "[8.0.0, )",
           "NuGet.Protocol": "[8.0.0, )",
           "NuGet.Versioning": "[8.0.0, )",
           "System.Security.Cryptography.ProtectedData": "[10.0.14, )",
           "WorkflowDelivery.Core": "[1.0.0, )",
+          "WorkflowDelivery.DotNet": "[1.0.0, )",
           "WorkflowDelivery.Engine": "[1.0.0, )",
+          "WorkflowDelivery.NativePlatform": "[1.0.0, )",
+          "WorkflowDelivery.Node": "[1.0.0, )",
+          "WorkflowDelivery.Python": "[1.0.0, )",
+          "WorkflowDelivery.Ruby": "[1.0.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
       "workflowdelivery.core": {
         "type": "Project"
       },
+      "workflowdelivery.dotnet": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Build": "[18.9.6, )",
+          "Microsoft.Build.Framework": "[18.9.6, )",
+          "Microsoft.Build.Utilities.Core": "[18.9.6, )",
+          "NuGet.Commands": "[8.0.0, )",
+          "NuGet.Frameworks": "[8.0.0, )",
+          "NuGet.Packaging": "[8.0.0, )",
+          "NuGet.ProjectModel": "[8.0.0, )",
+          "NuGet.Versioning": "[8.0.0, )",
+          "WorkflowDelivery.Core": "[1.0.0, )",
+          "WorkflowDelivery.NativePlatform": "[1.0.0, )"
+        }
+      },
       "workflowdelivery.engine": {
         "type": "Project",
         "dependencies": {
           "WorkflowDelivery.Core": "[1.0.0, )"
+        }
+      },
+      "workflowdelivery.nativeplatform": {
+        "type": "Project"
+      },
+      "workflowdelivery.node": {
+        "type": "Project",
+        "dependencies": {
+          "WorkflowDelivery.Core": "[1.0.0, )",
+          "WorkflowDelivery.NativePlatform": "[1.0.0, )"
+        }
+      },
+      "workflowdelivery.python": {
+        "type": "Project",
+        "dependencies": {
+          "WorkflowDelivery.Core": "[1.0.0, )",
+          "WorkflowDelivery.NativePlatform": "[1.0.0, )"
+        }
+      },
+      "workflowdelivery.ruby": {
+        "type": "Project",
+        "dependencies": {
+          "WorkflowDelivery.Core": "[1.0.0, )",
+          "WorkflowDelivery.NativePlatform": "[1.0.0, )"
         }
       },
       "Microsoft.Extensions.FileSystemGlobbing": {

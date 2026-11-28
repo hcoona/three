@@ -79,9 +79,8 @@ internal static class DotNetExecution
                 var nativeRequest = new DotNetBuildRequest(builds.Select(build =>
                     nodes[build.Work.Key].Identity).ToArray(), response);
                 await File.WriteAllTextAsync(input, JsonSerializer.Serialize(nativeRequest,
-                    TransferJson.Default.DotNetBuildRequest), token);
-                string assembly = SecurityElement.Escape(
-                    typeof(DotNetBuildTask).Assembly.Location)!;
+                    DotNetNativeJson.Default.DotNetBuildRequest), token);
+                string assembly = SecurityElement.Escape(DotNetTaskHost.AssemblyPath)!;
                 string requestFile = SecurityElement.Escape(input)!;
                 await File.WriteAllTextAsync(wrapper, $"""
                     <Project>
@@ -109,7 +108,7 @@ internal static class DotNetExecution
                 {
                     await using var file = File.OpenRead(response);
                     DotNetBuildResponse projection = await JsonSerializer.DeserializeAsync(file,
-                        TransferJson.Default.DotNetBuildResponse, token)
+                        DotNetNativeJson.Default.DotNetBuildResponse, token)
                         ?? throw new InvalidDataException("Missing native build response.");
                     if (projection.Entries is null)
                         throw new InvalidDataException("Missing native build entries.");
@@ -199,9 +198,8 @@ internal static class DotNetExecution
                     return new DotNetTestEntry(node.Identity, TestTarget(node));
                 }).ToArray(), receipts);
                 await File.WriteAllTextAsync(input, JsonSerializer.Serialize(nativeRequest,
-                    TransferJson.Default.DotNetTestRequest), token);
-                string assembly = SecurityElement.Escape(
-                    typeof(DotNetTestTask).Assembly.Location)!;
+                    DotNetNativeJson.Default.DotNetTestRequest), token);
+                string assembly = SecurityElement.Escape(DotNetTaskHost.AssemblyPath)!;
                 string requestFile = SecurityElement.Escape(input)!;
                 await File.WriteAllTextAsync(wrapper, $"""
                     <Project>
@@ -254,7 +252,7 @@ internal static class DotNetExecution
                 CheckStatus status = fallback;
                 string? failure = error;
                 // A receipt is written only after its own submission completed natively.
-                string receipt = DotNetTestTask.Receipt(receipts, index);
+                string receipt = DotNetTaskHost.TestReceipt(receipts, index);
                 if (receipted && File.Exists(receipt))
                 {
                     try
@@ -311,7 +309,7 @@ internal static class DotNetExecution
     {
         await using var file = File.OpenRead(receipt);
         return await JsonSerializer.DeserializeAsync(file,
-            TransferJson.Default.DotNetTestEntryResult)
+            DotNetNativeJson.Default.DotNetTestEntryResult)
             ?? throw new InvalidDataException("Missing native test receipt.");
     }
 

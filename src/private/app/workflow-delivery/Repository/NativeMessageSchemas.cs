@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Schema;
 using System.Text.Json.Serialization.Metadata;
+using WorkflowDelivery.Destinations;
 
 namespace WorkflowDelivery.Repository;
 
@@ -11,9 +12,9 @@ internal static class NativeMessageSchemas
     internal static IReadOnlyDictionary<string, JsonNode> Export() => new Dictionary<string,
         JsonNode>
     {
-        ["ruby-fact-request"] = Schema(TransferJson.Default.RubyFactRequest),
-        ["ruby-source-request"] = Schema(RubyFactJson.Default.RubySourceRequest),
-        ["ruby-source-answer"] = Schema(RubyFactJson.Default.RubySourceAnswer),
+        ["ruby-fact-request"] = Schema(RubyFactJson.Default.RubyFactRequest),
+        ["ruby-source-request"] = Schema(RubySourceJson.Default.RubySourceRequest),
+        ["ruby-source-answer"] = Schema(RubySourceJson.Default.RubySourceAnswer),
         ["ruby-source"] = Schema(RubyFactJson.Default.RubySourceMessage),
         ["ruby-archive"] = Schema(RubyFactJson.Default.RubyArchiveMessage),
         ["ruby-context"] = Schema(RubyFactJson.Default.RubyContextMessage),

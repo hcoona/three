@@ -5,11 +5,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <DefaultItemExcludes>$(DefaultItemExcludes);Core/**;Engine/**;docs/**;README.md</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Core/**;Engine/**;Ecosystems/DotNet/**;Ecosystems/Node/**;Ecosystems/Python/**;Ecosystems/Ruby/**;Platform/**;docs/**;README.md</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Repository/GitReader.cs;Repository/GitMaterialization.cs;Repository/DotNetGraph.cs;Repository/DotNetConfigurationInputs.cs;Repository/DotNetNativeInputs.cs;Repository/DotNetRepositoryReader.cs;Repository/MsBuildResourceReader.cs;Repository/NbgvInputReader.cs;CI/DotNetBuildTask.cs;CI/DotNetTestTask.cs;Ecosystems/DotNetPackage*.cs</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Repository/Pnpm*Reader.cs;Ecosystems/AdoptedNpmPackage.cs;Ecosystems/NodePackageArchive.cs;Ecosystems/NpmPackageOperations.cs;Ecosystems/BrowserExtensionArchive.cs</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Repository/PythonNativeGraphReader.cs;Repository/PythonDependencyProjection.cs;Repository/PythonMetadataReader.cs;Repository/PythonPassiveReader.cs;Repository/PythonPytestConfigurationReader.cs;Ecosystems/PythonPackageOperations.cs</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Repository/RubyNativeFactCollector.cs;Repository/RubyNativeFactsReader.cs;Repository/RubyDependencyProjection.cs;Ecosystems/RubyPackageOperations.cs</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="Core/WorkflowDelivery.Core.csproj" />
     <ProjectReference Include="Engine/WorkflowDelivery.Engine.csproj" />
+    <ProjectReference Include="Ecosystems/DotNet/WorkflowDelivery.DotNet.csproj;Ecosystems/Node/WorkflowDelivery.Node.csproj;Ecosystems/Python/WorkflowDelivery.Python.csproj;Ecosystems/Ruby/WorkflowDelivery.Ruby.csproj;Platform/WorkflowDelivery.NativePlatform.csproj" />
+    <Compile Include="Platform/GitHubComparison.cs;Platform/RunnerLog.cs" />
     <InternalsVisibleTo Include="WorkflowDelivery.Tests" />
     <EmbeddedResource Include="Repository/resources/hk-scope-copies.json" LogicalName="HkScopeCopies" />
     <EmbeddedResource Include="../../../../src/public/**/workflow-delivery.release-unit.yml"
@@ -27,23 +33,8 @@
     <PackageReference Include="NuGet.Protocol" />
     <PackageReference Include="Newtonsoft.Json" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" />
-    <PackageReference Include="Microsoft.Build" />
-    <PackageReference Include="Microsoft.Build.Framework" />
-    <PackageReference Include="Microsoft.Build.Utilities.Core" />
-    <PackageReference Include="NuGet.ProjectModel" />
     <PackageReference Include="NuGet.Configuration" />
-    <PackageReference Include="NuGet.Commands" />
     <PackageReference Include="NuGet.Packaging" />
     <PackageReference Include="NuGet.Versioning" />
-    <PackageReference Include="NuGet.Frameworks" />
   </ItemGroup>
-  <Target Name="ReferenceOfficialNbgv" BeforeTargets="ResolveAssemblyReferences">
-    <Error Condition="'$(NerdbankGitVersioningTasksPath)' == ''" Text="The official NBGV task path is unavailable." />
-    <ItemGroup>
-      <Reference Include="Nerdbank.GitVersioning">
-        <HintPath>$(NerdbankGitVersioningTasksPath)Nerdbank.GitVersioning.dll</HintPath>
-        <Private>true</Private>
-      </Reference>
-    </ItemGroup>
-  </Target>
 </Project>

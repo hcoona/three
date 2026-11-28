@@ -1,4 +1,4 @@
-using System.Text.Json;
+using WorkflowDelivery.Core;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
@@ -14,16 +14,6 @@ internal static class BrowserStorePreparation
     internal const string EdgeAddons = "edge-addons";
     private static readonly string[] Required = ["native-input", "build", "contents",
         "consumer", "original-bytes"];
-
-    // Each WXT target zip; the Firefox build also emits the AMO source archive.
-    private static readonly (string Output, string Kind, string Script, string Suffix,
-        int Manifest)[] Outputs =
-    [
-        ("chrome-zip", "chrome-extension-zip", "zip", "chrome", 3),
-        ("firefox-zip", "firefox-extension-zip", "zip:firefox", "firefox", 2),
-        ("firefox-sources", "firefox-source-zip", "", "sources", 0),
-        ("edge-zip", "edge-extension-zip", "zip:edge", "edge", 3),
-    ];
 
     internal static string[] StoreOutputs(string store) => store switch
     {
@@ -71,7 +61,6 @@ internal static class BrowserStorePreparation
         if (!GitReader.IsCommitId(request.Subject.Revision))
             throw new InvalidDataException("Unsupported selected browser-store revision.");
         var qualification = new ReleaseQualification(execute, token);
-        var files = new List<ReleaseFile>();
         var environment = ReleasePreparationContext.CreateHomeEnvironment(scratch,
             ["PATH", "SystemRoot", "WINDIR", "PATHEXT", "DOTNET_ROOT", "DOTNET_ROOT_X64",
                 "GITHUB_ACTIONS", "GITHUB_REF", "GITHUB_SHA", "GITHUB_RUN_ID", "GITHUB_RUN_NUMBER",
@@ -88,9 +77,8 @@ internal static class BrowserStorePreparation
             request.Subject.Declaration);
         if (unit.Id != registered.Id || unit.Builds is not
             [{ Definition: "node/browser-extension-v1", EntryPoint: "package.json" } build] ||
-            !build.Outputs.Select(output => (output.Id, output.Role, output.Kind)).Order()
-                .SequenceEqual(Outputs.Select(output => (output.Output, output.Manifest == 0
-                    ? "source-package" : "primary-package", output.Kind)).Order()))
+            !build.Outputs.Select(o => new UnitOutput(o.Id, o.Role, o.Kind)).ToHashSet()
+                .SetEquals(BrowserExtensionPackage.Outputs))
             throw new InvalidDataException("Unsupported complete browser-extension definition.");
         await ReleasePreparationContext.RequireCommittedInputsAsync(bound,
             ["mise.toml", "mise.lock", "pnpm-lock.yaml", "pnpm-workspace.yaml",
@@ -122,65 +110,15 @@ internal static class BrowserStorePreparation
                     request.Subject.Revision, changelogPath);
             }
         });
-        string originals = Path.Combine(scratch, "original");
-        Directory.CreateDirectory(originals);
-        await qualification.CheckAsync("build", async () =>
-        {
-            foreach (var target in Outputs.Where(target => target.Script.Length != 0))
-                await RunAsync("build", new("pnpm", checkout, ["--dir", product,
-                    "--config.verify-deps-before-run=false", "run", target.Script], 600));
-            foreach (var target in Outputs)
-            {
-                string name = $"{registered.Id}-{projected.Npm}-{target.Suffix}.zip";
-                string source = Path.Combine(output, name);
-                OwnedFile.RequireExists(source, "Required npm output is missing or not a file: "
-                    + source);
-                File.Copy(source, Path.Combine(originals, name), overwrite: false);
-            }
-        });
-        var originalsByOutput = new Dictionary<string, (string Path, long Size, string Sha256)>(
-            StringComparer.Ordinal);
-        await qualification.CheckAsync("contents", async () =>
-        {
-            foreach (var target in Outputs)
-            {
-                string relative = $"original/{registered.Id}-{projected.Npm}-{target.Suffix}.zip";
-                string path = Path.Combine(scratch, relative);
-                (long size, string sha256) = await OwnedFile.MeasureAsync(path, token,
-                    emptyMessage: "Native browser extension output is empty.");
-                originalsByOutput.Add(target.Output, (relative, size, sha256));
-                if (target.Manifest == 0)
-                    BrowserExtensionArchive.ValidateSources(path, registered.ProductDirectory);
-                else
-                    BrowserExtensionArchive.ValidateMembers(path);
-            }
-        });
-        // A store loads the zip root as an unpacked extension: its manifest must carry the
-        // NBGV projection and resolve every declared file without the source checkout.
-        await qualification.CheckAsync("consumer", () =>
-        {
-            var expected = new BrowserExtensionExpectation(registered.ManifestName,
-                projected.Manifest, projected.Npm);
-            foreach (var target in Outputs.Where(target => target.Manifest != 0))
-                BrowserExtensionArchive.ValidateExtension(Path.Combine(scratch,
-                    originalsByOutput[target.Output].Path), target.Manifest, expected);
-            return Task.CompletedTask;
-        });
+        ReleaseFile[] all = await UnitPreparation.QualifyAsync(request.Subject, build, scratch,
+            qualification, Required, subject => BrowserExtensionPackage.QualifyAsync(subject,
+                checkout, scratch, registered.ProductDirectory, new(registered.ManifestName,
+                    projected.Manifest, projected.Npm), qualification.CheckAsync,
+                command => RunAsync("build", command), token));
         string[] selectedOutputs = StoreOutputs(request.Subject.Destination);
-        await qualification.CheckAsync("original-bytes", async () =>
-        {
-            foreach (string selected in selectedOutputs)
-            {
-                (string path, long size, string sha256) = originalsByOutput[selected];
-                await OwnedFile.VerifyAsync(Path.Combine(scratch, path), size, sha256,
-                    "Qualified original changed during checks.", token);
-                files.Add(new(build.Id, selected, Outputs.Single(target =>
-                    target.Output == selected).Kind, registered.Id, projected.Manifest, path, size,
-                    sha256));
-            }
-        });
+        ReleaseFile[] files = [.. all.Where(file => selectedOutputs.Contains(file.Output))];
         PreparedGithubAnchor? anchor = releaseNotes is not null &&
-            qualification.Errors.Length == 0 && files.Count > 0
+            qualification.Errors.Length == 0 && files.Length > 0
                 ? new(
                     [.. files.Select(file => file with
                     {
@@ -188,10 +126,8 @@ internal static class BrowserStorePreparation
                         Version = projected.Npm,
                     })],
                     releaseNotes,
-                    [.. Outputs.Where(target => !selectedOutputs.Contains(target.Output,
-                            StringComparer.Ordinal))
-                        .Select(target =>
-                            $"{registered.Id}-{projected.Npm}-{target.Suffix}.zip")])
+                    [.. all.Where(file => !selectedOutputs.Contains(file.Output))
+                        .Select(file => Path.GetFileName(file.Path))])
                 : null;
         return new(new(request.Subject, [.. files], Required.ToArray(), qualification.Checks,
                 Anchor: anchor),

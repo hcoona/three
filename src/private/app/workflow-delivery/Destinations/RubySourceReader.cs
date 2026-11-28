@@ -1,10 +1,22 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
-using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Destinations;
+
+internal sealed record RubySourceRequest(string Host, string Name, string Version,
+    string Directory);
+internal sealed record RubySourceAnswer(string State, string? Name = null, string? Version = null,
+    string? Platform = null, string? Path = null, long? Size = null, string? Sha256 = null);
+
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,
+    RespectNullableAnnotations = true, RespectRequiredConstructorParameters = true,
+    UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow)]
+[JsonSerializable(typeof(RubySourceRequest))]
+[JsonSerializable(typeof(RubySourceAnswer))]
+internal partial class RubySourceJson : JsonSerializerContext;
 
 internal sealed record RubySourceTools(string Ruby, string Helper, string Scratch);
 internal sealed record RubyReadCredential(string User, string Token);
@@ -47,7 +59,7 @@ internal static class RubySourceReader
         string input = Path.Combine(scratch, "request.json");
         await File.WriteAllTextAsync(input, JsonSerializer.Serialize(new RubySourceRequest(host,
             name, version, download),
-                RubyFactJson.Default.RubySourceRequest), token);
+                RubySourceJson.Default.RubySourceRequest), token);
         var environment = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (string key in new[] { "SystemRoot", "WINDIR", "PATHEXT" })
             environment[key] = Environment.GetEnvironmentVariable(key);
@@ -81,7 +93,7 @@ internal static class RubySourceReader
             if (Encoding.UTF8.GetByteCount(reached.Stdout) > 256 * 1024)
                 return Unknown("Native Ruby source answer exceeds its result limit.");
             RubySourceAnswer value = JsonSerializer.Deserialize(reached.Stdout,
-                RubyFactJson.Default.RubySourceAnswer)
+                RubySourceJson.Default.RubySourceAnswer)
                 ?? throw new JsonException("Missing native Ruby source answer.");
             switch (value.State)
             {

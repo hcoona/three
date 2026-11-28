@@ -44,7 +44,7 @@ internal static class Program
         }
         catch (Exception exception) when (exception is IOException or InvalidDataException or
             JsonException or ArgumentException or UnauthorizedAccessException or TimeoutException or
-            Nerdbank.GitVersioning.GitException or KeyNotFoundException)
+            KeyNotFoundException || NbgvInputReader.IsGitError(exception))
         {
             RunnerLog.Write(error, exception.Message, CiCallerTransfer.MessagePrefix);
             return 2;

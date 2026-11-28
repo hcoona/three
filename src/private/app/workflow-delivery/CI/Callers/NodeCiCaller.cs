@@ -34,7 +34,8 @@ internal static class NodeCiCaller
         if (!OwnerPresent(await new
             GitReader(context.Candidate.Directory).ReadAsync(context.Candidate.Reference, token)))
             throw new InvalidDataException("The candidate must retain the control application.");
-        DotNetReadFiles files(string name) => new(context.Application,
+        DotNetReadFiles files(string name) => new(
+            DotNetTaskHost.InDistribution(context.Application),
             Path.Combine(directory, name + "-control.proj"),
             Path.Combine(directory, name + "-control-request.json"),
             Path.Combine(directory, name + "-control-graph.json"), 900);

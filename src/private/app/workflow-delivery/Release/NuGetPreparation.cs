@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Microsoft.Build.Evaluation;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
@@ -14,15 +13,9 @@ internal static class NuGetPreparation
     internal const string Preset = "dotnet/hcoona-release-smoke-github-packages-v1";
     internal static readonly string[] Required = ["native-input", "build", "pack", "contents",
         "consumer", "original-bytes"];
-    private static readonly string[] Versions = ["PackageId", "NuGetPackageVersion",
-        "PackageVersion", "AssemblyVersion", "AssemblyFileVersion", "AssemblyInformationalVersion"];
     private static readonly string[] TestProperties = ["IsTestProject",
         "IsTestingPlatformApplication"];
-    private static readonly string[] Dimensions = ["-property:Configuration=Release",
-        "-property:TargetFramework=", "-property:RuntimeIdentifier=",
-        "-property:ContinuousIntegrationBuild=true", "-property:RestoreLockedMode=true"];
-    internal const string SuppressCloudVariables =
-        "-property:NBGV_SetCloudBuildVersionVars=false";
+    internal const string SuppressCloudVariables = DotNetPackRecipe.SuppressCloudVariables;
 
     internal static Task<ReleasePreparationResult> PrepareAsync(ReleasePreparationRequest request,
         CancellationToken token) => PrepareAsync(request, NativeProcess.ExecuteAsync, token);
@@ -39,16 +32,12 @@ internal static class NuGetPreparation
             request.Checkout, request.Scratch, PathMessage,
             "NuGet Release requires fresh external scratch.");
         var qualification = new ReleaseQualification(execute, token);
-        var files = new List<ReleaseFile>();
-        var native = new Dictionary<string, string>(StringComparer.Ordinal);
-        ReleaseUnitDeclaration? unit = null;
         NuGetReleaseUnit registered = ReleaseUnitCatalog.AdmitNuGet(request.Subject);
         string framework = "";
         string[]? frameworks = null;
         ReleaseBuild? build = null;
         string project = "";
-        DotNetOriginalPackage? original = null;
-        string originals = Directory.CreateDirectory(Path.Combine(scratch, "original")).FullName;
+        DotNetPackRecipe? operations = null;
         Dictionary<string, string?> environment = EnvironmentFor(scratch, request.Subject);
 
         await qualification.CheckAsync("native-input", async () =>
@@ -59,7 +48,8 @@ internal static class NuGetPreparation
                     "NuGet Release requires the exact selected revision.");
             GitMaterialization bound = await GitMaterialization.BindAsync(checkout,
                 request.Subject.Revision, token);
-            unit = ReleaseUnitDeclarationReader.Read(await bound.ReadOptionalTextAsync(
+            ReleaseUnitDeclaration unit =
+                ReleaseUnitDeclarationReader.Read(await bound.ReadOptionalTextAsync(
                 request.Subject.Declaration, token) ??
                 throw new InvalidDataException("Missing committed NuGet release declaration."),
                 request.Subject.Declaration);
@@ -118,95 +108,25 @@ internal static class NuGetPreparation
                     recipe[name] != "" && !recipe[name].Equals("false",
                         StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidDataException("Unsupported native variants or required tests.");
-            native = await ProjectionAsync("native-input", "GetBuildVersion");
-            if (native["NETCoreSdkVersion"] != selected ||
-                native["PackageId"] != registered.PackageId ||
-                native["AssemblyName"] != registered.AssemblyName)
+            operations =
+                new(checkout, scratch, project, framework, frameworks, registered.AssemblyName,
+                registered.Probe, registered.Declarations, registered.Analyzers, RunAsync);
+            await operations.ReadVersionAsync(token);
+            if (operations.Native["NETCoreSdkVersion"] != selected ||
+                operations.Native["PackageId"] != registered.PackageId ||
+                operations.Native["AssemblyName"] != registered.AssemblyName)
                 throw new InvalidDataException("Unsupported native NuGet product or SDK.");
         });
-        await qualification.CheckAsync("build", async () =>
-            Compare(await ProjectionAsync("build", "Build")));
-        await qualification.CheckAsync("pack", async () =>
-        {
-            string response = Path.Combine(scratch, "pack.json");
-            await RunAsync("pack", Query("Pack,_GetOutputItemsFromPack", response,
-                ["-property:PackageOutputPath=" + ProjectCollection.Escape(originals)]));
-            using JsonDocument document = await DotNetPackageResults.ResponseAsync(response, token);
-            DotNetPackageResults.Target(document.RootElement, "Pack");
-            Dictionary<string, string> packed =
-                DotNetPackageResults.Properties(document.RootElement);
-            DotNetPackageResults.Validate(project, framework, "", packed);
-            Compare(packed);
-            ReleaseOutput output = build!.Outputs[0];
-            original = DotNetPackageResults.Archive(unit!.Id, build.Id, output.Id, output.Role,
-                output.Kind, document.RootElement, originals, packed, registered.Library &&
-                    packed["IncludeSymbols"].Equals("true", StringComparison.OrdinalIgnoreCase));
-            native = packed;
-        });
-        await qualification.CheckAsync("contents", () =>
-        {
-            DotNetPackageArchive.RequireOriginal(original!);
-            DotNetPackageArchive.Contents(original!.Path, native, frameworks, registered.Analyzers);
-            return Task.CompletedTask;
-        });
-        await qualification.CheckAsync("consumer", async () =>
-            await DotNetPackageConsumer.RunAsync(original!, native, Path.Combine(scratch, "probe"),
-                300, (command, cancellation) => RunAsync("consumer", command, cancellation),
-                token, registered.Library ? new("net" +
-                    Version.Parse(native["NETCoreSdkVersion"]).Major + ".0",
-                    registered.Probe!, registered.AssemblyName, true, registered.Declarations)
-                    : null));
-        await qualification.CheckAsync("original-bytes", () =>
-        {
-            DotNetPackageArchive.RequireOriginal(original!);
-            files.Add(new(original!.Build, original.Output, original.Kind, native["PackageId"],
-                native["NuGetPackageVersion"], Path.GetRelativePath(scratch, original.Path)
-                    .Replace('\\', '/'), original.Size, original.Sha256));
-            return Task.CompletedTask;
-        });
+        ReleaseFile[] files = await UnitPreparation.QualifyAsync(request.Subject, build, scratch,
+            qualification, Required, subject => operations!.QualifyAsync(subject,
+                qualification.CheckAsync, token));
+        Dictionary<string, string> native = operations?.Native ?? new(StringComparer.Ordinal);
         // Physical paths are execution facts, not transferred consumer expectations.
         native.Remove("MSBuildProjectFullPath");
         if (native.TryGetValue("DocumentationFile", out string? documentation))
             native["DocumentationFile"] = Path.GetFileName(documentation.Replace('\\', '/'));
         return new(new(request.Subject, [.. files], Required.ToArray(), qualification.Checks),
             native, qualification.Commands, qualification.Errors);
-
-        NativeCommand Query(string targets, string response, string[]? extra = null) => new(
-            "dotnet", checkout, ["msbuild", DotNetCli.DisableBuildServers, project, "-nologo",
-                "-noAutoResponse",
-                // The multi-target outer build dispatches to inner builds, so its own
-                // version projection exists only after it runs the versioning target.
-                "-target:" + (registered.Library && targets != "GetBuildVersion"
-                    ? "GetBuildVersion," + targets : targets), "-getTargetResult:" + targets,
-                "-getProperty:" + string.Join(',', DotNetPackageResults.NativeProperties),
-                "-getResultOutputFile:" + response, .. Dimensions.Where(dimension =>
-                    !registered.Library || dimension != "-property:TargetFramework=").Select(
-                    dimension => dimension == "-property:TargetFramework=" ? dimension + framework
-                        : dimension),
-                "-property:PathMap=" + ProjectCollection.Escape(checkout + "=/_/"),
-                // Concurrent inner builds would each append NBGV's discarded cloud-build
-                // variables to the one GITHUB_ENV file and can collide on its lock.
-                SuppressCloudVariables, .. (extra ?? [])], 300,
-            environment, false);
-
-        async Task<Dictionary<string, string>> ProjectionAsync(string check, string target)
-        {
-            string response = Path.Combine(scratch, check + ".json");
-            await RunAsync(check, Query(target, response));
-            using JsonDocument document = await DotNetPackageResults.ResponseAsync(response, token);
-            DotNetPackageResults.Target(document.RootElement, target);
-            Dictionary<string, string> values =
-                DotNetPackageResults.Properties(document.RootElement);
-            DotNetPackageResults.Validate(project, framework, "", values);
-            return values;
-        }
-
-        void Compare(Dictionary<string, string> values)
-        {
-            if (Versions.Any(name => values[name] != native[name]))
-                throw new InvalidDataException(
-                    "Native version recomputation differs across Release phases.");
-        }
 
         Task<NativeCommandResult> RunAsync(string check, NativeCommand command,
             CancellationToken? cancellation = null)

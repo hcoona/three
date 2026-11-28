@@ -143,7 +143,7 @@ internal static class DotNetPackageResults
                 Path.ChangeExtension(archive, ".snupkg")))
             throw new InvalidDataException(
                 "The complete original native archive set is missing or undeclared.");
-        DotNetPackageArchive.RequireIdentity(DotNetPackageArchive.Identity(archive), expected);
+        DotNetPackageArchive.RequireIdentity(archive, expected);
         (long size, string sha256) = OwnedFile.Measure(archive);
         return new(unit, build, output, role, kind, archive, size, sha256);
     }

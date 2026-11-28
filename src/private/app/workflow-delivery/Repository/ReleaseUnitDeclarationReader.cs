@@ -1,34 +1,38 @@
+using System.Text.Json.Serialization;
 using static WorkflowDelivery.Repository.StrictYaml;
 
 namespace WorkflowDelivery.Repository;
 
 internal sealed record ReleaseOutput(string Id, string Role, string Kind);
 
-internal sealed record ReleaseQualificationSpec(
-    string? Probe = null,
-    string? Declarations = null,
-    string[]? Analyzers = null,
-    string[]? Api = null,
-    string? Tests = null,
-    bool TestBeforeBuild = false,
-    bool StaticVersion = false,
-    bool RuntimeClosure = false,
-    string? Require = null,
-    bool NbgvEnv = false,
-    bool LockedBundle = false,
-    bool RSpec = false,
-    string[]? Dependencies = null,
-    string? AssetPrefix = null,
-    string? Executable = null,
-    string? Editor = null,
-    string? ManifestName = null);
+[JsonDerivedType(typeof(NuGetQualification), "nuget")]
+[JsonDerivedType(typeof(NpmQualification), "npm")]
+[JsonDerivedType(typeof(PythonQualification), "python")]
+[JsonDerivedType(typeof(RubyQualification), "ruby")]
+[JsonDerivedType(typeof(WindowsAssetsQualification), "windows-assets")]
+[JsonDerivedType(typeof(BrowserExtensionQualification), "browser-extension")]
+[JsonDerivedType(typeof(InventoryQualification), "unregistered")]
+internal abstract record BuildQualification;
+internal sealed record NuGetQualification(string Probe, string? Declarations, string[] Analyzers)
+    : BuildQualification;
+internal sealed record NpmQualification(string Probe, bool TestBeforeBuild) : BuildQualification;
+internal sealed record PythonQualification(string[] Api, string? Tests, bool StaticVersion,
+    bool RuntimeClosure, string[] Dependencies) : BuildQualification;
+internal sealed record RubyQualification(string Probe, string? Require, bool NbgvEnv,
+    bool LockedBundle, bool RSpec, string[] Dependencies) : BuildQualification;
+internal sealed record WindowsAssetsQualification(string AssetPrefix, string Executable,
+    string Editor) : BuildQualification;
+internal sealed record BrowserExtensionQualification(string ManifestName) : BuildQualification;
+// Unknown definitions can be inventoried for comparison; they are not executable recipes.
+internal sealed record InventoryQualification(
+    Dictionary<string, string[]> Fields) : BuildQualification;
 
 internal sealed record ReleaseBuild(
     string Id,
     string Definition,
     string EntryPoint,
     ReleaseOutput[] Outputs,
-    ReleaseQualificationSpec? Qualification = null);
+    BuildQualification? Qualification = null);
 
 internal sealed record ReleaseUnitDeclaration(
     string SourcePath,
@@ -54,13 +58,6 @@ internal static class ReleaseUnitDeclarationReader
 
     private static readonly string[] BuildAllowedKeys =
         ["id", "definition", "entry-point", "outputs", "qualification"];
-
-    private static readonly string[] QualificationAllowedKeys =
-    [
-        "probe", "declarations", "analyzers", "api", "tests", "test-before-build",
-        "static-version", "runtime-closure", "require", "nbgv-env", "locked-bundle",
-        "rspec", "dependencies", "asset-prefix", "executable", "editor", "manifest-name",
-    ];
 
     internal static ReleaseUnitDeclaration Read(string content, string sourcePath)
     {
@@ -106,40 +103,71 @@ internal static class ReleaseUnitDeclarationReader
                     throw new InvalidDataException("Duplicate release output identity.");
                 outputs.Add(new(outputId, Identity(output["role"]), Identity(output["kind"])));
             }
-            ReleaseQualificationSpec? qualification = build.TryGetValue("qualification",
-                out object? qualNode) ? ParseQualification(qualNode, declaration) : null;
+            BuildQualification? qualification = build.TryGetValue("qualification",
+                out object? qualNode) ? ParseQualification(qualNode, definition) : null;
             builds.Add(new(buildId, definition, entryPoint, [.. outputs], qualification));
         }
         return new(path, id, [.. builds], channels);
     }
 
-    private static ReleaseQualificationSpec ParseQualification(object? node, string context)
+    private static BuildQualification ParseQualification(object? node, string definition)
     {
-        Dictionary<string, object?> map = MappingWithOptional(node, context, [],
-            QualificationAllowedKeys);
-        string? OptionalText(string key) => map.TryGetValue(key, out object? v) ? Text(v) : null;
-        bool Flag(string key) => map.TryGetValue(key, out object? v) && Boolean(v, context);
-        string[]? Strings(string key) => map.TryGetValue(key, out object? v)
-            ? [.. Sequence(v).Select(Text)] : null;
-        return new(
-            Probe: OptionalText("probe"),
-            Declarations: OptionalText("declarations"),
-            Analyzers: Strings("analyzers"),
-            Api: Strings("api"),
-            Tests: OptionalText("tests") is { } t
-                ? RelativePath(t, allowDirectoryRoot: false) : null,
-            TestBeforeBuild: Flag("test-before-build"),
-            StaticVersion: Flag("static-version"),
-            RuntimeClosure: Flag("runtime-closure"),
-            Require: OptionalText("require"),
-            NbgvEnv: Flag("nbgv-env"),
-            LockedBundle: Flag("locked-bundle"),
-            RSpec: Flag("rspec"),
-            Dependencies: Strings("dependencies"),
-            AssetPrefix: OptionalText("asset-prefix"),
-            Executable: OptionalText("executable"),
-            Editor: OptionalText("editor"),
-            ManifestName: OptionalText("manifest-name"));
+        Dictionary<string, object?> map = Mapping(node, definition);
+        switch (definition)
+        {
+            case "dotnet/nuget-package-v1":
+                Only("probe", "declarations", "analyzers");
+                return new NuGetQualification(Required("probe"), Optional("declarations"),
+                    Strings("analyzers"));
+            case "node/npm-package-v1":
+                Only("probe", "test-before-build");
+                return new NpmQualification(Required("probe"), Flag("test-before-build"));
+            case "python/distribution-set-v1":
+                Only("api", "tests", "static-version", "runtime-closure", "dependencies");
+                return new PythonQualification(Strings("api"), Optional("tests") is { } tests
+                    ? RelativePath(tests, allowDirectoryRoot: false) : null, Flag("static-version"),
+                    Flag("runtime-closure"), Strings("dependencies"));
+            case "ruby/gem-v1":
+                Only("probe", "require", "nbgv-env", "locked-bundle", "rspec", "dependencies");
+                return new RubyQualification(
+                    Required("probe"), Optional("require"), Flag("nbgv-env"),
+                    Flag("locked-bundle"), Flag("rspec"), Strings("dependencies"));
+            case "dotnet/github-release-assets-v1":
+                Only("asset-prefix", "executable", "editor");
+                return new WindowsAssetsQualification(
+                    Required("asset-prefix"), Required("executable"),
+                    Required("editor"));
+            case "node/browser-extension-v1":
+                Only("manifest-name");
+                return new BrowserExtensionQualification(Required("manifest-name"));
+            default:
+                return new InventoryQualification(
+                    map.Keys.ToDictionary(key => key, key => key switch
+                {
+                    "analyzers" or "api" or "dependencies" => Strings(key),
+                    "test-before-build" or "static-version" or "runtime-closure" or "nbgv-env" or
+                        "locked-bundle" or "rspec" => [Flag(key) ? "true" : "false"],
+                    "tests" => [RelativePath(Required(key), allowDirectoryRoot: false)],
+                    "probe" or "declarations" or "require" or "asset-prefix" or "executable" or
+                        "editor" or "manifest-name" => [Required(key)],
+                    _ => throw new InvalidDataException(
+                        "Unknown inventory qualification field: " + key),
+                }, StringComparer.Ordinal));
+        }
+
+        void Only(params string[] allowed)
+        {
+            if (map.Keys.Except(allowed, StringComparer.Ordinal).Any())
+                throw new InvalidDataException($"Invalid qualification fields for {definition}.");
+        }
+        string? Optional(string key) =>
+            map.TryGetValue(key, out object? value) ? Text(value) : null;
+        string Required(string key) => Optional(key) ??
+            throw new InvalidDataException($"Missing {key} for {definition}.");
+        bool Flag(string key) =>
+            map.TryGetValue(key, out object? value) && Boolean(value, definition);
+        string[] Strings(string key) => map.TryGetValue(key, out object? value)
+            ? [.. Sequence(value).Select(Text)] : [];
     }
 
     private static Dictionary<string, object?> MappingWithOptional(object? node, string context,
