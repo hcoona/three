@@ -143,6 +143,25 @@ The abstraction keeps each single-note event's payload intact; it does not
 parse text, compute pitch inheritance, model chords or decide a pending arc's
 kind.
 
+### Canonical labels across two consecutive cuts
+
+[TextScoreLabels](TextScoreLabels.als) connects the two questions above. Two
+slurs start in system one, at the same or at different events; one ends in
+system two and the other in system three. The model compares the **visible**
+start marks, carry entries and end marks for both traversal orders, not the
+identity of an unprinted slur. It independently rebuilds the two endpoint
+pairs from those marks. All other tokens and both cuts are fixed.
+
+On Linux x64 with Alloy 6.2.0 and SAT4J, `OneTextAndGraph` found no
+counterexample. Both negative controls found one: freezing working names for
+identical carry entries can change the middle target; renumbering entries
+with different starts can attach the middle ending to the wrong start.
+The [Python split and assembly scenarios](../../tests/test_harness_systems.py)
+exercise both start arrangements at barlines: changing working names leaves
+all three serialized documents identical, and parsing and reassembling them
+returns the original canonical whole text. This does not cover other relation
+kinds, more simultaneous slurs, or arbitrary chains of systems.
+
 ### Reproduce the Alloy checks
 
 With the [locked Analyzer](../../../../../../docs/engineering/workspaces.md#alloy),
@@ -151,9 +170,11 @@ run from the repository root:
 ```shell
 mise run alloy:exec -- src/private/app/sheet-music-omr/docs/models/TextScoreTarget.als
 mise run alloy:exec -- src/private/app/sheet-music-omr/docs/models/TextScoreAssembly.als
+mise run alloy:exec -- src/private/app/sheet-music-omr/docs/models/TextScoreLabels.als
 ```
 
-On Linux x64, Alloy 6.2.0 with bundled SAT4J found no counterexample (UNSAT)
+For the target and assembly models, Alloy 6.2.0 with bundled SAT4J on Linux
+x64 found no counterexample (UNSAT)
 to the two target laws or the assembly law. Both deliberately false assertions
 produced counterexamples, and all five `run` witnesses were SAT. As a sensitivity
 check, changing the writer to emit only up-stems produced counterexamples to
