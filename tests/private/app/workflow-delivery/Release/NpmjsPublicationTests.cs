@@ -44,7 +44,7 @@ public sealed class NpmjsPublicationTests
         if (writes == 0) return;
         NativeCommand publish = commands.Single(command => command.Arguments[0] == "publish");
         CollectionAssert.AreEqual(new[] { "publish",
-            Path.Combine(files.Originals, "original/package.tgz"), "--registry",
+            Path.Combine(files.Originals, "original", "package.tgz"), "--registry",
             "https://registry.npmjs.org/", "--access", "public", "--provenance", "--tag", "beta",
             "--ignore-scripts", "--fetch-retries=0" }, publish.Arguments);
         Assert.IsFalse(publish.InheritEnvironment);

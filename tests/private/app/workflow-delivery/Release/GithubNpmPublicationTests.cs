@@ -46,7 +46,7 @@ public sealed class GithubNpmPublicationTests
         {
             NativeCommand publish = commands.Single(command => command.Arguments[0] == "publish");
             CollectionAssert.AreEqual(new[] { "publish",
-                Path.Combine(files.Originals, "original/package.tgz"), "--registry",
+                Path.Combine(files.Originals, "original", "package.tgz"), "--registry",
                 GithubNpmObservation.Registry, "--tag",
                 "buddy-sha-" + files.Prepared.Subject.Revision,
                 "--ignore-scripts", "--fetch-retries=0" }, publish.Arguments);

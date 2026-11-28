@@ -56,7 +56,8 @@ internal sealed class RubyPackageOperations(RubyPackageRecipe unit, RubyFactTool
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
-        if (!Path.Combine(checkout.Root, entryPoint).Equals(source.Gemspec, OwnedPath.Comparison) ||
+        string gemspec = Path.GetFullPath(entryPoint, checkout.Root);
+        if (!gemspec.Equals(source.Gemspec, OwnedPath.Comparison) ||
             source.Gem.Name != unit.Id || source.Gem.Version != version ||
             source.Gem.Platform != "ruby")
             throw new InvalidDataException("Native gem source identity differs.");
@@ -66,7 +67,7 @@ internal sealed class RubyPackageOperations(RubyPackageRecipe unit, RubyFactTool
             : tools.Environment;
         string archive = Path.Combine(state, "original.gem");
         await RunAsync(new(tools.Ruby, Path.Combine(checkout.Root, directory),
-            [gem, "build", "--norc", Path.Combine(checkout.Root, entryPoint), "--output", archive],
+            [gem, "build", "--norc", gemspec, "--output", archive],
             tools.DeadlineSeconds, environment, InheritEnvironment: false,
             CloseStandardInput: true), execute, token);
         (long length, string sha256) = await OwnedFile.MeasureAsync(archive, token,
