@@ -68,7 +68,7 @@ jobs:
         uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
           # Preserve the existing Java vendor semantics at both endpoints.
-          version: '2026.11.13'
+          version: '2026.11.14'
           experimental: true
           install_args: --jobs 1 dotnet node pnpm
       - name: Prepare required frameworks in the native SDK root
@@ -243,7 +243,7 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
-          version: '2026.11.13'
+          version: '2026.11.14'
           experimental: true
           install: false
 
@@ -374,7 +374,7 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
-          version: '2026.11.13'
+          version: '2026.11.14'
           experimental: true
           install: false
 
@@ -773,7 +773,7 @@ jobs:
       - name: Setup native tools
         uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
-          version: '2026.11.13'
+          version: '2026.11.14'
           experimental: true
           install_args: --jobs 1 dotnet node pnpm
       - name: Prepare required frameworks before starting the controller
@@ -1279,7 +1279,7 @@ jobs:
         if: steps.plan.outputs.python == 'true' || steps.plan.outputs.ruby == 'true' || steps.plan.outputs.node == 'true' || steps.plan.outputs.browser == 'true'
         uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
-          version: '2026.11.13'
+          version: '2026.11.14'
           experimental: true
           install_args: >-
             --jobs 1 dotnet
@@ -1498,7 +1498,7 @@ jobs:
         if: success() && !cancelled() && steps.scope.outputs.run == 'true'
         uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
-          version: '2026.11.13'
+          version: '2026.11.14'
           experimental: true
           install: false
       - name: Run scholarly project tests

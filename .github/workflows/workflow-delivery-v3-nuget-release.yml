@@ -57,7 +57,7 @@ jobs:
       - name: Prepare selected native tools
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
         with:
-          version: 2026.11.13
+          version: 2026.11.14
           experimental: true
           install_args: --jobs 1 dotnet
       - name: Prepare required frameworks in the native SDK root
@@ -127,7 +127,7 @@ jobs:
         name: Prepare runtime without product execution
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
         with:
-          version: 2026.11.13
+          version: 2026.11.14
           install: false
           working_directory: ${{ runner.temp }}
       - &install
