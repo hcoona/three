@@ -20,7 +20,7 @@
     "@commitlint/format": "^21.0.0",
     "@commitlint/types": "^21.0.0",
     "@playwright/mcp": "0.0.86",
-    "@upstash/context7-mcp": "4.7.3",
+    "@upstash/context7-mcp": "4.8.0",
     "ap-style-title-case": "^2.0.0",
     "markdownlint-cli2": "catalog:",
     "prettier": "catalog:"
