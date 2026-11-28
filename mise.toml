@@ -26,7 +26,7 @@ ruby = "4.0.9"
 
 # Package Managers
 pnpm = "12.22.0"
-uv = "0.13.9"
+uv = "0.13.10"
 
 # Git Commit Hook Manager
 "aqua:jdx/hk" = "2.13.0"
