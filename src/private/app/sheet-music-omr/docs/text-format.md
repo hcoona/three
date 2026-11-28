@@ -908,6 +908,12 @@ distance between two adjacent lines of a staff. Two positions closer than that
 are equal, and so are two distances that differ by less than that. A rule that
 compares positions or distances applies its case for equality, or its
 tie-break, to them.
+When choosing the nearest among several candidates, measure all distances
+first. Keep those less than a quarter space above the exact minimum, then
+apply the stated tie-break to that set. Repeat this procedure if the
+tie-break itself chooses the nearest. Do not compare candidates in pairs
+or chain near-equalities. For a dynamic it is the onset, not the identity
+of an event at that onset, that must be determined.
 
 ### Voices and staves
 
@@ -972,6 +978,8 @@ tie-break, to them.
   it reaches the right edge. At the left edge, the right end of the clef, key
   and time signatures printed at the start of the system counts in the same
   way, and an arc end nearest to it continues an arc from the previous system.
+  When the edge center is among the nearest centers, use the edge; an extent
+  holding the end still takes precedence.
 - Only a vertical wavy line beside the noteheads that it spans is an arpeggio.
   A smooth curve or a bracket there is not, and when the page does not
   establish what it is, it is undetermined.
@@ -986,8 +994,13 @@ tie-break, to them.
   a piece, a movement or a section, or a person such as its composer, or that
   give dates, an opus or catalogue number or a dedication. A word that gives a
   tempo is tempo, not heading text. Each printed line of heading text is one
-  `heading` line, in reading order: from top to bottom, and from left to right
-  among lines whose vertical extents overlap. Page numbers, running headers
+  `heading` line. Repeatedly consider the unwritten lines: a line must wait
+  while another line's bottom is at least a quarter space above its top.
+  Of the lines not waiting, write the one with the leftmost left edge first.
+  For this ordering use exact coordinates: break a left-edge tie by uppermost
+  top, then uppermost bottom, then by the Unicode scalar sequence of the
+  decoded heading text in ascending lexicographic order. Identical lines are
+  still written as many times as printed. Page numbers, running headers
   repeated on later pages, footers and copyright notices are not encoded.
 - Other printed words are encoded as printed. Words in an upright typeface above
   staff 1, and words printed with a metronome mark, are `tempo`. Other words are

@@ -37,3 +37,24 @@ SharedPoint: run { some disj a,b: candidates |
 check EndExists for 3 but 5 Int expect 0
 check EndNamesOneHead for 3 but 5 Int expect 1
 check DistinctHeightsSuffice for 3 but 5 Int expect 0
+
+// One margin under consideration. A hit on an extent outranks the margin;
+// outside all extents the margin competes as a center, also on an empty staff.
+one sig Margin { x: one Int }
+fact AtMargin { Margin.x in 0 + 5 }
+pred reachesEdge {
+  no c: Chord | gap[c.x,Arc.tipX] <= c.halfWidth
+  no c: Chord | gap[c.x,Arc.tipX] < gap[Margin.x,Arc.tipX]
+}
+assert HeadOrEdge {
+  not reachesEdge implies some candidates
+  (some c: Chord | gap[c.x,Arc.tipX] <= c.halfWidth or
+    gap[c.x,Arc.tipX] < gap[Margin.x,Arc.tipX]) implies not reachesEdge
+}
+ExtentBeatsCloserMargin: run { not reachesEdge and some c: Chord |
+  gap[Margin.x,Arc.tipX] < gap[c.x,Arc.tipX] and
+  gap[c.x,Arc.tipX] <= c.halfWidth } for 3 but 5 Int expect 1
+MarginTie: run { reachesEdge and some c: Chord |
+  c.x != Margin.x and gap[c.x,Arc.tipX] = gap[Margin.x,Arc.tipX] }
+  for 3 but 5 Int expect 1
+check HeadOrEdge for 3 but 5 Int expect 0

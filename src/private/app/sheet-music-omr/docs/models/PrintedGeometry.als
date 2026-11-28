@@ -7,10 +7,10 @@ fun coord: set Int { {i: Int | i >= 0 and i <= 7} }
 fun dist[a,b: Int]: Int { a >= b => sub[a,b] else sub[b,a] }
 pred near[a,b: Int] { dist[a,b] < 2 }
 
-sig Heading { x, top, bottom: one Int }
-fact SeparateColumns {
+sig Heading { x, top, bottom, words: one Int }
+fact Coordinates {
   all h: Heading | h.x + h.top + h.bottom in coord and h.top < h.bottom
-  all disj a,b: Heading | not near[a.x,b.x]
+  Heading.words in 0 + 1 + 2
 }
 // Stay clear of tolerance-band edge cases for this family.
 pred above[a,b: Heading] { a.bottom <= b.top and not near[a.bottom,b.top] }
@@ -18,10 +18,32 @@ pred overlap[a,b: Heading] {
   sub[a.bottom,b.top] >= 2 and sub[b.bottom,a.top] >= 2
 }
 pred clearBoxes {
+  all disj a,b: Heading | not near[a.x,b.x]
   all disj a,b: Heading | above[a,b] or above[b,a] or overlap[a,b]
+}
+// words is the rank of the decoded text, not an identifier of a line.
+pred precedes[a,b: Heading] {
+  a.x < b.x or (a.x = b.x and (a.top < b.top or
+    (a.top = b.top and (a.bottom < b.bottom or
+      (a.bottom = b.bottom and a.words < b.words)))))
+}
+fun nextLine[left: set Heading]: set Heading {
+  let ready = unbeaten[left,{a,b: Heading | above[a,b]}] |
+    unbeaten[ready,{a,b: Heading | precedes[a,b]}]
+}
+assert ProgressWithoutTraversalOrder {
+  all left: set Heading | some left implies {
+    one nextLine[left].words
+    all h: nextLine[left] | no a: left | above[a,h]
+    all a,b: nextLine[left] | a.x = b.x and a.top = b.top and a.bottom = b.bottom
+  }
 }
 fun headingEdges: Heading -> Heading {
   {a,b: Heading | above[a,b] or (overlap[a,b] and a.x < b.x)}
+}
+assert PreservesFeasibleOrder {
+  clearBoxes implies (all left: set Heading | orderExists[left,headingEdges] implies
+    nextLine[left] = unbeaten[left,headingEdges])
 }
 assert HeadingsHaveAnOrder { clearBoxes implies orderExists[Heading,headingEdges] }
 assert FeasibleHeadingOrderIsUnique {
@@ -42,7 +64,7 @@ fun nearestEdges: Event -> Event {
 }
 fun nearest: set Event { unbeaten[Event,nearestEdges] }
 // A different interpretation: compare every distance with the actual minimum
-// first, then take earliest onset in that band. This is a candidate, not policy.
+// first, then take earliest onset in that band.
 fun bandChoice: set Event {
   let band = {e: Event | some m: Event |
         (all n: Event | distance[m] <= distance[n]) and near[distance[m],distance[e]]} |
@@ -79,3 +101,7 @@ check EarlierSettlesEvent for 2 but 5 Int, 0 Heading expect 1
 check BandDeterminesDynamicOnset for 3 but 5 Int, 0 Heading expect 0
 check TwoEventInterpretationsAgree for 3 but 5 Int, 0 Heading expect 0
 check FirstOnsetOrEdge for 3 but 5 Int, 0 Heading expect 0
+check ProgressWithoutTraversalOrder for 3 but 5 Int, 0 Event expect 0
+check PreservesFeasibleOrder for 3 but 5 Int, 0 Event expect 0
+CycleNowHasNext: run { clearBoxes and not orderExists[Heading,headingEdges] and
+  one nextLine[Heading] } for 3 but 5 Int, 0 Event expect 1
