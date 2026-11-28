@@ -257,6 +257,7 @@ public sealed class PythonRepositoryInputsTests
     [DataRow("tests/eng/test_svgedit_renovate.py",
         "src/public/app/ImageOcclusionEditor/ImageOcclusionEditorWinUI3/Update-LocalSvgEditor.ps1")]
     [DataRow("tests/eng/test_tla_tools.py", "eng/scripts/tla.py")]
+    [DataRow("tests/eng/test_alloy_tools.py", "eng/scripts/alloy.py")]
     [DataRow("tests/eng/test_tla_tools.py", "eng/linter/TlaSanyCheck.java")]
     [DataRow("tests/eng/test_tla_tools.py", "renovate.json")]
     [DataRow("tests/eng/test_release_triage.py", "eng/scripts/release_triage.py")]

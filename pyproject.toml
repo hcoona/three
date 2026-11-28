@@ -200,6 +200,7 @@ testpaths = [
   "tests/eng/test_supply_chain_policy.py",
   "tests/eng/test_svgedit_renovate.py",
   "tests/eng/test_tla_tools.py",
+  "tests/eng/test_alloy_tools.py",
   "tests/eng/test_typos_config.py",
   "tests/eng/test_workflow_delivery_v3_hk.py",
   "src/private/app/azureauth-credprovider/python/tests",
