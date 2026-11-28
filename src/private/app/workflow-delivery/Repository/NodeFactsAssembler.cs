@@ -81,7 +81,7 @@ internal static class NodeFactsAssembler
             work.TryGetValue(project.Id, out List<CheckSpec>? checks)
                 ? project with { Checks = [.. checks] } : project).ToArray()
         };
-        return ImpactPlanner.PlanSelected(request with { Candidate = after }, selected);
+        return CiPlanner.PlanSelected(request with { Candidate = after }, selected);
     }
 
     internal static RepositoryFacts Assemble(NodeRevisionInputs inputs)

@@ -864,9 +864,12 @@ def test_dotnet_results_receives_only_same_run_inputs(workflow):
     expected = {
         f"{RUNNER_TEMP}/dotnet-plan-transfer": {
             "artifact-ids": "${{ needs.scope.outputs.dotnet_artifact_id }}",
+            "merge-multiple": True,
         },
         f"{RUNNER_TEMP}/dotnet-group-results": {
-            "pattern": "dotnet-group-results-*",
+            "pattern": "dotnet-group-receipt-*.json",
+            "merge-multiple": True,
+            "skip-decompress": True,
         },
     }
     assert len(downloads) == len(expected)
@@ -886,12 +889,22 @@ def test_dotnet_results_receives_only_same_run_inputs(workflow):
         assert {"digest-mismatch": "error", **step["with"]} == {
             **selector,
             "path": path,
-            "merge-multiple": True,
             "digest-mismatch": "error",
         }
     group = workflow["jobs"]["dotnet-tests"]
+    key = "${{ matrix.group.key }}"
+    receipt = next(
+        step
+        for step in action_steps(group, "actions/upload-artifact")
+        if step["with"].get("archive") is False
+    )
+    assert receipt["with"]["path"] == (
+        f"{RUNNER_TEMP}/dotnet-execution/{key}/dotnet-group-receipt-{key}.json"
+    )
+    assert receipt["with"]["if-no-files-found"] == "error"
     assert any(
-        step["with"]["name"] == "dotnet-group-results-${{ matrix.group.key }}"
+        step["with"].get("name")
+        == "dotnet-group-results-${{ matrix.group.key }}"
         and step["with"]["path"] == "${{ runner.temp }}/dotnet-execution/"
         for step in action_steps(group, "actions/upload-artifact")
     )

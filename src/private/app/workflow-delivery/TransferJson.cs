@@ -83,7 +83,7 @@ namespace WorkflowDelivery;
 [JsonSerializable(typeof(CiPlan))]
 [JsonSerializable(typeof(CheckResult[]))]
 [JsonSerializable(typeof(DotNetToolGroup[]))]
-[JsonSerializable(typeof(DotNetGroupResultSet))]
+[JsonSerializable(typeof(CiGroupReceipt))]
 [JsonSerializable(typeof(CiOutcome))]
 internal partial class TransferJson : JsonSerializerContext
 {

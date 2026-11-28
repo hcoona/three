@@ -134,7 +134,7 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
         Assert.AreEqual(RubyProjectChecks.RSpec, Assert.ContainsSingle(owner.Checks).Key.Check);
         RubyFactAssembly assembly = RubyFactsAssembler.Assemble(result.Facts, result.Facts,
             [helper, evaluated], false);
-        PlannedCheck check = Assert.ContainsSingle(ImpactPlanner.Plan(assembly.Request,
+        PlannedCheck check = Assert.ContainsSingle(CiPlanner.Plan(assembly.Request,
             assembly.PairedReasons).Checks);
         Assert.AreEqual(RubyProjectChecks.RSpec, check.Work.Key.Check);
         Assert.Contains(new SelectionReason(helper, checkout.Revision.Commit, owner.Id),
@@ -423,7 +423,7 @@ public sealed class RubyRepositoryReaderTests(TestContext context)
             context.CancellationToken);
         RubyFactAssembly assembly = RubyFactsAssembler.Assemble(native.Facts, native.Facts,
             [declaration], false);
-        CiPlan plan = ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
+        CiPlan plan = CiPlanner.Plan(assembly.Request, assembly.PairedReasons);
         CheckSpec[] checks = plan.Checks.Select(check => check.Work).ToArray();
 
         CollectionAssert.AreEquivalent(RubyPackageChecks.Kinds,

@@ -83,7 +83,7 @@ internal static class PythonFactsAssembler
                 .Select(input => new SharedInput(input.Path, input.Owners)).ToArray(), [], []);
         // Empty selection validates all available checks/relations and prerequisites.
         // Its result is not imported as selection; paired closure still runs below.
-        ImpactPlanner.Plan(new(facts, facts, [], false));
+        CiPlanner.Plan(new(facts, facts, [], false));
         return (facts, new(endpoint.Revision, endpoint.Projects, quality.ToArray(),
             inputs.ToArray()));
     }

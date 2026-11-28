@@ -261,8 +261,9 @@ public sealed class CiCallerTests(TestContext context)
             files.Read("run/result.json", TransferJson.Default.DotNetGroupRunResult).Candidate);
         Assert.AreEqual(repo.Directory, files.Read("run/request.json",
             TransferJson.Default.DotNetRunRequest).Checkout);
-        Assert.AreEqual(DotNetTools.None, files.Read("run/" + DotNetCiCaller.GroupResults,
-            TransferJson.Default.DotNetGroupResultSet).Group);
+        Assert.AreEqual(DotNetTools.None, files.Read("run/" + DotNetCiCaller.GroupReceiptFile(
+                DotNetTools.None),
+            TransferJson.Default.CiGroupReceipt).Group);
         Assert.AreEqual(commit, files.Read("run/outcome.json", TransferJson.Default.CiOutcome)
             .Candidate);
     }
@@ -273,8 +274,6 @@ public sealed class CiCallerTests(TestContext context)
         using var files = new State();
         string root = files.Make("checkout");
         string transfer = files.Transfer();
-        files.Make("groups/none");
-        files.Make("groups/node");
         var plain = DotNetCheck("src/plain.csproj");
         var node = DotNetCheck("src/node.csproj", """{"node":"24.1.0"}""");
         var plan = Plan(DotNetCiCaller.Scope, plain, node);
@@ -283,15 +282,21 @@ public sealed class CiCallerTests(TestContext context)
             .Checks).Work.Key);
         files.WriteDotNetPlan(plan);
         var valid = new CheckResult(Candidate, plain.Work.Key, CheckStatus.Passed);
-        files.WriteDotNetGroup("none", "none", valid);
+        files.WriteDotNetGroup("none", "none", plan, valid);
         var missing = Join(1, "missing");
         Assert.AreEqual("missing,passed", string.Join(',', missing.Checks
             .Select(c => c.Status).Order(StringComparer.Ordinal)));
         Assert.IsTrue(File.Exists(files.At("missing/outcome.json")));
+        string nodeFile = files.At("groups/" + DotNetCiCaller.GroupReceiptFile("node"));
+        Directory.CreateDirectory(nodeFile);
+        File.Copy(files.At("groups/" + DotNetCiCaller.GroupReceiptFile("none")),
+            Path.Combine(nodeFile, DotNetCiCaller.GroupReceiptFile("node")));
+        Join(2, "archive-claiming-a-group", "Unplanned .NET group result");
+        Directory.Delete(nodeFile, recursive: true);
         foreach (CheckStatus status in new[] { CheckStatus.Passed, CheckStatus.Failed,
                      CheckStatus.Cancelled })
         {
-            files.WriteDotNetGroup("node", "node", new CheckResult(Candidate, node.Work.Key,
+            files.WriteDotNetGroup("node", "node", plan, new CheckResult(Candidate, node.Work.Key,
                 status));
             Assert.AreEqual(status == CheckStatus.Passed, Join(status == CheckStatus.Passed ? 0 : 1,
                 status.ToString()).Satisfied);
@@ -301,20 +306,27 @@ public sealed class CiCallerTests(TestContext context)
         CheckResult[][] malformed = [[valid, misplaced], [valid, valid], [misplaced]];
         foreach (CheckResult[] bad in malformed)
         {
-            files.WriteDotNetGroup("none", "none", bad);
+            files.WriteDotNetGroup("none", "none", plan, bad);
             Join(2, "invalid");
         }
-        files.WriteDotNetGroup("none", "none", valid);
-        files.WriteDotNetGroup("node", "none", misplaced);
+        files.WriteDotNetGroup("none", "none", plan, valid);
+        files.WriteDotNetGroup("node", "none", plan, misplaced);
         Join(2, "wrong-group");
-        File.Delete(files.At("groups/none/" + DotNetCiCaller.GroupResults));
-        files.WriteDotNetGroup("node", "node", misplaced);
-        files.WriteDotNetPlan(plan with { Checks = [node] });
+        files.WriteDotNetGroup("node", "node", plan with { Comparison = Foreign }, misplaced);
+        Join(2, "foreign-basis", "different original plan");
+        File.Delete(files.At("groups/" + DotNetCiCaller.GroupReceiptFile("none")));
+        files.WriteDotNetGroup("node", "node", plan, misplaced);
+        CiPlan toolsOnly = plan with { Checks = [node] };
+        files.WriteDotNetPlan(toolsOnly);
+        Join(2, "changed-work-in-another-group", "different original plan");
+        files.WriteDotNetGroup("node", "node", toolsOnly, misplaced);
         Assert.Contains(".NET group reported no result set: none", Join(1, "tools-only").Errors);
-        File.Delete(files.At("groups/node/" + DotNetCiCaller.GroupResults));
-        Directory.Delete(files.At("groups/node"));
-        files.WriteDotNetPlan(plan with { Checks = [] });
+        File.Delete(nodeFile);
+        CiPlan empty = plan with { Checks = [] };
+        files.WriteDotNetPlan(empty);
         Assert.IsFalse(Join(1, "empty").Satisfied);
+        files.WriteDotNetGroup("none", "none", empty);
+        Assert.IsTrue(Join(0, "one-artifact-for-one-planned-group").Satisfied);
         files.Make("groups/python");
         Join(2, "unplanned-group");
         Directory.Delete(files.At("groups/python"));
@@ -348,6 +360,13 @@ public sealed class CiCallerTests(TestContext context)
         Put("node24", second);
         Assert.IsTrue(Join(0).Satisfied);
         Assert.HasCount(4, files.Read("results.json", TransferJson.Default.CheckResultArray));
+        Put("node99", first with { Runtime = "node99", Results = [] });
+        Join(2);
+        File.Delete(files.At("node99-result.json"));
+        Put("node24", first);
+        Put("node22", second);
+        Join(2);
+        Put("node24", second);
         Put("node22", first with { Results = [.. first.Results, first.Results[0]] });
         Assert.Contains(first.Results[0].Key.ToString(), Assert.ContainsSingle(Join(1).Errors));
         Put("node22", first);
@@ -364,7 +383,14 @@ public sealed class CiCallerTests(TestContext context)
         Put("node24", second);
         Assert.Contains("conflicting", Join(1).Checks.Select(c => c.Status));
         File.Delete(files.At("node24-result.json"));
+        CiPlan changedRunner = group.Adopted with
+        {
+            Checks = [.. group.Adopted.Checks.Select(check => check.Work.Key.Variant == "node24"
+                ? check with { Work = check.Work with { Runner = "other" } } : check)],
+        };
         NodeRunResult[] malformed = [first with { Candidate = Foreign },
+            first with { OriginalPlan = group.Adopted with { Comparison = Foreign } },
+            first with { OriginalPlan = changedRunner },
             first with { Runtime = "node24" }, first with { Runtime = "node99" }];
         foreach (NodeRunResult bad in malformed)
         {
@@ -375,16 +401,29 @@ public sealed class CiCallerTests(TestContext context)
             TransferJson.Default.NodeRunResult).Replace("\"Passed\"", "\"unknown\"",
             StringComparison.Ordinal));
         Join(2);
-        Assert.ThrowsExactly<InvalidDataException>(() => NodeCiCaller.Join(group,
-            [first with { Results = [first.Results[0] with { Status = (CheckStatus)999 }] }]));
-        Assert.ThrowsExactly<InvalidDataException>(() => NodeCiCaller.Join(group, [first, first]));
+        var invalid = first with
+        { Results = [first.Results[0] with { Status = (CheckStatus)999 }] };
+        Assert.ThrowsExactly<InvalidDataException>(() => NodeCiCaller.Join(group.Adopted, group,
+            [new("node22", invalid)]));
+        Assert.ThrowsExactly<InvalidDataException>(() => NodeCiCaller.Join(group.Adopted, group,
+            [new("node22", first), new("node22", first)]));
         var wrongRevision = group with { Runtime = group.Runtime with { Revision = Foreign } };
         Put("node22", first);
         files.Put("group-plan.json", wrongRevision, TransferJson.Default.NodeGroupReadback);
         Join(2, "Node runtime join has a different or repeated subject.");
-        files.Put("group-plan.json", group with { Adopted = group.Adopted with { Checks = [] } },
+        CiPlan empty = group.Adopted with { Checks = [] };
+        files.Put("group-plan.json", group with { Adopted = empty },
             TransferJson.Default.NodeGroupReadback);
+        Join(2);
+        files.Put("parent-plan.json", empty, TransferJson.Default.CiPlan);
+        Join(2);
+        File.Delete(files.At("node22-result.json"));
         Assert.IsTrue(Join(0).Satisfied);
+        CiPlan selective = empty with { Full = false };
+        files.Put("group-plan.json", group with { Adopted = selective },
+            TransferJson.Default.NodeGroupReadback);
+        files.Put("parent-plan.json", selective, TransferJson.Default.CiPlan);
+        Join(2, "The original CI plan has a different binding.");
 
         void Put(string runtime, NodeRunResult result) =>
             files.Put(runtime + "-result.json", result, TransferJson.Default.NodeRunResult);

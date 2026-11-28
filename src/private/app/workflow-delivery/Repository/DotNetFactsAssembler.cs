@@ -71,7 +71,7 @@ internal static class DotNetFactsAssembler
                     .Select(item => item.Work).ToArray()
                 }).ToArray()
         };
-        return ImpactPlanner.PlanSelected(selection.Request with { Candidate = candidate },
+        return CiPlanner.PlanSelected(selection.Request with { Candidate = candidate },
             selection.Reasons);
     }
 
@@ -135,7 +135,7 @@ internal static class DotNetFactsAssembler
                     project.Id);
             completed.Add(project with { Checks = checks.ToArray() });
         }
-        return ImpactPlanner.PlanSelected(selection.Request with
+        return CiPlanner.PlanSelected(selection.Request with
         {
             Candidate = candidate with { Projects = completed.ToArray() }
         }, selection.Reasons);

@@ -97,6 +97,6 @@ internal static class PythonGroupPlanning
         PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis.Facts, candidate.Facts,
             comparison.ChangedPaths, full, PythonRepositoryInputs.Pair(basis.Facts,
                 candidate.Facts, comparison.ChangedPaths));
-        return ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
+        return CiPlanner.Plan(assembly.Request, assembly.PairedReasons);
     }
 }

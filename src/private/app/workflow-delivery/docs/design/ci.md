@@ -119,9 +119,9 @@ sequenceDiagram
     Scope-->>DotNet: dotnet_groups<br/>Planned tool groups
     par .NET
         Store->>DotNet: ci-dotnet-plan
-        DotNet->>Store: dotnet-group-results-*
+        DotNet->>Store: dotnet-group-receipt-*.json
         DotNet-->>Validate: matrix job result
-        Store->>DotNetJoin: ci-dotnet-plan,<br/>dotnet-group-results-*
+        Store->>DotNetJoin: ci-dotnet-plan,<br/>dotnet-group-receipt-*.json
         DotNetJoin-->>Validate: job result
     and Ruby
         Store->>Ruby: ci-scope,<br/>ci-dotnet-plan
@@ -178,9 +178,12 @@ Every required result must be present and satisfied. Failure, conflicting result
 cancellation, timeout, skipping or missing required work prevents success.
 Advisory results remain visible without changing the required result. Collection
 must account for failed dependencies; platform cancellation may still prevent a
-final report and must not be interpreted as success. When one group's plan runs
-in several jobs, the join requires exactly one result set from each planned job
-and each planned check exactly once before collecting against the original plan.
+final report and must not be interpreted as success. For partitioned execution,
+each planned producer must deliver exactly one result set. It carries the
+original plan used by that producer, including comparison and candidate. The
+engine checks it against the planning output, rejects results outside their
+partition and requires exactly one pass per mandatory key. Other green results
+cannot establish the expected work.
 
 HK retains source/configuration conformance. The control application's tests have
 one ordinary CI owner, selected by actual inputs/dependencies. CI never imports

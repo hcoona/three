@@ -40,7 +40,13 @@ internal sealed record CheckSpec(
     bool Required,
     CheckKey[] Prerequisites,
     PackageTarget? Package = null
-);
+)
+{
+    internal bool SameTarget(CheckSpec other) => Key == other.Key && Runner == other.Runner &&
+        Dimensions.Count == other.Dimensions.Count && Dimensions.All(pair =>
+            other.Dimensions.TryGetValue(pair.Key, out string? value) && pair.Value == value) &&
+        ImpactPlanner.SamePackage(Package, other.Package);
+}
 
 // Only artifact checks carry a package subject; native project checks use their source target.
 internal sealed record PackageOutput(string Id, string Role, string Kind);
@@ -77,7 +83,8 @@ internal sealed record CiPlan(
     string Comparison,
     string Candidate,
     string Scope,
-    PlannedCheck[] Checks
+    PlannedCheck[] Checks,
+    bool Full = false
 )
 {
     internal void Validate()
@@ -93,6 +100,7 @@ internal sealed record CiPlan(
             ImpactPlanner.ValidateCheck(check.Work);
             ArgumentNullException.ThrowIfNull(check.Origins);
             ArgumentNullException.ThrowIfNull(check.QualityPresets);
+            ArgumentNullException.ThrowIfNull(check.Reasons);
             if (check.Origins.Length == 0 || check.Origins.Any(origin => !Enum.IsDefined(origin)) ||
                 check.Origins.Contains(CheckOrigin.Preset) != (check.QualityPresets.Length != 0) ||
                 check.QualityPresets.Any(string.IsNullOrWhiteSpace))
@@ -104,6 +112,17 @@ internal sealed record CiPlan(
         if (expected.Values.Any(c => c.Required && c.Prerequisites.Any(p => !expected[p].Required)))
             throw new InvalidDataException("A required check has an advisory prerequisite.");
     }
+
+    // The producer carries the whole original plan once, not just the keys it executed.
+    internal bool SamePlan(CiPlan other) => Comparison == other.Comparison &&
+        Candidate == other.Candidate && Scope == other.Scope && Full == other.Full &&
+        Checks.Length == other.Checks.Length && Checks.Zip(other.Checks).All(pair =>
+            pair.First.Work.Required == pair.Second.Work.Required &&
+            pair.First.Work.SameTarget(pair.Second.Work) &&
+            pair.First.Work.Prerequisites.SequenceEqual(pair.Second.Work.Prerequisites) &&
+            pair.First.QualityPresets.SequenceEqual(pair.Second.QualityPresets) &&
+            pair.First.Origins.SequenceEqual(pair.Second.Origins) &&
+            pair.First.Reasons.SequenceEqual(pair.Second.Reasons));
 
     // The full plan is already valid; only edges crossing the partition can break closure.
     internal (CiPlan First, CiPlan Second) Partition(Func<PlannedCheck, bool> inFirst)
@@ -130,6 +149,9 @@ internal enum CheckStatus
 }
 
 internal sealed record CheckResult(string Candidate, CheckKey Key, CheckStatus Status);
+
+internal sealed record CiGroupReceipt(string Group, string Candidate, CheckResult[] Results,
+    CiPlan OriginalPlan);
 
 internal sealed record CheckOutcome(CheckKey Key, bool Required, string Status);
 

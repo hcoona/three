@@ -226,6 +226,12 @@
       "workflowdelivery.core": {
         "type": "Project"
       },
+      "workflowdelivery.engine": {
+        "type": "Project",
+        "dependencies": {
+          "WorkflowDelivery.Core": "[1.0.0, )"
+        }
+      },
       "System.IO.Hashing": {
         "type": "CentralTransitive",
         "requested": "[10.0.14, )",

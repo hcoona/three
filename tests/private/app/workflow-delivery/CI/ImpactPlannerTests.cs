@@ -32,10 +32,10 @@ public sealed class ImpactPlannerTests
         };
         RepositoryFacts candidate = basis with { Revision = "candidate" };
 
-        CiPlan ordinary = ImpactPlanner.Plan(new(basis, candidate, [source], false));
+        CiPlan ordinary = CiPlanner.Plan(new(basis, candidate, [source], false));
         Assert.AreEqual(node.Id, Assert.ContainsSingle(ordinary.Checks).Work.Key.Target);
 
-        CiPlan resource = ImpactPlanner.Plan(new(basis, candidate, [embedded], false));
+        CiPlan resource = CiPlanner.Plan(new(basis, candidate, [embedded], false));
         CollectionAssert.AreEquivalent(new[] { native.Id, node.Id },
             resource.Checks.Select(check => check.Work.Key.Target).ToArray());
         PlannedCheck consumer = resource.Checks.Single(check => check.Work.Key.Target == native.Id);
@@ -61,7 +61,7 @@ public sealed class ImpactPlannerTests
             library with { OwnedPaths = [], Checks = variants },
             consumer with { Dependencies = [] });
 
-        CiPlan plan = ImpactPlanner.Plan(new(basis, candidate, [deleted], false));
+        CiPlan plan = CiPlanner.Plan(new(basis, candidate, [deleted], false));
 
         CollectionAssert.AreEquivalent(variants.Select(check => check.Key)
             .Append(consumer.Checks[0].Key).ToArray(), plan.Checks.Select(check => check.Work.Key)
@@ -83,14 +83,14 @@ public sealed class ImpactPlannerTests
         PlanRequest request = Scenario.Request([parent, child], path);
 
         InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
-            ImpactPlanner.Plan(request));
+            CiPlanner.Plan(request));
         Assert.Contains("Unresolved changed path", error.Message);
 
         request = request with
         {
             Basis = request.Basis with { SharedInputs = [new(path, [parent.Id])] },
         };
-        PlannedCheck selected = Assert.ContainsSingle(ImpactPlanner.Plan(request).Checks);
+        PlannedCheck selected = Assert.ContainsSingle(CiPlanner.Plan(request).Checks);
         Assert.AreEqual(parent.Id, selected.Work.Key.Target);
         CollectionAssert.AreEqual(new[] { new SelectionReason(path, "base", parent.Id) },
             selected.Reasons);
@@ -109,7 +109,7 @@ public sealed class ImpactPlannerTests
             OwnedPaths = [path],
         };
 
-        CiPlan plan = ImpactPlanner.Plan(Scenario.Request([first, second], path));
+        CiPlan plan = CiPlanner.Plan(Scenario.Request([first, second], path));
 
         CollectionAssert.AreEquivalent(new[] { first.Id, second.Id },
             plan.Checks.Select(check => check.Work.Key.Target).ToArray());
@@ -128,7 +128,7 @@ public sealed class ImpactPlannerTests
         };
 
         Assert.ThrowsExactly<InvalidDataException>(() =>
-            ImpactPlanner.Plan(Scenario.Request([project])));
+            CiPlanner.Plan(Scenario.Request([project])));
     }
 
     [TestMethod]
@@ -142,7 +142,7 @@ public sealed class ImpactPlannerTests
             Origin = CheckOrigin.NativeRetained,
         };
 
-        CiPlan plan = ImpactPlanner.Plan(Scenario.Request([project], "src/native/code.cs"));
+        CiPlan plan = CiPlanner.Plan(Scenario.Request([project], "src/native/code.cs"));
 
         CollectionAssert.AreEquivalent(new[] { build.Key, test.Key },
             plan.Checks.Select(check => check.Work.Key).ToArray());
@@ -170,7 +170,7 @@ public sealed class ImpactPlannerTests
         };
 
         Assert.ThrowsExactly<InvalidDataException>(() =>
-            ImpactPlanner.Plan(Scenario.Request([native], "src/native/code.cs")));
+            CiPlanner.Plan(Scenario.Request([native], "src/native/code.cs")));
     }
 
     [TestMethod]
@@ -187,13 +187,13 @@ public sealed class ImpactPlannerTests
         ProjectFacts unrelated = Scenario.Project("unrelated", preset: "unselected",
             checks: [shared with { Required = true }]);
 
-        PlannedCheck onlyNative = Assert.ContainsSingle(ImpactPlanner.Plan(
+        PlannedCheck onlyNative = Assert.ContainsSingle(CiPlanner.Plan(
             Scenario.Request([native, adopted, unrelated], "src/native/code.cs")).Checks);
         Assert.IsFalse(onlyNative.Work.Required);
         Assert.IsEmpty(onlyNative.QualityPresets);
         CollectionAssert.AreEqual(new[] { CheckOrigin.NativeRetained }, onlyNative.Origins);
 
-        PlannedCheck merged = Assert.ContainsSingle(ImpactPlanner.Plan(Scenario.Request(
+        PlannedCheck merged = Assert.ContainsSingle(CiPlanner.Plan(Scenario.Request(
             [native, adopted, unrelated], "src/native/code.cs", "src/adopted/code.cs")).Checks);
         Assert.IsTrue(merged.Work.Required);
         Assert.AreEqual("selected", Assert.ContainsSingle(merged.QualityPresets));
@@ -218,7 +218,7 @@ public sealed class ImpactPlannerTests
         };
         ProjectFacts dependency = Scenario.Project("dependency", checks: [build, restore]);
 
-        CiPlan plan = ImpactPlanner.Plan(Scenario.Request([adopted, native, dependency],
+        CiPlan plan = CiPlanner.Plan(Scenario.Request([adopted, native, dependency],
             "src/adopted/code.cs", "src/native/code.cs"));
 
         foreach (CheckKey key in new[] { build.Key, restore.Key })
@@ -244,7 +244,7 @@ public sealed class ImpactPlannerTests
             Scenario.Project("unrelated"),
         ];
 
-        CiPlan plan = ImpactPlanner.Plan(Scenario.Request(projects,
+        CiPlan plan = CiPlanner.Plan(Scenario.Request(projects,
             "src/library/one.cs", "src/library/two.cs"));
 
         string[] expected = ["library", "consumer", "application", "quality"];
@@ -267,14 +267,15 @@ public sealed class ImpactPlannerTests
     [TestMethod]
     public void PlanDeletedProjectAndReferencePreserveCrossRevisionConsumerClosure()
     {
-        RepositoryFacts basis = Scenario.Facts("base", Scenario.Project("removed"),
+        RepositoryFacts basis = Scenario.Facts("base", Scenario.Project("removed") with
+        { Checks = [], QualityPreset = null },
             Scenario.Project("consumer", dependencies: ["removed"]), Scenario.Project(
                 "application"));
         RepositoryFacts candidate = Scenario.Facts("candidate", Scenario.Project("consumer"),
             Scenario.Project("application", dependencies: ["consumer"]), Scenario.Project(
                 "unrelated"));
 
-        CiPlan plan = ImpactPlanner.Plan(new(basis, candidate, ["src/removed/code.cs"], false));
+        CiPlan plan = CiPlanner.Plan(new(basis, candidate, ["src/removed/code.cs"], false));
 
         string[] expected = ["consumer", "application"];
 
@@ -288,7 +289,7 @@ public sealed class ImpactPlannerTests
     [TestMethod]
     public void PlanRenameBetweenProjectsSelectsBothPathOwners()
     {
-        CiPlan plan = ImpactPlanner.Plan(Scenario.Request(
+        CiPlan plan = CiPlanner.Plan(Scenario.Request(
             [Scenario.Project("old"), Scenario.Project("new"), Scenario.Project("unrelated")],
             "src/old/name.cs", "src/new/name.cs"));
 
@@ -314,7 +315,7 @@ public sealed class ImpactPlannerTests
             Runner = "windows-latest",
             Dimensions = new() { ["rid"] = "win-x64" },
         };
-        CiPlan plan = ImpactPlanner.Plan(Scenario.Request(
+        CiPlan plan = CiPlanner.Plan(Scenario.Request(
         [
             Scenario.Project("entry", releaseUnit: "product"),
             Scenario.Project("package", releaseUnit: "product", checks: [linux, windows]),
@@ -338,7 +339,7 @@ public sealed class ImpactPlannerTests
         {
             SharedInputs = [new("locks/native.lock", ["library"])],
         };
-        CiPlan plan = ImpactPlanner.Plan(new(basis, basis with { Revision = "candidate" },
+        CiPlan plan = CiPlanner.Plan(new(basis, basis with { Revision = "candidate" },
             ["locks/native.lock"], false));
 
         string[] expected = ["library", "consumer"];
@@ -352,7 +353,7 @@ public sealed class ImpactPlannerTests
     [TestMethod]
     public void PlanNestedProjectSelectsNearestOwnerOnly()
     {
-        CiPlan plan = ImpactPlanner.Plan(Scenario.Request(
+        CiPlan plan = CiPlanner.Plan(Scenario.Request(
             [Scenario.Project("parent"), Scenario.Project("nested", directory:
                 "src/parent/nested")],
             "src/parent/nested/code.cs"));
@@ -374,7 +375,7 @@ public sealed class ImpactPlannerTests
             : request with { Candidate = request.Candidate with { Projects = [invalid] } };
 
         InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
-            ImpactPlanner.Plan(request));
+            CiPlanner.Plan(request));
 
         Assert.Contains("Root project root requires explicit owned paths", error.Message);
     }
@@ -389,8 +390,8 @@ public sealed class ImpactPlannerTests
         };
         PlanRequest request = new(basis, basis with { Revision = "candidate" }, [], false);
 
-        Assert.IsEmpty(ImpactPlanner.Plan(request).Checks);
-        CiPlan plan = ImpactPlanner.Plan(request with { ChangedPaths = ["shared/input.txt"] });
+        Assert.IsEmpty(CiPlanner.Plan(request).Checks);
+        CiPlan plan = CiPlanner.Plan(request with { ChangedPaths = ["shared/input.txt"] });
 
         PlannedCheck selected = Assert.ContainsSingle(plan.Checks);
         Assert.AreEqual(Scenario.Check("root").Key, selected.Work.Key);
@@ -407,7 +408,7 @@ public sealed class ImpactPlannerTests
         ProjectFacts root = Scenario.Project("root", directory: ".") with { OwnedPaths = [] };
 
         InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
-            ImpactPlanner.Plan(Scenario.Request([root], "unknown/file.cs")));
+            CiPlanner.Plan(Scenario.Request([root], "unknown/file.cs")));
 
         Assert.Contains("Unresolved changed path: unknown/file.cs", error.Message);
     }
@@ -415,7 +416,7 @@ public sealed class ImpactPlannerTests
     [TestMethod]
     public void PlanKnownUnaffectedPathProducesEmptySuccessfulPlan()
     {
-        CiPlan plan = ImpactPlanner.Plan(Scenario.Request([Scenario.Project("library")],
+        CiPlan plan = CiPlanner.Plan(Scenario.Request([Scenario.Project("library")],
             "docs/guide.md"));
 
         Assert.IsEmpty(plan.Checks);
@@ -430,7 +431,7 @@ public sealed class ImpactPlannerTests
         PlanRequest request = Scenario.Request([Scenario.Project("library"), Scenario.Project(
             "other")]);
 
-        CiPlan plan = ImpactPlanner.Plan(request with { Full = true });
+        CiPlan plan = CiPlanner.Plan(request with { Full = true });
 
         string[] expected = ["library", "other"];
 
@@ -451,7 +452,7 @@ public sealed class ImpactPlannerTests
         { Full = full };
 
         InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
-            ImpactPlanner.Plan(request));
+            CiPlanner.Plan(request));
 
         Assert.Contains("Unresolved changed path", error.Message);
     }
@@ -476,7 +477,7 @@ public sealed class ImpactPlannerTests
             };
 
         InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
-            ImpactPlanner.Plan(request));
+            CiPlanner.Plan(request));
 
         Assert.Contains("native evaluation failed", error.Message);
     }
@@ -551,7 +552,7 @@ public sealed class ImpactPlannerTests
         ProjectFacts selected = Scenario.Project("app");
 
         InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
-            ImpactPlanner.Plan(Scenario.Request([selected, unselected], "src/app/code.cs")));
+            CiPlanner.Plan(Scenario.Request([selected, unselected], "src/app/code.cs")));
 
         Assert.Contains("Missing prerequisite", error.Message);
     }
@@ -560,7 +561,7 @@ public sealed class ImpactPlannerTests
     public void PlanDuplicateSelectedCheckMergesPresetsReasonsAndRequiredStatus()
     {
         CheckSpec advisory = Scenario.Check("shared", required: false);
-        CiPlan plan = ImpactPlanner.Plan(Scenario.Request(
+        CiPlan plan = CiPlanner.Plan(Scenario.Request(
         [
             Scenario.Project("a", preset: "advisory", checks: [advisory]),
             Scenario.Project("b", preset: "required", checks: [advisory with { Required = true }]),
@@ -579,7 +580,7 @@ public sealed class ImpactPlannerTests
     public void PlanUnselectedRequiredContractDoesNotPromoteSelectedAdvisoryCheck()
     {
         CheckSpec advisory = Scenario.Check("shared", required: false);
-        CiPlan plan = ImpactPlanner.Plan(Scenario.Request(
+        CiPlan plan = CiPlanner.Plan(Scenario.Request(
         [
             Scenario.Project("selected", preset: "advisory", checks: [advisory]),
             Scenario.Project("unrelated", preset: "strict", checks: [advisory with { Required =
@@ -599,7 +600,7 @@ public sealed class ImpactPlannerTests
         CheckSpec build = Scenario.Check("native", "build", required: false, prerequisites:
             [restore.Key]);
         CheckSpec test = Scenario.Check("selected", prerequisites: [build.Key]);
-        CiPlan plan = ImpactPlanner.Plan(Scenario.Request(
+        CiPlan plan = CiPlanner.Plan(Scenario.Request(
         [
             Scenario.Project("selected", preset: "required", checks: [test]),
             Scenario.Project("native", preset: "advisory", checks: [build, restore]),
@@ -622,7 +623,7 @@ public sealed class ImpactPlannerTests
     {
         CheckSpec build = Scenario.Check("native", "build", required: false);
         CheckSpec test = Scenario.Check("selected", required: false, prerequisites: [build.Key]);
-        CiPlan plan = ImpactPlanner.Plan(Scenario.Request(
+        CiPlan plan = CiPlanner.Plan(Scenario.Request(
         [
             Scenario.Project("selected", preset: "advisory", checks: [test]),
             Scenario.Project("native", checks: [build]),
@@ -651,7 +652,7 @@ public sealed class ImpactPlannerTests
             [build.Key]);
         CheckSpec required = Scenario.Check("required", prerequisites: [package.Key]);
 
-        CiPlan plan = ImpactPlanner.Plan(Scenario.Request(
+        CiPlan plan = CiPlanner.Plan(Scenario.Request(
         [
             Scenario.Project("advisory", preset: "optional", checks: [advisory]),
             Scenario.Project("required", preset: "strict", checks: [required]),
@@ -717,7 +718,7 @@ public sealed class ImpactPlannerTests
         };
         CheckSpec second = first with { Package = subject with { Outputs = [.. subject.Outputs] } };
 
-        CiPlan plan = ImpactPlanner.Plan(Scenario.Request(
+        CiPlan plan = CiPlanner.Plan(Scenario.Request(
             [Scenario.Project("a", checks: [first]), Scenario.Project("b", checks: [second])],
             "src/a/code.cs", "src/b/code.cs"));
 
@@ -750,7 +751,7 @@ public sealed class ImpactPlannerTests
             Scenario.Project("unrelated")), PairedInputPaths, false);
         var reason = new SelectionReason(PairedInput, "base", owner.Id);
 
-        CiPlan plan = ImpactPlanner.Plan(request, [reason]);
+        CiPlan plan = CiPlanner.Plan(request, [reason]);
 
         CollectionAssert.AreEquivalent(new[] { linux.Key, windows.Key, prepare.Key,
             sibling.Checks[0].Key, consumer.Checks[0].Key, quality.Checks[0].Key },
@@ -782,7 +783,7 @@ public sealed class ImpactPlannerTests
             Scenario.Project("new", dependencies: PairedConsumer), Scenario.Project("unrelated"));
         var reason = new SelectionReason(PairedInput, "base", "removed");
 
-        CiPlan plan = ImpactPlanner.Plan(new(basis, candidate, PairedInputPaths, false), [reason]);
+        CiPlan plan = CiPlanner.Plan(new(basis, candidate, PairedInputPaths, false), [reason]);
 
         CollectionAssert.AreEquivalent(PairedSurvivingTargets,
             plan.Checks.Select(check => check.Work.Key.Target).ToArray());
@@ -798,7 +799,7 @@ public sealed class ImpactPlannerTests
         var basis = new SelectionReason(PairedInput, "base", "c");
         var candidate = new SelectionReason(PairedInput, "candidate", "c");
 
-        PlannedCheck selected = Assert.ContainsSingle(ImpactPlanner.Plan(request,
+        PlannedCheck selected = Assert.ContainsSingle(CiPlanner.Plan(request,
             [basis, candidate, basis]).Checks);
 
         CollectionAssert.AreEquivalent(new[] { basis, candidate,
@@ -816,7 +817,7 @@ public sealed class ImpactPlannerTests
         { Full = full };
 
         InvalidDataException error = Assert.ThrowsExactly<InvalidDataException>(() =>
-            ImpactPlanner.Plan(request, [new(PairedInput, "base", "c")]));
+            CiPlanner.Plan(request, [new(PairedInput, "base", "c")]));
 
         Assert.Contains("Unresolved changed path: unknown/file.py", error.Message);
     }
@@ -831,7 +832,7 @@ public sealed class ImpactPlannerTests
         PlanRequest request = Scenario.Request([Scenario.Project("c")], "src/c/code.py") with
         { Full = full };
         Assert.ThrowsExactly<InvalidDataException>(() =>
-            ImpactPlanner.Plan(request, [new(path, revision, owner)]));
+            CiPlanner.Plan(request, [new(path, revision, owner)]));
     }
 
     [TestMethod]
@@ -843,7 +844,7 @@ public sealed class ImpactPlannerTests
 
         Assert.Contains("Unresolved quality contract for c",
             Assert.ThrowsExactly<InvalidDataException>(() =>
-                ImpactPlanner.Plan(request, [new(PairedInput, "base", owner.Id)])).Message);
+                CiPlanner.Plan(request, [new(PairedInput, "base", owner.Id)])).Message);
     }
 
     [TestMethod]
@@ -868,8 +869,9 @@ public sealed class ImpactPlannerTests
         { Full = true };
         var reason = new SelectionReason(PairedInput, "base", "c");
 
-        CiPlan plan = ImpactPlanner.Plan(request, [reason]);
+        CiPlan plan = CiPlanner.Plan(request, [reason]);
 
+        Assert.IsTrue(plan.Full);
         CollectionAssert.AreEquivalent(PairedFullTargets,
             plan.Checks.Select(check => check.Work.Key.Target).ToArray());
         CollectionAssert.AreEquivalent(new[] { reason,
@@ -913,7 +915,7 @@ public sealed class ImpactPlannerTests
                     .Select(idx => $"src/{ids[idx]}/code.cs")
                     .ToArray();
 
-                CiPlan plan = ImpactPlanner.Plan(Scenario.Request(projects, changed));
+                CiPlan plan = CiPlanner.Plan(Scenario.Request(projects, changed));
                 var actual = plan.Checks.Select(c => c.Work.Key.Target)
                     .ToHashSet(StringComparer.Ordinal);
                 selectedByMask[changeMask] = actual;
@@ -963,11 +965,11 @@ public sealed class ImpactPlannerTests
     private static void AssertCandidateRejected(PlanRequest request, RepositoryFacts candidate,
         string diagnostic) => Assert.Contains(diagnostic,
             Assert.ThrowsExactly<InvalidDataException>(() =>
-                ImpactPlanner.Plan(request with { Candidate = candidate })).Message);
+                CiPlanner.Plan(request with { Candidate = candidate })).Message);
 
     private static void AssertCheckConflict(PlanRequest request) =>
         Assert.Contains("Conflicting check definition",
-            Assert.ThrowsExactly<InvalidDataException>(() => ImpactPlanner.Plan(request)).Message);
+            Assert.ThrowsExactly<InvalidDataException>(() => CiPlanner.Plan(request)).Message);
 
     private static PackageTarget PackageSubject() => new("product",
         "workflow-delivery.release-unit.yml", "build", "node/npm-package-v1",

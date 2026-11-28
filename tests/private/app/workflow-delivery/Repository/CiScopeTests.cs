@@ -23,7 +23,7 @@ public sealed class CiScopeTests
         JsonObject payload = RoutingTransfer(comparison);
         ScopeInputs scope = ScopeInputs.Read(payload.ToJsonString(), comparison, false);
 
-        CiPlan plan = ImpactPlanner.Plan(scope.Bind(
+        CiPlan plan = CiPlanner.Plan(scope.Bind(
             RoutedFacts(comparison.Basis), RoutedFacts(comparison.Candidate)));
 
         Assert.IsEmpty(plan.Checks);
@@ -56,7 +56,7 @@ public sealed class CiScopeTests
         RepositoryFacts basis = RoutedFacts(comparison.Basis);
         basis = basis with { SharedInputs = [.. basis.SharedInputs, new(Codeowners, ["src/a"])] };
 
-        CiPlan plan = ImpactPlanner.Plan(scope.Bind(basis, RoutedFacts(comparison.Candidate)));
+        CiPlan plan = CiPlanner.Plan(scope.Bind(basis, RoutedFacts(comparison.Candidate)));
 
         Assert.IsNotEmpty(plan.Checks);
         foreach (PlannedCheck check in plan.Checks)
@@ -186,7 +186,7 @@ public sealed class CiScopeTests
         ScopeInputs scope = ScopeInputs.Read(RoutingTransfer(comparison, full).ToJsonString(),
             comparison, full);
 
-        CiPlan plan = ImpactPlanner.Plan(scope.Bind(
+        CiPlan plan = CiPlanner.Plan(scope.Bind(
             RoutedFacts(comparison.Basis), RoutedFacts(comparison.Candidate)));
 
         Assert.AreEqual(basisCommit, plan.Comparison);
@@ -612,7 +612,7 @@ public sealed class CiScopeTests
             CI.Scenario.Project(nugetProj, dependencies: [midProj],
                 directory: "src/public/lib/CircularList"),
         ];
-        CiPlan evaluatedPlan = ImpactPlanner.Plan(CI.Scenario.Request(graph, leafPath));
+        CiPlan evaluatedPlan = CiPlanner.Plan(CI.Scenario.Request(graph, leafPath));
         string[] impactedProjects = [.. evaluatedPlan.Checks.Select(c => c.Work.Key.Target)
             .Distinct(StringComparer.Ordinal)];
 
