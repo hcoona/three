@@ -87,32 +87,31 @@ for when a grant is needed and how it ends.
   reviews and `GOV-011` disposition; close only on an explicit further
   repository-owner request.
 
-### Repair Workflow Delivery dependency cohorts and SDK host compatibility
+### Prepare the Release Plan 2A public NuGet cohort
 
-- **Work carrier:** [Issue #1679](https://github.com/hcoona/three/issues/1679)
-  and its linked repair pull requests (including
-  [#1658](https://github.com/hcoona/three/pull/1658) and
-  [#1652](https://github.com/hcoona/three/pull/1652)).
-- **Accepted inputs:** [engineering principles](engineering/engineering-principles.md),
-  root `Directory.Packages.props`, `global.json`, and `renovate.json`, and
-  Workflow Delivery's [portal](../src/private/app/workflow-delivery/docs/README.md),
-  [requirements](../src/private/app/workflow-delivery/docs/requirements.md),
-  [MLD](../src/private/app/workflow-delivery/docs/middle-level-design.md),
-  [.NET integration](../src/private/app/workflow-delivery/docs/integration/dotnet.md),
-  [NuGet publisher source basis](../src/private/app/workflow-delivery/docs/research/nuget-native-publisher.md),
-  and [handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md).
-- **Advancement and outcome:** reconcile the seven directly referenced official
-  NuGet clients as a coherent version-8 cohort (CPM, locks, Renovate grouping,
-  and owning source/selection records) and repair declared SDK 11 compilation
-  and mixed-endpoint task execution without coupling the controller's target
-  runtime to whichever SDK supplies native MSBuild, keeping tool selection
-  derived from committed configuration while preserving product target
-  frameworks, native MSBuild responsibilities, publisher behavior, and
-  transport/trust boundaries.
-- **Exclusions and closure:** no campaign replay, new proving generation,
-  release/proving dispatch, publication, credential/permission/access change, repository-wide TFM migration, or new runtime matrix. Qualify on actual source with applicable
-  independent reviews, `GOV-011` disposition, and ordinary checks; delete this
-  entry when the bounded repair is accepted.
+- **Work carrier:** [Issue #1978](https://github.com/hcoona/three/issues/1978) and
+  linked readiness pull requests, retaining [Issue #1679](https://github.com/hcoona/three/issues/1679).
+- **Accepted inputs:** repository governance and
+  [engineering principles](engineering/engineering-principles.md), root
+  `Directory.Packages.props`, `global.json`, and `renovate.json`, the
+  [release triage policy](engineering/public-release-triage.md), Workflow
+  Delivery's [.NET](../src/private/app/workflow-delivery/docs/integration/dotnet.md)
+  and [handoff](../src/private/app/workflow-delivery/docs/agent-handoff.md)
+  records, plus unit-owned records linked from #1978.
+- **Advancement and outcome:** prepare the nine admitted NuGet libraries: finish
+  the scoped outstanding behavior/API repairs and shared target/build work,
+  reconcile the seven official NuGet clients as a version-8 cohort, and repair
+  SDK 11 compilation/mixed-endpoint execution without coupling the controller's
+  target runtime to native MSBuild. Add embedded symbols, bounded release notes,
+  metadata/license payloads, consumer presentation, qualification, and a
+  credential-free coordinated dry run. Limit Nanopass to the accepted completed
+  implementation's package, presentation, and qualification.
+- **Permitted external and paid effects:** routine credential-free local/CI only.
+- **Exclusions and closure:** no proving, publication dispatch, credential/access
+  change, artifact promotion, architecture rewrite, new runtime matrix or release
+  unit, or Nanopass implementation/API expansion. Delete after source, package,
+  presentation, qualification, and dry-run acceptance; version transition and
+  Official dispatch remain owner directed. Retain reviews, `GOV-011`, and `Validate`.
 
 ### Design and plan sheet-music recognition
 
