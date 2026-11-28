@@ -1,514 +1,232 @@
 # LiteAgensh Architecture
 
-This design realizes the [requirements](requirements.md); it is not an
-implemented-system description. Upstream findings and replacement rationale
-belong in the [migration map](upstream-migration.md).
+LiteAgensh is designed top-down from the `TLC`-verified abstract machines in
+[`specs/`](../specs/), refining pure mathematical coordination invariants onto
+single-machine SQLite, Git worktrees, stdio MCP, and the official Copilot `.NET`
+SDK to satisfy [requirements](requirements.md).
 
-## Context and dependency ownership
+## Layered TLA+ refinement and horizontal composition
 
-The operator controls a trusted local repository and several native coding
-agents. LiteAgensh coordinates their work; it does not implement their reasoning
-or model/tool loop. Use the official Copilot .NET SDK to host the existing
-complete runtime, not a model-provider SDK, another agent framework or a model
-HTTP proxy. The [migration findings](upstream-migration.md#native-interface-selection)
-explain why this replaces the initial ACP-only choice.
+[`specs/`](../specs/) follows Lamport's two-dimensional TLA+ discipline—**vertical
+layered refinement** (`Tier 0 <- Tier 1 <- Tier 2` via nontrivial state-function
+refinement mappings) combined with **horizontal orthogonal composition** across
+three Tier-1 coordination planes:
 
-The platform view below is a C4 container-level view: boxes are applications or
-stores, not Docker containers.
+- **Tier 0 (`What` — [`AtomicOrganization.tla`](../specs/AtomicOrganization.tla)):**
+  Specifies external behavior as single-step atomic transitions without cursors,
+  channel tokens, intermediate `committing`/`eval` states, OS scopes, or ghost
+  variables: `AtomicObserveTurn` updates `acked[p]` index sets (where `NoKey`
+  items are delivered verbatim and keyed updates satisfy `UpToDateOn`),
+  `AtomicIntegrate` advances `targetRef` and `status := "integrated"`
+  atomically, and lifecycle transitions govern `runEpoch`, `phase`, `peerExec`,
+  sum-type `meter`, and `finalVerdict`.
+- **Tier 1 (`How` — [`AgenshOrganization.tla`](../specs/AgenshOrganization.tla)):**
+  Composes the three protocol sub-planes horizontally (`THEOREM Spec =>
+SubPlane!SafetySpec`) while refining Tier 0 vertically (`THEOREM Spec =>
+HighOrg!Spec`, covering safety, fairness, and `BoundedTermination` liveness):
+
+1. **Single Causal Log & Co-Axial Cursors ([`CausalStream.tla`](../specs/CausalStream.tla)):**
+    - Refines Tier-0 `(acked, bootstrapped)` via `MappedAcked(p) == {i \in
+1..immCursor[p] : VisibleTo(p, log[i]) /\ (i <= baseCursor[p] \/
+log[i].imm)}` and `~needsBootstrap[p]` (`THEOREM Spec =>
+HighStream!StreamSafetySpec`).
+    - All inter-peer and operator coordination appends to one global immutable
+      causal `log` carrying `imm \in BOOLEAN` and an optional coalescing `key`
+      (`NoKey` for discussion messages, comments, and shared-context posts;
+      `'task:<id>'` or `'proposal:<id>'` for state transitions; unfenced
+      external `owner` appends are verified in `CausalStream.tla` via
+      `AllActors \ Peers`, while `AgenshOrganization.tla` composes the peer
+      cohort `AllActors <- Peers`).
+    - Durable progress uses `0 <= baseCursor <= immCursor <= |log|` paired with
+      ephemeral `(turnSnap, inflightImm)` (`turnSnap = -1` when idle; turn
+      aborts discard ephemeral cursors with zero persistent cursor writes) and
+      fencing `(needsBootstrap, signed chan \in -MaxChan..MaxChan, InTurn ==
+turnSnap >= 0)`.
+2. **Two-Phase Cross-Store CAS ([`WorkspaceCas.tla`](../specs/WorkspaceCas.tla)):**
+    - Refines Tier-0 single-step `AtomicIntegrate` via `MappedProposals`
+      (mapping `status = "committing"` to `"integrated"` iff `head \in
+ancestors[targetRef]` else `"open"`, linearizing three-step cross-store
+      CAS + crash recovery at `ExecuteArtifactCas` with zero ghost variables,
+      `THEOREM Spec => HighWorkspace!WorkspaceSafetySpec`).
+    - Trusts Git for merge-base and three-way tree merging through an abstract
+      partial-order `ancestors` DAG (including `PeerSyncMerge`) plus a
+      nondeterministic merge + `ProtectedDiff` oracle.
+3. **Fenced Epoch, Hierarchical Scopes & Sum-Type Meter ([`EpochLifecycle.tla`](../specs/EpochLifecycle.tla)):**
+    - Refines Tier-0 `Spec` (safety + liveness, `THEOREM Spec =>
+HighLifecycle!Spec`) by hiding `scopeState`, `chan`, and `crashesLeft`
+      over `Idle -> Open -> Draining -> Settling -> Quiescent`, three-state
+      `peerExec \in {Idle, Running, Unmeasured}`, and unclamped sum-type `meter
+\in Exact(cost) | Indeterminate`.
+
+- **Tier 2 (OS/SQLite Scope Protocol — [`OsScopeRefinement.tla`](../specs/OsScopeRefinement.tla)):**
+  Refines Tier-1 `EpochLifecycle` (`THEOREM Spec => Tier1Lifecycle!SafetySpec`)
+  via `AbstractScope(s)` onto asymmetric SQLite `effect_scopes` and OS
+  containment across Windows `KILL_ON_JOB_CLOSE` (breakaway disabled) and
+  cooperative POSIX `setsid` process groups (assuming child tools do not call
+  `setsid`/`setpgid` to escape `pgid == rootPid`): separates root write-ahead
+  `PrePidAmbiguous`, OS `SpawnOsRootProcess`, and SQLite `PersistRootPid`
+  (failing closed on pre-PID crashes without speculative disk witnesses),
+  models surviving POSIX `mcp Main` self-registration (`OrphanChildMaterializes`,
+  `NoPrePidAmbiguousOnPeerChannel`), and proves `ZeroOrphanWhenAbstractStopped`
+  via `kill(-pid, 0) == ESRCH` even when group leaders exit before children.
+
+## Downward refinement onto local primitives
 
 ```mermaid
 flowchart LR
     owner[Operator] --> cli[LiteAgensh C# CLI]
-    cli --> db[(Run SQLite database)]
-    coordinator[LiteAgensh C# coordinator] <--> db
-    coordinator <-->|Official SDK native RPC| agents[One owned Copilot runtime with peer sessions]
-    agents <-->|MCP stdio| helpers[LiteAgensh MCP helper processes]
-    helpers <--> db
-    coordinator --> git[Git and declared check processes]
-    git --> trees[Integration and worker worktrees]
-    agents --> trees
-    agents --> provider[Existing configured model service]
+    cli --> db[(run.sqlite)]
+    coord[Fenced Epoch Controller] <--> db
+    coord <-->|Official SDK RPC| rt[Shared Copilot Runtime Host]
+    rt <-->|--channel stdio MCP| mcp[Peer MCP Helper Processes]
+    mcp <--> db
+    coord --> git[Git & Verify Check Processes]
+    git --> trees[Target, Check, and Peer Worktrees]
+    rt --> trees
 ```
 
-Use one C# application with CLI/coordinator/MCP modes, not a separately deployed
-service per responsibility. A stdio MCP child is an adapter mode of the same
-application, not a new server installation. The .NET SDK/target framework,
-central package versions, test infrastructure and NBGV follow existing monorepo
-authorities; do not select a separate toolchain here.
-
-| Dependency                             | Delegated responsibility                                                                                         | Lite-owned responsibility                                                                                                               |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Copilot runtime and official SDK       | Reasoning, editing/shell tools, provider transport/authentication, compaction, native RPC/session/event behavior | Process/session association, supported settings/readback, permission responses, dispatch/cancellation and reported-usage reconciliation |
-| SQLite through `Microsoft.Data.Sqlite` | Transactions, file locking, persistence and documented busy-timeout behavior                                     | Schema, atomic domain/event changes, dedup/cursor semantics, finite timeouts and useful failure results                                 |
-| Git executable                         | Objects, commits, branches, worktrees, merge/conflict mechanics                                                  | Run refs, serialized candidate integration, exact identities, check/review binding and owner-checkout preservation                      |
-| Host process APIs                      | Process start, redirected pipes and observable process exit                                                      | Ownership, bounded waits, log separation and stopping only owned processes                                                              |
-
-The [implementation contracts](implementation-contracts.md) define CPM dependency
-selection, the official C# MCP SDK's stdio server and the official Copilot
-.NET SDK's typed native boundary. They also own operation inputs/results and shared
-integration boundaries. Those choices do not establish tested interoperability
-or introduce another model orchestration layer.
-
-## Configuration input boundary
-
-Treat YAML plus Markdown as a human-editable initialization input, not a
-second live coordination store. A configuration loader resolves and validates
-the selected input into the existing `RunConfiguration` before opening run
-state. JSON retains its existing inline goal and absolute-path semantics.
-YAML uses a goal-file reference and configuration-directory-relative paths;
-its exact field and failure contract belongs in the
-[implementation contracts](implementation-contracts.md#configuration-input).
-
-Use the repository-selected YamlDotNet parser rather than another
-configuration framework. Existing .NET JSON serialization, typed validation
-and persisted configuration remain the execution boundary. Resume and
-reconnect read that persisted snapshot, not mutable input files. Keep
-executable names, command arguments and Git revisions unchanged by path
-resolution.
-
-A project-owned JSON Schema supplies structural guidance to the existing
-VS Code YAML extension through normal schema association. It is an editor
-consumer of the input contract, not a replacement for runtime path and
-cross-field validation. Editor extensions and network schema retrieval are
-not runtime prerequisites; no Markdown-frontmatter language service or
-custom editor extension is introduced.
-
-## State and transaction boundary
-
-Keep one database and persistent state directory per run. Conceptual records
-are run/segments, workers/session/process associations, tasks/comments,
-channels/messages/threads, board revisions and recent-view metadata,
-recipient events/batches, notice leases/cursors/shown notices,
-changes/reviews/checks and operator control requests. This inventory does not
-require one repository interface or class per table.
-
-Both CLI and MCP modes use the same local operation implementation. A task,
-message or board write commits its domain mutation and recipient events in one
-short transaction. The coordinator polls durable events/control requests;
-notifications are an optimization, not the only copy of work.
-
-Enable WAL for a local filesystem. Use separate connections for concurrent
-operations; do not share a connection/command/reader concurrently. Keep
-transactions short, end them before native-agent, Git or check execution, and
-use finite provider timeouts rather than infinite retry layers. SQLite permits
-one pending writer; it does not provide parallel database writers.
-`Microsoft.Data.Sqlite` async ADO.NET methods execute synchronously, so do not
-claim asynchronous storage I/O or wrap each small operation in an unnecessary
-thread-pool task. See the [official storage findings](upstream-migration.md#mutable-contracts).
-
-Create schema changes transactionally, record schema compatibility and reject
-unknown incompatible state before starting workers. Do not silently discard or
-recreate a failed existing database. Persist source-defined board policy and
-queue behavior rather than preserving MySQL SQL syntax or row-lock assumptions.
-
-Only the coordinator performs integration and process/lifecycle operations.
-MCP/CLI integration and lifecycle operations enqueue requests and return their
-identities; they do not announce a merge or pause as completed before the
-coordinator records the outcome.
-
-### Contention observability
-
-Instrument the application's existing connection, transaction and SQL execution
-boundaries, not a replacement SQLite busy handler, global profiler or hosted
-diagnostic service. Keep finite provider timeout and transaction semantics
-unchanged. Track actual acquisition and commit/rollback/close outcomes rather
-than treating a still-open C# transaction scope as a still-held write lock.
-Record deferred and immediate acquisition separately; deferred acquisition alone
-does not establish a write lock.
-
-The coordinator and local MCP helpers retain bounded recent activity in
-process-lifetime-qualified files outside SQLite, under owned local state.
-On contention, preserve a separate bounded incident snapshot, including available
-activity from those application files and its collection interval. Concurrent,
-stale, truncated or missing records are evidence limitations, not proof of a
-particular lock holder. Do not enumerate unrelated OS processes or use a
-database query as the only diagnostic path after that database becomes locked.
-The [diagnostic contract](implementation-contracts.md#sqlite-contention-evidence)
-owns field/privacy/retention behavior. Native runtime internals remain outside
-this instrumentation boundary.
-
-## Native SDK, MCP and instruction boundary
-
-Launch and register one owned installed Copilot headless runtime for the
-operation, with one SDK client and independent sessions for admitted peers.
-The existing native-worker factory owns that runtime/client; individual session
-adapters borrow it rather than each launching a CLI. This is in-process
-ownership inside the existing coordinator, not a persistent service or a
-configurable backend pool. Use its documented auto-assigned loopback endpoint and a
-process-local connection token, then connect with the SDK's
-`RuntimeConnection.ForUri`. Keep native readiness/output and stderr separate
-from application output. The host owns the actual process handle and durable
-lease; the SDK owns RPC framing, events and session operations. No application
-HTTP server, SDK-private RPC copy, VS Code installation or AHP host is needed.
-
-The pinned [SDK package's multiple-session reference][sdk-multiple-sessions]
-documents independent sessions on one client. Use that supported abstraction,
-not shared conversation state or a second model/tool loop. Runtime reuse is
-the selected response to the real 32-peer resource scenario; it does not
-establish a memory saving, a native concurrency limit or 32-peer success.
-
-Set and verify each session's working directory through SDK session settings;
-the runtime process's startup directory is not the peer's authoritative cwd.
-Keep permission/event handlers, local MCP configuration, abort, mutable caps
-and usage queries bound to the exact session. Closing a peer session must not
-dispose the shared client/runtime. Calibration, preflight and settled-usage
-recovery have their own bounded operation lifetime; none leaves a persistent
-runtime for a later CLI invocation.
-
-Reuse the installed CLI, disable its automatic update, and disable SDK build-time
-CLI acquisition. Record the observed typed runtime version without a version
-allowlist or version-change approval gate. Verify explicit session identity,
-absolute working directory and native applied session limit before paid
-dispatch. Configure local stdio MCP and supported tool filters through typed
-SDK session settings. Disable recursive native team spawning where supported.
-Native policy still overrides an application request.
-
-Use explicit persistent session IDs. Bind reservation/session/worker identity
-atomically before any model send. SDK events are notifications, not the sole
-usage ledger: cumulative typed metrics and their completeness govern charging.
-Neither context occupancy nor a premium-request multiplier is AI-credit spend.
-
-Persist the runtime's exact process lease and each session-to-runtime
-association before paid dispatch. A process lease may own several sessions;
-one session may not acquire a second writer. Stop the affected cohort on a
-shared connection/runtime failure and preserve all unresolved reservations.
-Do not silently restart a backend beneath live or unknown sessions.
-
-[sdk-multiple-sessions]: https://www.nuget.org/packages/GitHub.Copilot.SDK/1.0.28#readme-body-tab
-
-### Shared credit allocation
-
-The opt-in shared mode keeps credit allocation in the existing coordinator,
-worker adapter and transactional campaign SQLite ledger. It does not add a
-service, model proxy, central task scheduler or native cross-session credit pool.
-The host backs each active native spending window from the smaller remaining
-run/campaign allowance; no waiting peer owns a permanent equal share.
-
-Use renewable grants of at most 100 credits, and at least the existing
-30-credit application admission minimum. This bounds concurrent authorization
-without making 100 a worker's lifetime budget. Persist the grant before applying
-the native cap. While a call is in flight, its unused authorization remains
-committed; never lend it to another worker. A completed SDK user turn is not
-proof that native background compaction has ended. Retain backing until that
-work settles and a fresh complete cumulative reading can close the grant.
-Every subsequent send needs fresh backing and a verified finite cap. Native
-compaction remains the runtime's responsibility; do not disable or replace it
-to make application accounting appear settled.
-
-The session adapter observes compaction lifecycle and fences its settlement
-state across metadata/usage reads. A completion notification permits a fresh
-query; neither the notification alone nor an old complete reading establishes
-settled spend. Invalidate a reading if native work changes during its capture
-or subsequent final staging. Wait within existing operation/settlement bounds,
-not an arbitrary sleep or an unbounded retry. Missing or contradictory
-settlement evidence retains backing and uncertainty; an ordinary idle session
-must not keep unused backing after verified settlement.
-
-Use the supported mutable session-limit and exhausted-limit response APIs.
-For a running session, relate its cap to the saved current-window baseline,
-not the session's entire historical cumulative total. A renewal must preserve
-the session, cumulative spend and run/campaign ceilings; it is not permission
-to clear a native limit or reset usage. Missing/mismatched readback,
-incomplete usage or unsupported mutation stops the affected path.
-
-When credit is temporarily committed to other in-flight calls, wait
-cancellably for their settlement rather than declaring the pool spent.
-The existing run deadline and stop controls still apply. If the remaining
-allowance cannot fund the application minimum, report credit exhaustion.
-Native limits check after model responses and can overshoot; backing grants
-do not establish a hard aggregate prepaid ceiling.
-
-### Local cooperation and instructions
-
-The helper is bound at launch to its run and worker; tool arguments do not
-choose an arbitrary actor/run. It exposes the
-[local capability vocabulary](upstream-migration.md#collaboration-mcp-map).
-Each implemented operation and its owning input, result, failure and
-candidate/cursor identity contract must stay self-consistent at each merge into
-`main`. The inventory is a complete semantic map, not a frozen JSON schema or
-an upstream compatibility promise.
-
-Compose upstream cooperation/focus/lifecycle instructions with local tool
-descriptions for a new native session's bootstrap. After confirmed bootstrap,
-same-session turns carry pending events and fresh unread board context, not
-another copy of the goal, cooperation guide or whole task/change snapshot.
-Full state remains available through the local tools. This limits
-application-owned redundancy without replacing native context compaction.
-Preserve the target repository's own instructions. Do not write a generated
-cooperation guide over tracked `AGENTS.md`.
-
-Bootstrap confirmation belongs to the exact native session and is retained
-after a completed turn, independently of event acknowledgement. Exact-session
-reconnect reuses that confirmation; explicit fresh-summary resume and a fresh
-load-fallback session require bootstrap again. An unconfirmed bootstrap may
-replay with interrupted events; do not infer native history from a new
-coordinator loop or claim exactly-once presentation.
-
-Permission callbacks honor the operator's explicit run policy and native
-enterprise policy. The trusted-host choice does not mean automatically
-approving unknown actions or modifying saved authentication/sandbox settings.
-If required behavior is unavailable under existing policy, stop that path and
-report it rather than broadening permissions.
-
-## Delivery ordering and notices
-
-### Worker admission ramp-up
-
-The coordinator owns configurable admission timing, not intelligent task
-assignment. With a positive start interval, start each ordinary native session
-only when its admission is due and begin that peer's loop without waiting for
-the whole team. Poll existing controls, process peer work and observe deadlines
-between admissions. Do not warm every session and merely delay its first prompt:
-an interrupted, never-dispatched native session has different accounting
-requirements from a reservation whose native worker was never started.
-
-At zero interval, keep the legacy all-session startup path for per-session
-credit allocation. Shared allocation uses incremental admission without an
-artificial interval, so ready peers can progress while later peers await
-backing. Planning
-release still gates peers; a positive interval does not admit waiting peers
-before that release. Exact recovery, budget admission and native settlement
-retain their existing contracts. No new scheduler service or worker role is
-introduced.
-
-### Deadline admission and bounded drain
-
-The existing coordinator owns two distinct stop boundaries: admission of new
-work at the segment deadline, and cancellation of already-dispatched requests.
-For normal expiry only, separate these tokens and drain existing requests
-within the [fixed lifecycle bound](implementation-contracts.md#bounded-deadline-drain).
-Worker preparation and shared-credit acquisition observe admission closure;
-an already-dispatched SDK send and its acknowledgement/usage verification
-observe the independent cancellation boundary. Exhausted-window renewal still
-observes admission closure. Do not move task assignment into the coordinator.
-
-The coordinator retains the drain state/outcome and continues observing owner
-controls and worker failures during grace. A safety stop or grace expiry
-cancels active requests and uses the existing cohort settlement barrier.
-Successful native send completion supplies the original terminal boundary;
-drain adds no alternative accounting proof, automatic reconnect or service.
-
-### Controlled native dependency in scenarios
-
-Keep the coordinator's native-worker dependency internal and replaceable in
-controlled scenarios. Its production factory always constructs the real
-SDK-backed worker and performs settled-session usage recovery through
-`RuntimeConnection.ForUri`. An internal constructor may accept a test factory;
-there is no CLI/configuration backend selector, alternate production transport
-or plugin registry.
-
-This boundary serves the current cooperation/fresh-resume journey and failed
-turn, incomplete-usage and unsettled-stop scenarios without launching models or
-binding a test listener. Keep real SQLite credit admission and coordinator
-association checks above the substitute. The factory's recovery operation may
-return usage only after its session/runtime is settled; otherwise it fails.
-
-Injected execution is automatically classified as controlled dependency
-evidence in results and receipt bindings. Controlled preflight/calibration
-receipts are stored separately and cannot admit production SDK execution.
-Tests obtain them through coordinator operations, not direct receipt insertion.
-These scenarios do not establish the real worker's association atomicity,
-SDK settings/wire behavior, billing, cancellation or persistence. The
-[validation basis](validation.md) retains their separate evidence obligations.
-
-```mermaid
-sequenceDiagram
-    participant Agent as Native worker
-    participant MCP as Local MCP helper
-    participant DB as SQLite
-    participant Host as Coordinator
-    Agent->>MCP: Publish finding or send message
-    MCP->>DB: Commit operation and recipient events
-    MCP->>DB: Acquire notice snapshot/lease
-    MCP-->>Agent: Tool result plus eligible notices
-    Host->>DB: Claim recipient batch for an idle worker
-    Host->>Agent: Prompt with batch and shared context
-    Agent-->>Host: Completed turn or failure
-    Host->>DB: Acknowledge completed batch or schedule bounded retry
-```
-
-There is one in-flight prompt per worker. Preserve upstream event transitions,
-attempt counting, batch ordering, backoff and recovery of interrupted sends.
-Do not retry a successful turn merely because later bookkeeping fails.
-Notice snapshots, leases, displayed ledgers and queue reconciliation prevent
-ordinary double presentation without promising exactly-once model actions.
-Appending notices to collaboration tool results does not interrupt an unrelated
-tool or expose a general native-runtime injection hook.
-
-## Git integration
-
-Record the explicit base commit and allocate run integration and worker refs
-without touching the original checkout. Workers submit a change with a captured
-head. The coordinator serializes the following path:
-
-1. Capture the integration head, submitted head and applicable review identity.
-2. Construct the proposed merged candidate in an owned integration/check
-   worktree. Preserve conflict information for the submitting agent.
-3. Execute declared candidate checks against that exact merged candidate and
-   record command, tree/commit, result and logs.
-4. Confirm the integration head, submitted head and applicable approvals still
-   match, then advance the integration ref. Otherwise report staleness and
-   re-evaluate rather than merging using old evidence.
-
-Checking the actual merged candidate is a LiteAgensh design decision, not a
-claimed upstream invariant. Preflight unsupported Git states and report a
-bounded failure; do not repair the user's unrelated work or force-update refs.
-The local merge gate can enforce the application's own path only. With shared
-host permissions, it cannot prevent arbitrary direct Git or database edits.
-
-HealthGate's source-defined 15/60-minute transitions remain scheduling policy.
-The restriction lift does not change candidate or final-check results.
-Finalization reports a local branch and evidence, not an automatic remote push.
-
-### Configured-check invocation
-
-Keep one internal configured-check invocation inside Git/check orchestration.
-A typed delegate using the existing process-result contract is sufficient;
-do not introduce a public runner interface, backend selector or plugin registry.
-Production uses the existing `ProcessRunner`; Git operations retain their real
-Git execution. Candidate construction, pre/post-check identity verification,
-classification, persistence and integration admission remain above this boundary.
-
-Controlled Git/check scenarios may substitute only the configured invocation,
-not the candidate gate or persisted check rows. This separates business journeys
-from physical-process prerequisites without changing production execution.
-The [validation basis](validation.md#configured-check-and-process-evidence)
-owns the distinct scenario and actual-process evidence obligations.
-
-## Lifecycle, ownership and recovery
-
-Use a lifetime-held local exclusive ownership handle and durable process/session
-associations for one coordinator per run. A stale timestamp is not permission
-to take over a live writer. After a crash, inspect surviving owned processes
-and worktrees before replacement; ambiguous ownership blocks automation.
-No distributed lease service is needed.
-
-| Path                           | Required behavior                                                                                                                                                           |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Start                          | Validate state/config/backend prerequisites, own the run, allocate worktrees and native sessions, then dispatch                                                             |
-| Crash reconnect                | Resolve old writer ownership; resume the exact saved native session with pending work continuation and transcript recovery disabled, then verify identity, limits and usage |
-| Closed failed-run reconnect    | Resolve ownership and settle associated usage only; preserve ended segments and the failed outcome, without worker dispatch or reopening the run                            |
-| Session load unavailable/fails | Record the failed reconnect and use the explicit fresh-session-with-summary recovery path; never claim an uninterrupted continuation or silently lose queued work           |
-| Pause                          | Stop new dispatch, request native cancellation, settle owned processes and retain durable work                                                                              |
-| Explicit resume                | Start fresh native sessions with repository/task/change/board summary and preserved run state                                                                               |
-| Finalize                       | Quiesce workers, perform final checks and retain local delivery and unresolved work                                                                                         |
-| Cleanup                        | Require an explicit request; inspect outcomes/ownership and remove only identified owned resources                                                                          |
-
-Use bounded cancellation grace and process-specific cleanup. Native silence does
-not prove exit. If a child remains unaccounted for, preserve state and report
-the unresolved operation rather than starting a duplicate or claiming a clean
-pause. Process enumeration is evidence about the local host, not proof about
-every possible external session.
-
-Cancel a turn explicitly through the SDK; cancellation of a local await is not
-proof that native work stopped. Quiesce event handlers, reconcile available
-complete usage, disconnect the SDK and settle the host-owned runtime before
-replacement. Settle known background compaction before capturing each peer's
-final usage; fence callbacks and close the session without invalidating that
-reading. The factory then closes the shared client
-and settles the owned runtime once; only after that barrier may the staged
-complete usage become final reconciled accounting. A session, callback, client
-or process settlement failure retains affected authorization as unresolved.
-No single peer's session disposal establishes whole-cohort quiescence.
-The common-host barrier cannot make a pre-compaction reading fresh. If a
-settled complete reading cannot be established while the session is readable,
-retain uncertainty instead of finalizing an earlier subtotal.
-
-The [credit contract](implementation-contracts.md#verified-pre-dispatch-cancellation)
-also permits a distinct verified cancellation before first dispatch. The worker
-stages its fresh-session evidence during stop; the existing factory applies the
-same common-host barrier before the campaign ledger can cancel its remaining
-authorization. Keep the durable cancellation proof and raw metrics separate
-from native-measured reports. This is not a new backend or billing estimate.
-
-The owner-facing `reconcile --state <owned-state> --reservation <id>` path is
-accounting-only and requires the run's exclusive ownership handle. It may
-inspect an ended unresolved segment without opening sessions, starting a new
-segment, replaying events, exporting a team report or relabeling old leases.
-Bind the requested reservation to the unchanged run/campaign and verify exact
-old owner/runtime identities, retained session settlement and current ledger
-predicates before the ledger's atomic disposition. Unknown ownership blocks it.
-Legacy state without a persisted dispatch-contract provenance marker requires
-explicit compatible retained lineage evidence through `--evidence <owned-proof>`;
-SDK version or a report's claimed success is not sufficient. Do not rewrite old
-preflight/calibration fingerprints or reuse them for paid admission by a new build.
-The ledger transaction rechecks dispatch and usage and records cancellation
-exactly once; a racing send cannot pass both admission and cancellation.
-
-An exact-load failure with no opened session may retain the existing
-undispatched complete-baseline recovery path; it does not dispose a healthy
-cohort's runtime or permit a send with unknown usage. Settled-usage recovery
-may use a temporary single-session runtime and must settle it before returning
-its final reading.
-
-Within that existing exact-session recovery, a verified settled final reading
-may reconcile a previously uncertain reservation whose shared grant is closed.
-This books an associated cumulative charge; it does not retrospectively open
-backing or authorize another send. The ledger must distinguish the recovery's
-settlement evidence from a live reading or an unrestricted finalization flag.
-The [credit contract](implementation-contracts.md#usage-evidence-and-settlement)
-owns eligibility and rejection rules. Keep the existing reconnect and offline
-pre-dispatch cancellation entry points distinct; no additional incident-specific
-command or recovery framework is introduced.
-
-For dispatched uncertain accounting recovery, the
-[SDK-native boundary](implementation-contracts.md#sdk-native-recovery-boundary)
-requires original routine termination from a pinned typed exact-session journal
-before activation, followed by independently fresh supported usage and
-new-boundary work/fence/session/host checks. Original send delivery and cancelled
-compaction failures remain failures; original termination supplies accounting
-provenance rather than clearing their old live fence. Only the fresh reading
-drives cumulative booking. Keep this in the existing native factory/adapter,
-not a raw-journal reader, new recovery service or provider-invoice integration.
-Missing original provenance or unsupported native behavior retains uncertainty.
-
-The same `reconnect` entrypoint selects a settlement-only branch when the run
-has prior segments, all are ended and its retained lifecycle is `unresolved`.
-Select that branch under exclusive ownership before requiring an unfinished
-crash segment or paid-work receipts. Reuse exact-session recovery and its
-settled temporary runtime; do not introduce a separate command or backend.
-Return its own success/failure outcome before worker admission or segment
-creation. Preserve original lifecycle/failure records, segments, report and
-receipts; accounting success is not a successful audit or delivery. Ordinary
-crash reconnect and fresh-summary resume retain their existing semantics and
-paid gates. The [entrypoint contract](implementation-contracts.md#closed-failed-run-reconnect)
-owns the detailed boundary.
-
-SDK disposal preserves on-disk session data; do not call its
-permanent session deletion API during pause, finalization or reconnect.
-On exact resume, preserve the native accounting-window origin and limit
-additional capacity to the reservation's existing backed allowance. Remaining
-backing is not the raw absolute native limit. The
-[credit contract](implementation-contracts.md#exact-recovery-limit-coordinates)
-owns the coordinate translation and supported retained evidence for
-non-dispatch recovery. Verify cumulative metrics against the saved accounting
-baseline; unknown or regressing usage stops paid work rather than regranting
-spent capacity. A new host or changed cap does not reset either baseline.
-The same contract owns exact recovery across observed runtime versions under
-unchanged SDK identity. Preserve consistent original runtime provenance and
-record the temporary host's actual nonempty version separately. Runtime
-versions are evidence, not an ordered-pair allowlist. Native rejection leaves
-recovery unavailable; do not introduce a fallback runtime, SDK migration or
-receipt rewrite.
-
-Retain SQLite together with its live journal state and worktrees through
-pause/finalize; do not copy a live main database file and call it a backup.
-Portable sealed backup/export is outside this product outcome.
-
-## Trust and unsupported guarantees
-
-This is a trusted same-user development tool. Agent code and check commands run
-with the host user's permissions and may use that user's configured provider;
-worktrees are not a security sandbox. SQLite and the local review path are not
-tamper-resistant against peers with the same permissions.
-
-Use existing native authentication; do not harvest, copy or proxy credentials.
-Keep diagnostics and native session data local by default, since they may
-contain repository content. Public acceptance evidence uses a disposable
-self-authored repository and sanitized observations, not raw user sessions.
-There is no aggregate token-cutoff, cross-backend normalization, history
-confidentiality or hosted-gate equivalence claim.
-
-Validate dependency-use assumptions and recovery at the levels required by the
-[validation basis](validation.md), relying on supported platform contracts
-rather than reimplementing their internals.
+| Abstract plane / invariant                      | Concrete local refinement                                                                                                                        | C# module boundary    |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------- |
+| `log`, co-axial `(baseCursor, immCursor)`       | Single append-only `causal_log` + `peers(..., base_cursor, imm_cursor, turn_snap, inflight_imm)` (eliminating duplicate stream/entity tables)    | `CausalLogStore`      |
+| `(needsBootstrap, signed chan, InTurn)`         | `needs_bootstrap` (`0\|1`), signed `chan_token` (`+k` bound / `-k` unbound), `turn_snap >= 0`, and launch-bound `mcp --channel <K>`              | `McpHost` / `SdkHost` |
+| `ancestors`, `PeerSyncMerge`, 3-step CAS        | Git worktree branches + `git merge --no-ff`, `proposals`, `proposal_reviews`, `verification_runs`, `git update-ref` CAS on `refs/lite-agensh/..` | `WorkspaceIntegrator` |
+| `head \in ancestors[targetRef]` crash reconcile | Startup/settlement recovery checks `git merge-base --is-ancestor <head> refs/lite-agensh/<run>/main` for any `committing` row                    | `WorkspaceIntegrator` |
+| `runEpoch`, `scopeState`, `peerExec`, `meter`   | `coordinator.lock` + `epochs`, `effect_scopes` + `KILL_ON_JOB_CLOSE`/process groups, `session_meters.exec_state`, and sum-type `meta['meter']`   | `EpochController`     |
+
+### Causal log and MCP transaction discipline
+
+Keep one WAL-enabled `run.sqlite` per run, opening short-lived logical
+connections and ending every transaction before invoking SDK RPC, Git, or check
+processes:
+
+- **Single causal log without double storage:** Messages, task/proposal
+  comments, shared-context entries (`FACT`, `OBSERVED`, `FAIL`, `CLAIM`,
+  `PATCH_SUMMARY` with `immediate = 1` and optional `replaces_seq`), and keyed
+  `task:<id>` / `proposal:<id>` status updates append directly to `causal_log`
+  in the same SQLite `IMMEDIATE` transaction as any `tasks`/`proposals` row or
+  post-CAS status update. (`AgenshOrganization.tla` intentionally omits coupling
+  proposal row mutations and post-CAS settlement to `log` appends so finite
+  `MaxLogItems` never starves workspace liveness, while `FencedWsCall` still
+  enforces `McpLive` fencing and atomic immediate-slice piggybacking; atomic
+  row-plus-`causal_log` SQLite commits are verified by controlled refinement
+  scenarios in [validation](validation.md).)
+- **Co-axial cursors and signed `chan_token` fencing:** `BindOrRecoverChannel`
+  sets `chan_token = ABS(chan_token) + 1` (`> 0`) and launches
+  `mcp --channel <K>`, preserving `saved_session_id` and `needs_bootstrap`
+  (`needs_bootstrap` becomes `1` only at `init`, on `Paused` continuation, or on
+  safe fresh-session fallback when `exec_state != 'Unmeasured'`). `BeginTurn`
+  snapshots `T = COALESCE(MAX(seq), 0)` into `(turn_snap = T, inflight_imm = T)`
+  under `chan_token > 0`, delivering `UnreadTurnIdx(peer, T)` (preserving
+  `dedup_key IS NULL` rows verbatim while folding each key across `(base_cursor..T]`,
+  including already-piggybacked `immediate = 1` rows `<= imm_cursor`) plus
+  bootstrap context iff `needs_bootstrap = 1`. Every peer MCP call checks
+  `turn_snap >= 0 AND chan_token = $launchChannel`, piggybacking visible
+  `immediate = 1` rows in `(inflight_imm..MAX(seq)]` and advancing
+  `inflight_imm` iff that visible slice is non-empty. `CommitTurn` sets `base_cursor = turn_snap`, `imm_cursor = inflight_imm`,
+  `turn_snap = -1`, and `needs_bootstrap = 0`; every transition into `Settling`
+  (turn abort, timeout, helper launch failure, `Paused`/`GoalConverged`, drain
+  expiry, or soft cost limit) **atomically** negates `chan_token =
+-ABS(chan_token)` and resets `turn_snap = -1` across **all** peers (committing
+  the completing peer's cursors/`needs_bootstrap = 0` on `SoftCostLimit`
+  completion while resetting `inflight_imm = imm_cursor` with zero writes to
+  `base_cursor`, `imm_cursor`, or `needs_bootstrap` for every non-completing
+  peer), tearing down the `runtime` container (`RuntimeGroupEmpty`) before
+  re-attaching under `+(K + 1)` in the next epoch (`CausalStream.tla`,
+  `OsScopeRefinement.tla`).
+
+### Two-phase Git integration and `ProtectedDiff`
+
+1. Evaluate queued `proposals` (`status = 'open' AND requested = 1`) serially in
+   the dedicated check worktree under `verify` scope (`Open` phase): verify a
+   unique Git merge base (`git merge-base --all <snapMain> <head>` returning
+   exactly one commit; criss-cross multiple bases fail closed) and materialize
+   the merge into `snapMain = refs/lite-agensh/<run>/main` via `git merge --no-ff`
+   when diverged so `<proposal.head>` remains a true Git ancestor.
+2. Compute per-path net `ProtectedDiff` over
+   `git diff --no-renames --name-only <snapMain> <mergedTree>` against
+   `protectedPaths` (emitting both source and destination paths on renames). If
+   merge conflicts, multiple merge bases exist, required non-author approval on
+   `proposal.head` is absent, or configured checks fail, clear `requested = 0`
+   in SQLite only if `proposals.head_oid = $snapHead` (preserving any newer
+   head's request) without touching `refs/lite-agensh/<run>/main` or peer
+   worktrees (peers may run `git merge` of `refs/lite-agensh/<run>/main` locally
+   in their worktree to resolve conflicts).
+3. Pre-commit `status = 'committing'` in SQLite after rechecking `(snapMain,
+snapHead)` and live approvals, then complete `git update-ref refs/lite-agensh/<run>/main <mergedOid> <snapMain>`
+   and post-CAS SQLite settlement (`integrated` vs `open` via
+   `git merge-base --is-ancestor <head> refs/lite-agensh/<run>/main`) across
+   `Open`, `Draining`, or `Settling` before closing the epoch. Startup and crash
+   settlement apply the identical `merge-base --is-ancestor` reconciliation.
+
+### OS process topology, unified `run`, and guardrails
+
+- **True OS process hierarchy, root-only write-ahead `Ambiguous`, and Job Object lifetime (`#1756`):**
+    - The Coordinator directly spawns only the two root processes: `runtime`
+      (shared Copilot CLI host) and `verify` (check runner). On Windows, each
+      root attaches to a Coordinator-owned `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`
+      Job Object (breakaway disabled) before initial thread execution
+      (`PROC_THREAD_ATTRIBUTE_JOB_LIST` or `CREATE_SUSPENDED` +
+      `AssignProcessToJobObject`), so a Coordinator crash closes the Job handle
+      and kernel-terminates the entire tree; on POSIX, each root starts a
+      `setsid` process group (`pgid == pid`) torn down via `kill(-pid, SIGKILL)`.
+      Under `runtime`, Copilot CLI spawns `lite-agensh mcp` helpers
+      (`channel:<peer>`) and—under `"trusted"` policy—native shell tools as
+      sibling OS children (`mcp` never spawns shell tools, and `runtime` stays
+      non-`'Stopped'`—blocking `Quiescent`, new epochs, `finalize`, and
+      `cleanup`—until both `channel:<peer>` helpers and all sibling shell tools
+      exit).
+    - Pre-PID write-ahead `'Ambiguous'` applies **only** to Coordinator-spawned
+      roots (`runtime`, `verify`), promoted to `'Active'` with
+      `(pid, start_ticks)` before resuming execution (or `'Stopped'` if creation
+      fails). Because `channel:<peer>` (`mcp`) is spawned internally by
+      `runtime` during `CreateSessionAsync`/`ResumeSessionAsync` after the
+      Coordinator reserves strictly monotonic `chan_token = ABS(chan_token) + 1`
+      (`--channel <K>`, used for at most one SDK helper launch) and has no side
+      effects before `Main`, the Coordinator never pre-writes a PID-less
+      `'Ambiguous'` row for it (preventing permanent self-lock on pre-`Main`
+      crashes); `mcp` atomically checks `epochs.phase = 'Open' AND
+effect_scopes['runtime'].state = 'Active' AND
+COALESCE(effect_scopes['channel:<peer>'].state, 'Stopped') = 'Stopped' AND
+peers.chan_token = K` in `Main` before registering `(pid, start_ticks,
+'Active')` under `parent_id = 'runtime'`, and never self-writes `'Stopped'`
+      before OS process exit—instead, whenever the epoch enters `Settling` (on
+      any turn abort, helper launch failure, or stop signal), the Coordinator
+      **atomically** negates `peers.chan_token = -ABS(chan_token)` and resets
+      `turn_snap = -1` across **all** peers in SQLite (fencing every peer helper
+      out of MCP calls at once while keeping `effect_scopes['channel:<peer>'].state =
+'Active'`), tears down the root `runtime` Job Object / process group
+      (`RuntimeGroupEmpty`, terminating `runtime`, all `mcp` helpers, and all
+      `"trusted"` sibling shell subprocesses without blocking on RPC
+      `DisposeAsync()`), and clears `(pid = NULL, start_ticks = NULL, state =
+'Stopped')` only after OS termination before a subsequent epoch reserves
+      `+(K + 1)`.
+    - Because a restarted CLI process cannot open a dead predecessor's anonymous
+      Job handle, cross-restart `run`, `finalize`, and `cleanup` rely on Windows
+      `KILL_ON_JOB_CLOSE` plus bottom-up `(pid, start_ticks)` liveness checks in
+      `effect_scopes` (`channel:<peer>` before `runtime`, plus `verify`, and
+      `kill(-pid, 0) -> ESRCH` cooperative group emptiness for POSIX roots),
+      while PID-less pre-PID root `'Ambiguous'` rows fail closed. Logical turns
+      use `peers.turn_snap >= 0` + `session_meters.exec_state`.
+- **Unified `run`, honest `Quiescent` metering, & idempotent `finalize`:**
+  From `Idle`, `run` starts epoch 1; from `Quiescent(Paused)`, sets
+  `needs_bootstrap = 1` across peers and seeds a fresh state summary; from an
+  interrupted epoch with `Exact` metering (`meter >= 0`), reconnects saved SDK
+  sessions (`ContinuePendingWork = false`, `AllowTranscriptRecovery = false`)
+  with fresh `ABS(chan_token) + 1` helpers, allowing fresh-session fallback
+  (`needs_bootstrap = 1`) only when `exec_state != 'Unmeasured'`. Whenever an
+  epoch settles into `Quiescent` (gracefully or after crash) with any non-`Idle`
+  `exec_state`—or on missing/incomplete/regressing `Complete` nano-AIU
+  readback—`meta['meter']` transitions to `-1` (`Indeterminate`,
+  `FaultedClosed`). `finalize` runs `finalChecks` under `verify` scope without
+  overwriting `stopReason`.
+
+## Trust boundary
+
+Agent tools and check commands execute under the local user's OS account;
+worktrees isolate Git working trees, not host permissions, network, or secrets.
+Under default `nativePermissionPolicy: "deny"`, arbitrary shell execution is
+denied; under `"trusted"`, same-account peers are cooperative (`LA-REQ-016`), so
+`--actor` and `--channel` act as concurrency/ABA staleness fences against
+delayed or orphaned MCP helpers rather than an adversarial privilege boundary.
+Existing Copilot authentication is used in place without credential copying or
+traffic proxying.

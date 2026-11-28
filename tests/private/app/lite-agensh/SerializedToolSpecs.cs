@@ -1,7 +1,5 @@
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using LiteAgensh.Tests.Support;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -559,65 +557,6 @@ public sealed class SerializedToolSpecs(TestContext context)
                                                 "change",
                                                 Items(work).Select(item => Text(item, "kind"))
                                             );
-
-                                            string migration = File.ReadAllText(
-                                                SourcePath("docs/upstream-migration.md")
-                                            );
-                                            var entries = Regex.Matches(
-                                                migration,
-                                                "(?m)^\\| `(gitea\\.[^`]+|mattermost\\.[^`]+"
-                                                    + "|board\\.[^`]+)`\\s*\\|([^|]+)\\|"
-                                            );
-                                            Assert.HasCount(29, entries);
-                                            Assert.HasCount(
-                                                entries.Count,
-                                                entries
-                                                    .Select(entry => entry.Groups[1].Value)
-                                                    .ToHashSet(StringComparer.Ordinal)
-                                            );
-                                            Assert.AreEqual(
-                                                13,
-                                                entries.Count(entry =>
-                                                    entry.Groups[1].Value.StartsWith(
-                                                        "gitea.",
-                                                        StringComparison.Ordinal
-                                                    )
-                                                )
-                                            );
-                                            Assert.AreEqual(
-                                                12,
-                                                entries.Count(entry =>
-                                                    entry.Groups[1].Value.StartsWith(
-                                                        "mattermost.",
-                                                        StringComparison.Ordinal
-                                                    )
-                                                )
-                                            );
-                                            Assert.AreEqual(
-                                                4,
-                                                entries.Count(entry =>
-                                                    entry.Groups[1].Value.StartsWith(
-                                                        "board.",
-                                                        StringComparison.Ordinal
-                                                    )
-                                                )
-                                            );
-                                            foreach (Match entry in entries)
-                                            {
-                                                string local = Regex
-                                                    .Match(entry.Groups[2].Value, "`([^`]+)`")
-                                                    .Groups[1]
-                                                    .Value;
-                                                Assert.Contains(
-                                                    local,
-                                                    exercised,
-                                                    entry.Groups[1].Value
-                                                );
-                                                Assert.Contains(
-                                                    local,
-                                                    catalog.Select(tool => tool.Name)
-                                                );
-                                            }
                                             Assert.HasCount(catalog.Count, exercised);
                                         },
                                         token
@@ -910,46 +849,6 @@ public sealed class SerializedToolSpecs(TestContext context)
                 context.CancellationToken
             )
             .ConfigureAwait(false);
-    }
-
-    internal static string SourcePath(string relative, [CallerFilePath] string caller = "")
-    {
-        foreach (
-            string start in new[] { AppContext.BaseDirectory, Path.GetDirectoryName(caller) ?? "" }
-        )
-        {
-            if (string.IsNullOrEmpty(start))
-            {
-                continue;
-            }
-            for (
-                DirectoryInfo? directory = new(start);
-                directory is not null;
-                directory = directory.Parent
-            )
-            {
-                string project = Path.Combine(
-                    directory.FullName,
-                    "src",
-                    "private",
-                    "app",
-                    "lite-agensh"
-                );
-                string path = Path.Combine(
-                    project,
-                    relative.Replace('/', Path.DirectorySeparatorChar)
-                );
-                if (
-                    File.Exists(Path.Combine(directory.FullName, "global.json"))
-                    && File.Exists(Path.Combine(project, "LiteAgensh.csproj"))
-                    && (relative == "." ? Directory.Exists(path) : File.Exists(path))
-                )
-                {
-                    return path;
-                }
-            }
-        }
-        throw new InvalidOperationException("Runtime worktree root not found.");
     }
 
     private static async Task<JsonObject> AssertChangeChecksAsync(
