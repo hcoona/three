@@ -324,6 +324,7 @@ does not yet produce.
 | How are real-data splits, system crops and recognizer baselines evaluated?      | [Evaluation and real-data alignment protocol](docs/evaluation-protocol.md)       |
 | How are synthetic training pairs, Stage S3 gates and W5 detectors evaluated?    | [Synthetic data and system-detection protocol](docs/synthetic-protocol.md)       |
 | How are W6 bulk crop datasets, clean model stacks and per-system runs governed? | [Training, bulk-packaging and page-detector protocol](docs/training-protocol.md) |
+| What does a valid reading guarantee about the paper and the editable score?     | [OMR models and checked design findings](docs/models/README.md)                  |
 | How do I route a change or operate formal/baseline runs safely?                 | [Agent handoff](docs/agent-handoff.md)                                           |
 | What work is currently authorized?                                              | Repository [Delivery Wave](../../../../docs/delivery-wave.md)                    |
 | Where are progress, reviews and findings?                                       | The Issues above and their linked pull requests                                  |

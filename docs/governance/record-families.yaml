@@ -103,6 +103,16 @@ bindings:
       path: 'src/private/app/workflow-delivery/docs/design/models/*.cfg',
     }
   - {
+      id: sheet-music-omr-models,
+      namespace: src/private/app/sheet-music-omr,
+      path: 'src/private/app/sheet-music-omr/docs/models/*.tla',
+    }
+  - {
+      id: sheet-music-omr-model-configs,
+      namespace: src/private/app/sheet-music-omr,
+      path: 'src/private/app/sheet-music-omr/docs/models/*.cfg',
+    }
+  - {
       id: circular-list-models,
       namespace: src/public/lib/CircularList,
       state: current,
