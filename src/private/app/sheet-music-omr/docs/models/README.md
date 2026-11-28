@@ -83,6 +83,14 @@ See the [carry and assembly](../text-format.md#carry-state-and-assembly),
 [constrained decoding](../training-protocol.md#training-detector-and-constrained-decoding-contracts)
 and [conversion contract](../requirements.md#omr-req-008-forward-and-reverse-conversion).
 
+## Text Score 2: do the transcription rules determine a reading?
+
+The [decision audit](printed-decisions.md) starts **before** normalization.
+It checks existence and uniqueness separately for ordering, anchor selection,
+ownership and simultaneous completion, including cases with no answer or
+several answers. Its inputs are invented positions and notation facts, not
+preselected canonical documents.
+
 ## Text Score 2: one target for one determined reading
 
 The original [W1 design rationale](https://github.com/hcoona/three/issues/1488)
