@@ -306,7 +306,10 @@ internal static class DotNetGraph
                 "SetPackageReleaseNotes"),
             ("src/public/lib/WebHdfs.Extensions.FileProviders/" +
                 "WebHdfs.Extensions.FileProviders.csproj", "SetPackageReleaseNotes"),
+            // The basis and candidate may straddle the move from the CLI to the .NET provider.
             ("src/private/app/workflow-delivery/WorkflowDelivery.csproj", "ReferenceOfficialNbgv"),
+            ("src/private/app/workflow-delivery/Ecosystems/DotNet/WorkflowDelivery.DotNet.csproj",
+                "ReferenceOfficialNbgv"),
             ("tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj",
                 "ReferenceOfficialNbgv"),
             ("tests/public/lib/WebHdfs.Extensions.FileProviders.UnitTest/" +
