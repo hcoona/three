@@ -169,6 +169,36 @@ and run other work without refunding access. Settlement, reconciliation and
 dispatch have weak fairness; verification does not. This does not change
 the [accepted pilot ceilings](../requirements.md#omr-req-019-test-set-touch-governance-and-stage-s0-baselines).
 
+## Training labels: renumber notes without reconnecting beams
+
+[TrainingVoiceLabels](TrainingVoiceLabels.tla) checks one staff, two bars,
+two source lines and two unit or double-length slots per line per bar. Each
+bar chooses a stem assignment and overlapping or disjoint rhythms. Each
+temporally adjacent pair on a line can be joined by a beam, including one
+whose last event before the barline is a hidden rest. The model derives beam
+flags from those edges, applies a numbering policy and reconstructs the
+edges on the output lines. It compares **event endpoints**, not beam counts.
+
+A determined local pair takes its printed numbers; a crossing beam can move
+with both bars if their permutations agree. Otherwise preserve source lines
+rather than infer a crossing assignment. The normal configuration exhausts
+1,152 valuations. To reproduce it:
+
+```shell
+mise run tla:tlc -- -workers 1 -config src/private/app/sheet-music-omr/docs/models/TrainingVoiceLabels.cfg src/private/app/sheet-music-omr/docs/models/TrainingVoiceLabels.tla
+```
+
+In a temporary copy of the configuration, replace `Safe` with `Blanket`,
+`Independent`, `NotesOnly`, `Freeze` or `Guess`. Each **must fail**: respectively a
+local beam retains source IDs, per-bar permutation changes a crossing edge,
+ignoring a hidden rest loses an endpoint, an agreed cross-bar permutation
+is unnecessarily blocked, or both conflicting bars are swapped without
+changing a single beam edge. This is not a model of OCR, MusicXML parsing,
+multi-level beams, or all voice assignment. The producer uses normalized
+MusicXML beam states at every level; fixture tests cover repeated `begin`,
+the hidden endpoint, decoded supervision, tie endpoint identity and marker
+rejection separately.
+
 ## Reproduce the bounded checks
 
 From the repository root, substitute the configuration and **its module**:

@@ -28,6 +28,7 @@ import zipfile
 import zlib
 from dataclasses import dataclass, field, replace
 from fractions import Fraction
+from itertools import pairwise
 from typing import TYPE_CHECKING, Final, NoReturn
 from xml.parsers import expat
 
@@ -346,12 +347,16 @@ def _malformed(rule: str, message: str, at: _At | None) -> NoReturn:
 # Public API.
 
 
-def from_musicxml(data: bytes | str) -> AssembledScore:
+def from_musicxml(
+    data: bytes | str, *, training_voices: bool = False
+) -> AssembledScore:
     """Convert a MusicXML piano score to a valid assembled score.
 
     Args:
         data: A ``score-partwise`` document, or the bytes of a compressed
             ``.mxl`` file, with one part on two staves.
+        training_voices: For training labels only, number unambiguous local
+            two-voice note lines by printed stems rather than interchange IDs.
 
     Returns:
         The assembled score, parsed back from its canonical text, so its
@@ -362,7 +367,7 @@ def from_musicxml(data: bytes | str) -> AssembledScore:
             that it cannot convert faithfully. No partial result is returned.
     """
     root = _load(data)
-    score = _Reader(root).read()
+    score = _Reader(root, training_voices=training_voices).read()
     return score.convert()
 
 
@@ -641,8 +646,9 @@ class _Cursor:
 class _Reader:
     """Reads one ``score-partwise`` document into measures of leaves."""
 
-    def __init__(self, root: ET.Element) -> None:
+    def __init__(self, root: ET.Element, *, training_voices: bool) -> None:
         self.root = root
+        self.training_voices = training_voices
         self.divisions: int | None = None
         self.key: int | None = None
         self.meter: Meter | None = None
@@ -668,6 +674,11 @@ class _Reader:
         for measure in self.measures:
             measure.start = start
             start += measure.length
+        _normalize_leaf_beams(self.measures)
+        if self.training_voices:
+            _assign_printed_voices(self.measures)
+            for measure in self.measures:
+                _Lines(self, measure).place_directions()
         assert self.key is not None  # noqa: S101
         assert self.meter is not None  # noqa: S101
         return _Score(
@@ -732,7 +743,10 @@ class _Reader:
         )
         if measure.length != measure.meter.length:
             measure.options.append(LenOption(measure.length))
-        _Lines(self, measure).assemble()
+        lines = _Lines(self, measure)
+        lines.assemble()
+        if not self.training_voices:
+            lines.place_directions()
         return measure
 
     def _child(
@@ -1947,6 +1961,71 @@ class _DirectionReader:
 # Voice lines.
 
 
+def _printed_voice_map(leaves: list[_Leaf]) -> dict[int, int]:
+    """Return the two-line permutation supported by local rhythmic evidence."""
+    if len({e.voice for e in leaves}) != _PAIR_LEN:
+        return {}
+    target: dict[int, int] = {}
+    notes = []
+    for leaf in leaves:
+        if leaf.kind == _SPACER:
+            continue
+        if (
+            leaf.shown != leaf.staff
+            or leaf.kind != _NOTE
+            or leaf.grace is not None
+            or leaf.pair is not None
+            or any(m.tie_start or m.tie_stop for m in leaf.members)
+        ):
+            return {}
+        stem = next(
+            (f.direction for f in leaf.flags if isinstance(f, Stem)), None
+        )
+        if stem is None:
+            return {}
+        voice = 1 if stem == StemDirection.UP else 2
+        if target.setdefault(leaf.voice, voice) != voice:
+            return {}
+        notes.append(leaf)
+    if set(target.values()) == {1, 2} and any(
+        a.voice != b.voice and b.onset < a.onset + a.duration
+        for a, b in pairwise(sorted(notes, key=lambda e: e.onset))
+    ):
+        return target
+    return {}
+
+
+def _assign_printed_voices(measures: list[_Measure]) -> None:
+    """Apply one agreed permutation to each run of beam-connected bars."""
+    for staff in range(1, _STAVES + 1):
+        start = 0
+        common: dict[int, int] = {}
+        for i, measure in enumerate(measures):
+            leaves = [e for e in measure.leaves if staff in (e.staff, e.shown)]
+            proposed = _printed_voice_map(leaves)
+            if i == start:
+                common = proposed
+            elif proposed != common:
+                common = {}
+            # Inspect normalized flags, including beams on hidden rests.
+            if any(
+                isinstance(f, Beam)
+                and f.state in {BeamState.START, BeamState.CONTINUE}
+                for e in leaves
+                if e.onset + e.duration == measure.length
+                for f in e.flags
+            ):
+                continue
+            if any(v != new for v, new in common.items()):
+                for bar in measures[start : i + 1]:
+                    lines = {v: bar.lines.pop((staff, v)) for v in common}
+                    for v, line in lines.items():
+                        for leaf in line:
+                            leaf.voice = common[v]
+                        bar.lines[staff, common[v]] = line
+            start = i + 1
+
+
 class _Lines:
     """Arranges the leaves of one measure into voice lines."""
 
@@ -1968,6 +2047,8 @@ class _Lines:
                 *(leaf for leaf in leaves if not leaf.is_main),
                 *self._fill(key, mains),
             ]
+
+    def place_directions(self) -> None:
         for direction in self.measure.directions:
             self._place(direction)
 
@@ -2853,7 +2934,6 @@ class _Score:
     matcher: _Matcher | None = None
 
     def convert(self) -> AssembledScore:
-        _normalize_leaf_beams(self.measures)
         self.matcher = _Matcher(self.measures)
         self.matcher.match()
         failure: tuple[MusicXmlDiagnostic, ...] | None = None

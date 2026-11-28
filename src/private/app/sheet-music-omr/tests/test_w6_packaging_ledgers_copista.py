@@ -2735,3 +2735,115 @@ def test_spacer_only_measure_excluded_from_musescore_supplement(tmp_path):
     plans, counts = packaging._interleave_supplement_plans([*train, *val])  # noqa: SLF001
     assert counts["clef"] == len(surnames) - 1
     assert "pdmx-00" not in {p.row["source_id"] for p in plans}
+
+
+_DUPLEX_HEADER = _HEADER.replace("4/4", "2/4")
+
+
+def _duplex_xml(body):
+    score = parse_document(_DUPLEX_HEADER + "m 1\n1.1: D4/2[up]\n" + body)
+    assert isinstance(score, AssembledScore)
+    return to_musicxml_text(score)
+
+
+def _packaged_supervision(xml):
+    from sheet_music_omr.harness.systems import SystemLayout  # noqa: PLC0415
+    from sheet_music_omr.training import models as training  # noqa: PLC0415
+
+    variant = _rendered_fixture("duplex", "synth_train")
+    layout = SystemLayout(3, (SystemStart(0, 1, 1), SystemStart(2, 1, 2)))
+    labels = renderers._system_texts(xml, layout)  # noqa: SLF001
+    render = replace(variant.render, system_texts=labels)
+    crops, _, _ = packaging._variant_rows(replace(variant, render=render))  # noqa: SLF001
+    tokenizer = training.TextScore2DomainTokenizer()
+    targets = []
+    for row, label in zip(crops, labels, strict=True):
+        ids, prompt_len = training._arm_b_train_sequence(tokenizer, row)  # noqa: SLF001
+        target = ids[prompt_len:]
+        assert target[-1] == tokenizer.eos_token_id
+        assert tokenizer.decode(target[:-1]) == row["target_text_v2"] == label
+        targets.append(target)
+    return labels, targets
+
+
+def test_local_beams_ignore_measure_voice_ids():
+    """Local beams must not make source IDs authoritative for visible voices."""
+    import xml.etree.ElementTree as ET  # noqa: PLC0415
+
+    upper = (
+        "1.1: A5/8[up,beam1=start] B5/8[up,beam1=continue] "
+        "C6/8[up,beam1=continue] D6/8[up,beam1=end]"
+    )
+    lower = (
+        "1.2: F4/8[down,beam1=start] E4/8[down,beam1=continue] "
+        "D4/8[down,beam1=continue] C4/8[down,beam1=end]"
+    )
+    xml = _duplex_xml(
+        f"m 2\n{upper}\n{lower}\nm 3 right=final\n1.1: D4/2[up]\n"
+    )
+    root = ET.fromstring(xml)  # noqa: S314 - generated fixture
+    labels, targets = _packaged_supervision(
+        ET.tostring(root, encoding="unicode")
+    )
+    swap = {"1": "2", "2": "1"}
+    voices = root.findall(".//measure[@number='2']/note/voice")
+    assert {voice.text for voice in voices} == swap.keys()
+    for voice in voices:
+        assert voice.text is not None
+        voice.text = swap[voice.text]
+    changed = ET.tostring(root, encoding="unicode")
+    relabeled, retokenized = _packaged_supervision(changed)
+    assert f"m 2\n{upper}\n{lower}\n" in labels[0]
+    assert relabeled == labels
+    assert retokenized == targets
+
+
+def test_unison_ties_preserve_cross_system_addresses():
+    """Two ties on C4 encode different graphs despite identical pitches."""
+    from sheet_music_omr import assemble  # noqa: PLC0415
+
+    starts = (
+        "m 2\n1.1: D4/4[up] C4{tie@r2:start}/4[up]\n"
+        "1.2: C4{tie@r1:start}/2[down]\n"
+    )
+    targets = []
+    for upper, lower in ((2, 1), (1, 2)):
+        ends = (
+            f"m 3 right=final\n1.1: C4{{tie@r{upper}:end}}/4[up] E4/4[up]\n"
+            f"1.2: C4{{tie@r{lower}:end}}/2[down]\n"
+        )
+        labels, tokens = _packaged_supervision(_duplex_xml(starts + ends))
+        targets.append(tokens[1])
+        result = assemble([parse_document(label) for label in labels])
+        assert result.status.value == "success"
+        assert result.text is not None
+        assert starts + ends in result.text
+    assert targets[0] != targets[1]
+
+
+@pytest.mark.parametrize("line", ["?(1/2)", '<?>["p","pp"] D4/2[up]'])
+def test_review_markers_rejected_at_variant_preparation(tmp_path, line):
+    """A valid but unresolved score cannot become a prepared variant."""
+    from sheet_music_omr import (  # noqa: PLC0415
+        ReviewRequiredError,
+        review_markers,
+        validate_document,
+    )
+
+    source = _DUPLEX_HEADER + f"m 1 right=final\n1.1: {line}\n"
+    score = parse_document(source)
+    assert not validate_document(score)
+    path = tmp_path / "review.v2"
+    path.write_bytes(source.encode())
+    plan = packaging._variant_plan(  # noqa: SLF001
+        {
+            "canonical_root": str(tmp_path),
+            "canonical_v2_path": path.name,
+            "canonical_v2_sha256": _sha(source.encode()),
+            "measure_count": 1,
+        },
+        0,
+    )
+    with pytest.raises(ReviewRequiredError) as error:
+        packaging._prepare_variant(plan, "verovio")  # noqa: SLF001
+    assert error.value.markers == review_markers(score)

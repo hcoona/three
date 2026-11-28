@@ -57,7 +57,6 @@ from sheet_music_omr.harness.systems import (
     split_score,
     system_starts,
 )
-from sheet_music_omr.model import AssembledScore
 from sheet_music_omr.musicxml_events import (
     ProtocolDefectError,
     read_score,
@@ -66,9 +65,8 @@ from sheet_music_omr.musicxml_events import (
 from sheet_music_omr.musicxml_reverse import (
     MusicXmlError,
     _parse_xml,
-    from_musicxml_text,
+    from_musicxml,
 )
-from sheet_music_omr.parser import parse_document
 from sheet_music_omr.supplementary import compare_file
 from sheet_music_omr.synthetic.degrade import estimate_staff_space
 from sheet_music_omr.synthetic.ledgers import (
@@ -1103,11 +1101,8 @@ def _labeled_xml(xml: str) -> tuple[str, tuple[str, ...]]:
 
 
 def _system_texts(xml: str, layout: SystemLayout) -> tuple[str, ...]:
-    canonical = parse_document(from_musicxml_text(xml))
-    if (
-        not isinstance(canonical, AssembledScore)
-        or len(canonical.blocks) != layout.measures
-    ):
+    canonical = from_musicxml(xml, training_voices=True)
+    if len(canonical.blocks) != layout.measures:
         msg = "renderer measures do not map one-to-one to canonical blocks"
         raise RenderRejected(msg)
     docs = split_score(canonical, layout.starts)
