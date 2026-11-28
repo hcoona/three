@@ -97,6 +97,49 @@ def test_training_voices_do_not_guess_from_stems(lines):
     assert lines in _system_texts(xml, system_starts(xml))[0]
 
 
+@pytest.mark.parametrize("last", ["F4/8[down,beam1=start]", "x/8[beam1=start]"])
+def test_training_voices_preserve_cross_bar_beam(last):
+    """Keep beam endpoints when adjacent bars suggest different permutations."""
+    body = (
+        f"m 1\n1.1: D4/4[down] E4/8[down] {last}\n1.2: A5/2[up]\n"
+        "2.1: D3/2\nm 2 right=final\n"
+        "1.1: G4/8[up,beam1=continue] A4/8[up,beam1=end] B4/4[up]\n"
+        "1.2: C4/2[down]\n2.1: G2/2\n"
+    )
+    score = parse_document(
+        "format: text-score/2\nkey: 0\ntime: 2/4\nclefs: G2 F4\ncarry: octave\n"
+        + body
+    )
+    assert isinstance(score, AssembledScore)
+    xml = to_musicxml_text(score)
+    # MuseScore may repeat a begin for the continuation at the barline.
+    xml = xml.replace(">continue</beam>", ">begin</beam>")
+    (target,) = _system_texts(xml, system_starts(xml))
+    assert body in target
+
+
+def test_training_voices_move_a_determined_cross_bar_run_together():
+    """Move the beam with its notes when both bars agree."""
+    bars = [
+        "1.1: A5/4[up] B5/8[up] C6/8[up,beam1=start]\n1.2: F4/2[down]",
+        "1.1: D6/8[up,beam1=end] C6/8[up] B5/4[up]\n1.2: E4/2[down]",
+    ]
+    body = f"m 1\n{bars[0]}\n2.1: C3/2\nm 2 right=final\n{bars[1]}\n2.1: C3/2\n"
+    score = parse_document(
+        "format: text-score/2\nkey: 0\ntime: 2/4\nclefs: G2 F4\ncarry: octave\n"
+        + body
+    )
+    assert isinstance(score, AssembledScore)
+    xml = to_musicxml_text(score)
+    changed = (
+        xml.replace("<voice>1</voice>", "<voice>X</voice>")
+        .replace("<voice>2</voice>", "<voice>1</voice>")
+        .replace("<voice>X</voice>", "<voice>2</voice>")
+    )
+    (target,) = _system_texts(changed, system_starts(changed))
+    assert body in target
+
+
 def test_half_width_is_truncated_at_iou_boundary():
     """IoU 0.50 alone does not cover the required oracle width."""
     report = match_page_boxes([(20, 20, 120, 120, 2)], [_GOLD])

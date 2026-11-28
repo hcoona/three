@@ -674,6 +674,11 @@ class _Reader:
         for measure in self.measures:
             measure.start = start
             start += measure.length
+        _normalize_leaf_beams(self.measures)
+        if self.training_voices:
+            _assign_printed_voices(self.measures)
+            for measure in self.measures:
+                _Lines(self, measure).place_directions()
         assert self.key is not None  # noqa: S101
         assert self.meter is not None  # noqa: S101
         return _Score(
@@ -738,9 +743,10 @@ class _Reader:
         )
         if measure.length != measure.meter.length:
             measure.options.append(LenOption(measure.length))
-        if self.training_voices:
-            _assign_printed_voices(measure)
-        _Lines(self, measure).assemble()
+        lines = _Lines(self, measure)
+        lines.assemble()
+        if not self.training_voices:
+            lines.place_directions()
         return measure
 
     def _child(
@@ -1955,40 +1961,69 @@ class _DirectionReader:
 # Voice lines.
 
 
-def _assign_printed_voices(measure: _Measure) -> None:
-    """Relabel only complete, unambiguous pairs before placing directions."""
-    for staff in range(1, _STAVES + 1):
-        leaves = [e for e in measure.leaves if staff in (e.staff, e.shown)]
-        notes = [e for e in leaves if e.kind != _SPACER]
-        # Beams, ties and paired tremolos may still need the source line
-        # across a barline. Do not change their identity before matching.
-        if len({e.voice for e in leaves}) != 2 or any(  # noqa: PLR2004
-            e.staff != e.shown
-            or e.kind != _NOTE
-            or e.grace is not None
-            or e.pair is not None
-            or any(isinstance(f, Beam) for f in e.flags)
-            or any(m.tie_start or m.tie_stop for m in e.members)
-            for e in notes
-        ):
+def _printed_voice_map(leaves: list[_Leaf]) -> dict[int, int]:
+    """Return the two-line permutation supported by local rhythmic evidence."""
+    if len({e.voice for e in leaves}) != _PAIR_LEN:
+        return {}
+    target: dict[int, int] = {}
+    notes = []
+    for leaf in leaves:
+        if leaf.kind == _SPACER:
             continue
-        target: dict[int, int] = {}
-        for e in notes:
-            stem = next(
-                (f.direction for f in e.flags if isinstance(f, Stem)), None
-            )
-            if stem is None:
-                break
-            voice = 1 if stem == StemDirection.UP else 2
-            if target.setdefault(e.voice, voice) != voice:
-                break
-        else:
-            if set(target.values()) == {1, 2} and any(
-                a.voice != b.voice and b.onset < a.onset + a.duration
-                for a, b in pairwise(sorted(notes, key=lambda e: e.onset))
+        if (
+            leaf.shown != leaf.staff
+            or leaf.kind != _NOTE
+            or leaf.grace is not None
+            or leaf.pair is not None
+            or any(m.tie_start or m.tie_stop for m in leaf.members)
+        ):
+            return {}
+        stem = next(
+            (f.direction for f in leaf.flags if isinstance(f, Stem)), None
+        )
+        if stem is None:
+            return {}
+        voice = 1 if stem == StemDirection.UP else 2
+        if target.setdefault(leaf.voice, voice) != voice:
+            return {}
+        notes.append(leaf)
+    if set(target.values()) == {1, 2} and any(
+        a.voice != b.voice and b.onset < a.onset + a.duration
+        for a, b in pairwise(sorted(notes, key=lambda e: e.onset))
+    ):
+        return target
+    return {}
+
+
+def _assign_printed_voices(measures: list[_Measure]) -> None:
+    """Apply one agreed permutation to each run of beam-connected bars."""
+    for staff in range(1, _STAVES + 1):
+        start = 0
+        common: dict[int, int] = {}
+        for i, measure in enumerate(measures):
+            leaves = [e for e in measure.leaves if staff in (e.staff, e.shown)]
+            proposed = _printed_voice_map(leaves)
+            if i == start:
+                common = proposed
+            elif proposed != common:
+                common = {}
+            # Inspect normalized flags, including beams on hidden rests.
+            if any(
+                isinstance(f, Beam)
+                and f.state in {BeamState.START, BeamState.CONTINUE}
+                for e in leaves
+                if e.onset + e.duration == measure.length
+                for f in e.flags
             ):
-                for e in leaves:
-                    e.voice = target[e.voice]
+                continue
+            if any(v != new for v, new in common.items()):
+                for bar in measures[start : i + 1]:
+                    lines = {v: bar.lines.pop((staff, v)) for v in common}
+                    for v, line in lines.items():
+                        for leaf in line:
+                            leaf.voice = common[v]
+                        bar.lines[staff, common[v]] = line
+            start = i + 1
 
 
 class _Lines:
@@ -2012,6 +2047,8 @@ class _Lines:
                 *(leaf for leaf in leaves if not leaf.is_main),
                 *self._fill(key, mains),
             ]
+
+    def place_directions(self) -> None:
         for direction in self.measure.directions:
             self._place(direction)
 
@@ -2897,7 +2934,6 @@ class _Score:
     matcher: _Matcher | None = None
 
     def convert(self) -> AssembledScore:
-        _normalize_leaf_beams(self.measures)
         self.matcher = _Matcher(self.measures)
         self.matcher.match()
         failure: tuple[MusicXmlDiagnostic, ...] | None = None
