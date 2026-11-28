@@ -11,8 +11,8 @@ for [requirements](requirements.md), [architecture](architecture.md), and
     - HK `tla-sany` checks syntax, semantics, and level rules on every commit.
     - `TLC` (`mise run tla:tlc`) exhaustively model-checks safety invariants,
       nontrivial vertical refinement mappings (`Tier 0 <- Tier 1 <- Tier 2`),
-      horizontal sub-plane composition, and temporal liveness across all six
-      suites—one per module:
+      horizontal sub-plane composition, and temporal liveness across all seven
+      suites across the six modules:
       [`AtomicOrganization.tla`](../specs/AtomicOrganization.tla) (Tier-0 atomic
       `What` baseline),
       [`CausalStream.tla`](../specs/CausalStream.tla) (Tier-1 co-axial cursors &
@@ -24,7 +24,8 @@ for [requirements](requirements.md), [architecture](architecture.md), and
       three-state `peerExec`, and sum-type `meter` refining Tier-0 `Spec`),
       [`AgenshOrganization.tla`](../specs/AgenshOrganization.tla) (simultaneous
       horizontal `SubPlane!SafetySpec` composition and vertical `HighOrg!Spec`
-      safety + liveness refinement in one `.cfg`), and
+      safety + liveness refinement across `AgenshOrganization.cfg` and focused
+      divergent-DAG/stale-head `AgenshOrganizationWorkspace.cfg`), and
       [`OsScopeRefinement.tla`](../specs/OsScopeRefinement.tla) (Tier-2 root
       fail-closed `PrePidAmbiguous`, pre-`Main` + surviving-POSIX `mcp Main`
       self-registration, sibling/check-descendant containment, and Windows/POSIX

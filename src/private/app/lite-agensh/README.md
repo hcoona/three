@@ -58,15 +58,17 @@ isolated Git worktrees, actor-bound stdio MCP, and one shared owned Copilot
   remain in Git history at
   [`a83cd1da436d8df55f1290706c1c86b7f363a1a3`](https://github.com/hcoona/three/tree/a83cd1da436d8df55f1290706c1c86b7f363a1a3/src/private/app/lite-agensh/docs).
 
-## Primary journey and CLI
+## Target v2 CLI journey (Layer 3)
 
-A developer supplies a configuration and goal to coordinate equal coding peers
-on one local repository (the current v1 executable exposes separate `run`,
-`resume`, and `reconnect` subcommands alongside `init`, `preflight`, `finalize`,
-and `cleanup`; the stacked Layer 3 implementation under
-[Issue #1943](https://github.com/hcoona/three/issues/1943) transitions onto
-YAML-only configuration and unified `run` per
-[`docs/implementation-contracts.md`](docs/implementation-contracts.md)):
+In the target v2 contract ([`docs/implementation-contracts.md`](docs/implementation-contracts.md)),
+a developer supplies a YAML configuration and Markdown goal to coordinate equal
+coding peers without a separate paid `calibrate` gate, and unified `run` handles
+initial execution, `Paused` continuation, and crash reconnect automatically (note
+that until the stacked Layer 3 C# implementation under
+[Issue #1943](https://github.com/hcoona/three/issues/1943) lands, the unchanged
+v1 executable still enforces `calibrate`—currently suspended under
+[Issue #1552](https://github.com/hcoona/three/issues/1552)—and separate `run`,
+`resume`, and `reconnect` subcommands):
 
 ```powershell
 dotnet build src\private\app\lite-agensh\LiteAgensh.csproj
@@ -80,12 +82,14 @@ dotnet $app finalize --state C:\Work\LiteAgensh\run
 Verify all TLA+ specifications and managed tests locally:
 
 ```powershell
-mise run tla:tlc -- -workers auto -lncheck final -config src/private/app/lite-agensh/specs/AtomicOrganization.cfg src/private/app/lite-agensh/specs/AtomicOrganization.tla
-mise run tla:tlc -- -workers auto -lncheck final -config src/private/app/lite-agensh/specs/CausalStream.cfg src/private/app/lite-agensh/specs/CausalStream.tla
-mise run tla:tlc -- -workers auto -lncheck final -config src/private/app/lite-agensh/specs/WorkspaceCas.cfg src/private/app/lite-agensh/specs/WorkspaceCas.tla
-mise run tla:tlc -- -workers auto -lncheck final -config src/private/app/lite-agensh/specs/EpochLifecycle.cfg src/private/app/lite-agensh/specs/EpochLifecycle.tla
-mise run tla:tlc -- -workers auto -lncheck final -config src/private/app/lite-agensh/specs/AgenshOrganization.cfg src/private/app/lite-agensh/specs/AgenshOrganization.tla
-mise run tla:tlc -- -workers auto -lncheck final -config src/private/app/lite-agensh/specs/OsScopeRefinement.cfg src/private/app/lite-agensh/specs/OsScopeRefinement.tla
+$specs = "src/private/app/lite-agensh/specs"
+mise run tla:tlc -- -workers auto -lncheck final -config "$specs/AtomicOrganization.cfg" "$specs/AtomicOrganization.tla"
+mise run tla:tlc -- -workers auto -lncheck final -config "$specs/CausalStream.cfg" "$specs/CausalStream.tla"
+mise run tla:tlc -- -workers auto -lncheck final -config "$specs/WorkspaceCas.cfg" "$specs/WorkspaceCas.tla"
+mise run tla:tlc -- -workers auto -lncheck final -config "$specs/EpochLifecycle.cfg" "$specs/EpochLifecycle.tla"
+mise run tla:tlc -- -workers auto -lncheck final -config "$specs/AgenshOrganization.cfg" "$specs/AgenshOrganization.tla"
+mise run tla:tlc -- -workers auto -lncheck final -config "$specs/AgenshOrganizationWorkspace.cfg" "$specs/AgenshOrganization.tla"
+mise run tla:tlc -- -workers auto -lncheck final -config "$specs/OsScopeRefinement.cfg" "$specs/OsScopeRefinement.tla"
 dotnet test --project tests\private\app\lite-agensh\LiteAgensh.Tests.csproj
 ```
 
