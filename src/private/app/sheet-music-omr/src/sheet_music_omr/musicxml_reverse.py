@@ -28,6 +28,7 @@ import zipfile
 import zlib
 from dataclasses import dataclass, field, replace
 from fractions import Fraction
+from itertools import pairwise
 from typing import TYPE_CHECKING, Final, NoReturn
 from xml.parsers import expat
 
@@ -346,12 +347,16 @@ def _malformed(rule: str, message: str, at: _At | None) -> NoReturn:
 # Public API.
 
 
-def from_musicxml(data: bytes | str) -> AssembledScore:
+def from_musicxml(
+    data: bytes | str, *, training_voices: bool = False
+) -> AssembledScore:
     """Convert a MusicXML piano score to a valid assembled score.
 
     Args:
         data: A ``score-partwise`` document, or the bytes of a compressed
             ``.mxl`` file, with one part on two staves.
+        training_voices: For training labels only, number unambiguous local
+            two-voice note lines by printed stems rather than interchange IDs.
 
     Returns:
         The assembled score, parsed back from its canonical text, so its
@@ -362,7 +367,7 @@ def from_musicxml(data: bytes | str) -> AssembledScore:
             that it cannot convert faithfully. No partial result is returned.
     """
     root = _load(data)
-    score = _Reader(root).read()
+    score = _Reader(root, training_voices=training_voices).read()
     return score.convert()
 
 
@@ -641,8 +646,9 @@ class _Cursor:
 class _Reader:
     """Reads one ``score-partwise`` document into measures of leaves."""
 
-    def __init__(self, root: ET.Element) -> None:
+    def __init__(self, root: ET.Element, *, training_voices: bool) -> None:
         self.root = root
+        self.training_voices = training_voices
         self.divisions: int | None = None
         self.key: int | None = None
         self.meter: Meter | None = None
@@ -732,6 +738,8 @@ class _Reader:
         )
         if measure.length != measure.meter.length:
             measure.options.append(LenOption(measure.length))
+        if self.training_voices:
+            _assign_printed_voices(measure)
         _Lines(self, measure).assemble()
         return measure
 
@@ -1945,6 +1953,42 @@ class _DirectionReader:
 
 
 # Voice lines.
+
+
+def _assign_printed_voices(measure: _Measure) -> None:
+    """Relabel only complete, unambiguous pairs before placing directions."""
+    for staff in range(1, _STAVES + 1):
+        leaves = [e for e in measure.leaves if staff in (e.staff, e.shown)]
+        notes = [e for e in leaves if e.kind != _SPACER]
+        # Beams, ties and paired tremolos may still need the source line
+        # across a barline. Do not change their identity before matching.
+        if len({e.voice for e in leaves}) != 2 or any(  # noqa: PLR2004
+            e.staff != e.shown
+            or e.kind != _NOTE
+            or e.grace is not None
+            or e.pair is not None
+            or any(isinstance(f, Beam) for f in e.flags)
+            or any(m.tie_start or m.tie_stop for m in e.members)
+            for e in notes
+        ):
+            continue
+        target: dict[int, int] = {}
+        for e in notes:
+            stem = next(
+                (f.direction for f in e.flags if isinstance(f, Stem)), None
+            )
+            if stem is None:
+                break
+            voice = 1 if stem == StemDirection.UP else 2
+            if target.setdefault(e.voice, voice) != voice:
+                break
+        else:
+            if set(target.values()) == {1, 2} and any(
+                a.voice != b.voice and b.onset < a.onset + a.duration
+                for a, b in pairwise(sorted(notes, key=lambda e: e.onset))
+            ):
+                for e in leaves:
+                    e.voice = target[e.voice]
 
 
 class _Lines:
