@@ -68,7 +68,10 @@ internal sealed record ReleaseObservation(
     string[] RequiredChecks,
     ReleaseCheck[] Checks,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string[]? Reasons = null);
+    string[]? Reasons = null)
+{
+    internal bool HasConflict() => Files.Any(file => file.State == ReleaseFileState.Conflict);
+}
 
 internal sealed record ReleaseUpload(string Output, NativeCommandResult Command);
 
@@ -385,7 +388,8 @@ internal static class ReleaseCompletion
         (bool unknown, bool absent, List<string> observedReasons) =
             AssessObservation(prepared, observation, profile);
         reasons.AddRange(observedReasons);
-        if (unknown) return (ReleaseBusinessState.Unknown, [.. reasons]);
+        if (unknown && !observation.HasConflict())
+            return (ReleaseBusinessState.Unknown, [.. reasons]);
         if (reasons.Count != 0 || absent) return (ReleaseBusinessState.Unsatisfied, [.. reasons]);
         return (ReleaseBusinessState.Satisfied, []);
     }

@@ -442,6 +442,12 @@ public sealed class GithubReleaseTests(TestContext context)
             TransferJson.Default.ReleaseObservationResult);
         Assert.IsTrue(conflictObs.Observation.Files.All(file =>
             file.State == ReleaseFileState.Conflict));
+        ReleaseCompletionResult lostPrimary = RunJson(["release", "complete-browser-store",
+            firefoxPrepPath, firefoxInitialPath, "-", "-", firefoxAnchorInitialPath,
+            conflictAnchorPath, "-"], TransferJson.Default.ReleaseCompletionResult,
+            expectedExit: 1);
+        Assert.AreEqual(ReleaseBusinessState.Unsatisfied, lostPrimary.Outcome.State);
+        Assert.IsNull(lostPrimary.MutationAttempted);
 
         static ReleaseFile StoreFile(string output, string kind, string version, string path,
             byte[] bytes) =>

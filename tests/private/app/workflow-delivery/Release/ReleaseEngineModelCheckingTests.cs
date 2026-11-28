@@ -511,13 +511,16 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
                     "artifact when initial state required writes", node);
         }
 
-        // Theorem 4: HonestUncertainty — Lost publication artifact when write was needed MUST be
-        // Unknown with null MutationAttempted, even if an ambiguous write actually committed!
+        // A lost receipt leaves the attempt unknown. A verifier can still disprove a byte match.
         if (vFault == VerificationFault.LostPublicationArtifact &&
             ReleaseEngine.WriteNeeded(spec, prep, initial))
         {
+            bool observedConflict = profile.Verification == DestinationVerificationMode.ExactBytes
+                && finalObs?.Observation.Files.Any(file =>
+                    file.State == ReleaseFileState.Conflict) == true;
             AssertInvariant(
-                completion.Outcome.State == ReleaseBusinessState.Unknown &&
+                completion.Outcome.State == (observedConflict
+                    ? ReleaseBusinessState.Unsatisfied : ReleaseBusinessState.Unknown) &&
                 completion.MutationAttempted is null,
                 $"HonestUncertainty violated: lost publication artifact yielded " +
                 $"State={completion.Outcome.State}, " +
