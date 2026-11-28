@@ -35,6 +35,10 @@ NON_LINTER_EXECUTABLES = frozenset(
     {"python", "python3", "node", "npx", "uv", "uvx", "pnpm", "pnpx"}
 )
 SCRIPT_LINTERS: dict[tuple[str, ...], tuple[tuple[str, str], ...]] = {
+    ("python", "eng/scripts/alloy.py", "parse"): (
+        ("mise", "java"),
+        ("mise", "github:AlloyTools/org.alloytools.alloy"),
+    ),
     ("python", "eng/scripts/tla.py", "sany"): (
         ("mise", "java"),
         ("mise", "github:tlaplus/tlaplus"),

@@ -60,8 +60,9 @@ typos = "latest"
 # .env
 dotenv-linter = "latest"
 
-# TLA+
+# Formal modeling
 "github:tlaplus/tlaplus" = { version = "v1.7.4", asset_pattern = "tla2tools.jar" }
+"github:AlloyTools/org.alloytools.alloy" = { version = "v6.2.0", asset_pattern = "org.alloytools.alloy.dist.jar" }
 
 #
 # Utilities
@@ -173,6 +174,10 @@ run = "uv run --script src/public/lib/PhiFailureDetector/scripts/verify_formal_s
 [tasks."tla:tlc"]
 description = "Run TLC finite-state model checking with an isolated temporary -metadir"
 run = "python eng/scripts/tla.py tlc"
+
+[tasks."alloy:exec"]
+description = "Run the Alloy model's bounded commands with the bundled SAT4J solver"
+run = "python eng/scripts/alloy.py exec"
 
 [tasks."records:check"]
 description = "Validate repository records against an explicit base and candidate"

@@ -130,6 +130,24 @@ mise run tla:tlc -- -config path/to/Spec.cfg path/to/Spec.tla
 Pass an explicit `-metadir <dir>` only when state-directory artifacts need to be
 retained outside the repository tree for local debugging.
 
+## Alloy
+
+The root `mise.lock` pins the same official Alloy 6 Analyzer JAR by SHA-256 on
+`linux-x64` and `windows-x64`. It uses the repository Java runtime. HK's
+`alloy-parse` step invokes the upstream `commands` parser and type checker for
+each `.als` source; it does not solve the model. To run **all** commands in a
+model with bundled SAT4J:
+
+```powershell
+mise run alloy:exec -- path/to/Model.als
+```
+
+Declare `expect 0` (UNSAT) or `expect 1` (SAT) on each command whose outcome
+matters: a deliberately false `check` expects **1**, a counterexample. An
+expectation mismatch fails the command. The [launcher](../../eng/scripts/alloy.py)
+discards temporary output by default; add `--output <empty-directory>` to
+retain the receipt and XML instances outside the worktree.
+
 ## Repository toolchain
 
 Install the tool versions recorded in `mise.lock` from the repository root:

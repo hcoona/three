@@ -18,13 +18,14 @@ linters; workflow YAML uses `actionlint`.
 ## CI Execution Contract
 
 HK owns fast source, configuration, link, and record conformance (including
-`SANY` syntax/semantic parsing for `*.tla`); project unit, scenario, and
-integration suites—as well as `TLC` finite-state model checking and `PlusCal`
+`SANY` syntax/semantic parsing for `*.tla` and Alloy parsing/type checking for
+`*.als`); project unit, scenario, and integration suites—as well as Alloy
+bounded solving, `TLC` finite-state model checking and `PlusCal`
 translation—run in CI jobs selected by Workflow Delivery
 ([`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) and
 [`src/private/app/workflow-delivery/docs/design/ci.md`](../../src/private/app/workflow-delivery/docs/design/ci.md))
-or through explicit local commands (`mise run tla:tlc`)—not HK's `large`
-profile.
+or through explicit local commands (`mise run alloy:exec`, `mise run tla:tlc`)—not
+HK's `large` profile.
 
 - **Single `Validate` merge gate:** The `main` ruleset requires `Validate`,
   which depends on every other job in `ci.yml` and fails on failed, skipped,

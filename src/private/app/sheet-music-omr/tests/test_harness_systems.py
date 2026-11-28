@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from sheet_music_omr.assembly import assemble
 from sheet_music_omr.harness.systems import (
     AssemblyTestStatus,
     SplitError,
@@ -174,6 +175,58 @@ def test_split_carries_a_tie_and_a_slur_across_a_break() -> None:
         (entry.label, entry.kind.value) for entry in second.carry_in.open
     ] == [(2, "slur"), (3, "tie")]
     assert "D5{tie@r3:end}/2" in write_document(second)
+
+
+@pytest.mark.parametrize("shared_start", [True, False])
+def test_three_system_slur_targets_ignore_working_names(
+    *,
+    shared_start: bool,
+) -> None:
+    """Keep local texts identical and both original endpoint pairs intact."""
+    first = (
+        "C4/4[rel=slur@r1:start,rel=slur@r2:start] D4/4"
+        if shared_start
+        else "C4/4[rel=slur@r1:start] D4/4[rel=slur@r2:start]"
+    )
+    middle, last = (1, 2) if shared_start else (2, 1)
+    whole = f"""format: text-score/2
+title: "Labels"
+composer: "Test Author"
+key: 0
+time: 2/4
+clefs: G2 F4
+carry: octave
+m 1
+1.1: {first}
+2.1: C3/2
+m 2
+1.1: E4/2[rel=slur@r{middle}:end]
+2.1: C3/2
+m 3
+1.1: F4/2[rel=slur@r{last}:end]
+2.1: C3/2
+"""
+    starts = tuple(SystemStart(i, 1, i + 1) for i in range(3))
+    swapped = whole.replace("@r1", "@tmp").replace("@r2", "@r1")
+    variants = [whole, swapped.replace("@tmp", "@r2")]
+    if shared_start:
+        variants.append(
+            whole.replace(
+                "rel=slur@r1:start,rel=slur@r2:start",
+                "rel=slur@r2:start,rel=slur@r1:start",
+            )
+        )
+    targets = set()
+    for variant in variants:
+        texts = tuple(map(write_document, split_score(_score(variant), starts)))
+        targets.add(texts)
+        result = assemble(
+            tuple(map(parse_document, texts)),
+            title="Labels",
+            composer="Test Author",
+        )
+        assert result.text == write_document(_score(whole))
+    assert len(targets) == 1
 
 
 def test_heading_inside_a_system_fails_the_split() -> None:

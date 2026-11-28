@@ -121,6 +121,30 @@ def test_document_kinds() -> None:
     ]
 
 
+@pytest.mark.parametrize("option", ["", " from=0"], ids=["implicit", "zero"])
+@pytest.mark.parametrize("reverse", [False, True], ids=["ordered", "reversed"])
+def test_voice_spellings_have_one_canonical_text(
+    option: str, *, reverse: bool
+) -> None:
+    """Row order and a zero start do not change either voice's reading."""
+    upper = "1.1: C4/1[up]\n"
+    lower = "1.2: D4/1[down]\n"
+    rows = lower + upper if reverse else upper + lower
+    written = write_document(parse_document(f"{HEADER}m 1{option}\n{rows}"))
+    assert written == HEADER + "m 1\n" + upper + lower
+    assert write_document(parse_document(written)) == written
+
+
+@pytest.mark.parametrize(
+    "event", ["C4/1[up]", "Cn4/1[up]", "D4/1[up]", "C4/1[down]"]
+)
+def test_canonical_text_preserves_written_pitch_and_stem(event: str) -> None:
+    """Change one printed feature at a time in the same key and voice."""
+    source = f"{HEADER}m 1 from=0\n1.1: {event}\n"
+    expected = f"{HEADER}m 1\n1.1: {event}\n"
+    assert write_document(parse_document(source)) == expected
+
+
 @pytest.mark.parametrize("text", _spec_examples())
 def test_spec_examples_round_trip(text: str) -> None:
     """Every complete example in the format record round-trips."""

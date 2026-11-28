@@ -197,6 +197,50 @@ ARCS = (
     + "]}"
 )
 
+
+@pytest.mark.parametrize(
+    ("ends", "whole"),
+    [
+        pytest.param(
+            "1.1: C4{tie@r1:end}/4\n2.1: C4{tie@r2:end}/4[xs1]",
+            "1.1: D4/8 C4{tie@r2:start}/8 C4{tie@r1:end}/4\n"
+            "2.1: C4{tie@r1:start}/4[xs1] C4{tie@r2:end}/4[xs1]",
+            id="crossed",
+        ),
+        pytest.param(
+            "1.1: C4{tie@r2:end}/4\n2.1: C4{tie@r1:end}/4[xs1]",
+            "1.1: D4/8 C4{tie@r2:start}/8 C4{tie@r2:end}/4\n"
+            "2.1: C4{tie@r1:start}/4[xs1] C4{tie@r1:end}/4[xs1]",
+            id="straight",
+        ),
+    ],
+)
+def test_mid_measure_cut_preserves_unison_tie_endpoints(
+    ends: str, whole: str
+) -> None:
+    """Both ties meet at 1/4 on displayed staff 1, but on distinct lines."""
+    first = system(
+        1,
+        1,
+        "m 1 to=1/4\n1.1: D4/8 C4{tie@r2:start}/8\n"
+        "2.1: C4{tie@r1:start}/4[xs1]",
+    )
+    carry_in = (
+        '{"measure":1,"offset":"1/4","event_counts":{"1.1":2,"2.1":1},'
+        '"accidental_scope":"octave","accidentals":[],"open":['
+        '{"id":"r1","kind":"tie","start":{"measure":1,"offset":"0","staff":2,'
+        '"voice":1,"event_index":1,"member_index":1},'
+        '"pitch":{"step":"C","octave":4,"alter":0}},'
+        '{"id":"r2","kind":"tie","start":{"measure":1,"offset":"1/8",'
+        '"staff":1,"voice":1,"event_index":2,"member_index":1},'
+        '"pitch":{"step":"C","octave":4,"alter":0}}]}'
+    )
+    second = system(1, 2, f"m 1 from=1/4 right=final\n{ends}", carry_in)
+    result = assemble([parse_document(first), parse_document(second)])
+    assert result.status is AssemblyStatus.SUCCESS, _found(result)
+    assert result.text == score(f"m 1 right=final\n{whole}")
+
+
 INVALID_STUDY = {
     "first carry-in is not initial": (
         _replace("study-1.txt", "", ""),

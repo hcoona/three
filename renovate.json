@@ -611,6 +611,7 @@
         "github:koalaman/shellcheck",
         "go:mvdan.cc/sh/v3/cmd/shfmt",
         "github:hadolint/hadolint",
+        "github:AlloyTools/org.alloytools.alloy",
         "github:tlaplus/tlaplus",
         "dotenv-linter",
         "fd",
@@ -619,6 +620,12 @@
       ],
       "groupName": "Mise Repository Tools",
       "automerge": true
+    },
+    {
+      "description": "Track stable Alloy 6 release JARs on the admitted major version.",
+      "matchManagers": ["mise"],
+      "matchDepNames": ["github:AlloyTools/org.alloytools.alloy"],
+      "allowedVersions": "/^v?6\\.\\d+\\.\\d+$/"
     },
     {
       "description": "Pin TLA+ tools strictly to immutable stable vX.Y.Z releases (excluding rolling or overwritten pre-release assets).",
