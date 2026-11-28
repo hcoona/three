@@ -352,6 +352,15 @@ def _generate_arm_a_beams(  # noqa: C901, PLR0912, PLR0913, PLR0915
         if (tok is not None and tok.eos_token_id is not None)
         else int(getattr(processor, "eos_token_id", 2))
     )
+    eos_set: set[int] = {eos_id}
+    gen_cfg_eos = getattr(
+        getattr(model, "generation_config", None), "eos_token_id", None
+    )
+    if isinstance(gen_cfg_eos, int):
+        eos_set.add(gen_cfg_eos)
+    elif isinstance(gen_cfg_eos, (list, tuple, set)):
+        eos_set.update(int(x) for x in gen_cfg_eos)
+    eos_list = sorted(eos_set)
     pad_id = (
         int(tok.pad_token_id)
         if (tok is not None and tok.pad_token_id is not None)
@@ -376,7 +385,7 @@ def _generate_arm_a_beams(  # noqa: C901, PLR0912, PLR0913, PLR0915
             do_sample=False,
             use_cache=True,
             pad_token_id=pad_id,
-            eos_token_id=eos_id,
+            eos_token_id=eos_list,
             return_dict_in_generate=True,
             output_scores=True,
         )
@@ -400,7 +409,7 @@ def _generate_arm_a_beams(  # noqa: C901, PLR0912, PLR0913, PLR0915
             lp = step_lps[step_i] if step_i < len(step_lps) else 0.0
             if math.isfinite(lp):
                 total_lp += lp
-            if tid == eos_id:
+            if tid in eos_set:
                 hit_eos = True
                 if pieces and (rem := inc_dec.flush_remainder()):
                     pieces[-1] += rem
@@ -426,6 +435,16 @@ def _generate_arm_a_beams(  # noqa: C901, PLR0912, PLR0913, PLR0915
             pieces = _decode_bpe_ids_to_pieces(
                 tok, tok.encode(cleaned, add_special_tokens=False)
             )
+        elif (
+            family == "qwen3_5"
+            and hit_eos
+            and not capped
+            and pieces
+            and not "".join(pieces).endswith("\n")
+        ):
+            # Qwen3.5 chat_template.jinja applies `|trim` before `<|im_end|>`,
+            # stripping target_text_v2's final LF during supervised training.
+            pieces[-1] = f"{pieces[-1]}\n"
         candidates.append(
             BeamCandidate(
                 raw_logprob=total_lp if math.isfinite(total_lp) else -1e9,
