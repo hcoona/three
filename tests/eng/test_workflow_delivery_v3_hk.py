@@ -75,6 +75,18 @@ STEPS: dict[str, dict[str, Any]] = {
         "glob": ["*.sh"],
         "check": {"argv": ["shellcheck", "--", "{{files}}"]},
     },
+    "alloy-parse": {
+        "glob": ["*.als"],
+        "check": {
+            "argv": [
+                "python",
+                "eng/scripts/alloy.py",
+                "parse",
+                "--",
+                "{{files}}",
+            ]
+        },
+    },
     "tla-sany": {
         "glob": ["*.tla"],
         "check": {
@@ -224,6 +236,7 @@ BASE_LOCKS = {
     "uv.lock": {"ruff": "0.17.0", "pytest": "9.1.0"},
     "mise.lock": {
         "github:koalaman/shellcheck": "0.11.0",
+        "github:AlloyTools/org.alloytools.alloy": "6.2.0",
         "github:tlaplus/tlaplus": "1.7.4",
         "java": "temurin-25.0.4+101.0.LTS",
         "pkl": "0.32.1",
@@ -254,6 +267,7 @@ def fixture(tmp_path: Path) -> dict[str, Any]:
         "unchanged.py": f"# {SEEDED} predates the comparison.\n",
         "README.md": "# Fixture\n",
         "Spec.tla": "---- MODULE Spec ----\n====\n",
+        "Spec.als": "sig Note {}\n",
         "build.sh": "echo build\n",
     }
     for name, content in files.items():
@@ -340,16 +354,27 @@ def test_ruff_bump_checks_all_covered_files_and_fails_on_unchanged_finding(
 
 
 @pytest.mark.parametrize(
-    ("lock", "name", "version", "step"),
+    ("lock", "name", "version", "steps"),
     [
-        ("pnpm-lock.yaml", "prettier", "3.9.10", "markdown-prettier"),
-        ("mise.lock", "github:koalaman/shellcheck", "0.11.1", "shellcheck"),
-        ("mise.lock", "github:tlaplus/tlaplus", "1.7.5", "tla-sany"),
-        ("mise.lock", "java", "temurin-25.0.5+101.0.LTS", "tla-sany"),
+        ("pnpm-lock.yaml", "prettier", "3.9.10", {"markdown-prettier"}),
+        ("mise.lock", "github:koalaman/shellcheck", "0.11.1", {"shellcheck"}),
+        (
+            "mise.lock",
+            "github:AlloyTools/org.alloytools.alloy",
+            "6.3.0",
+            {"alloy-parse"},
+        ),
+        ("mise.lock", "github:tlaplus/tlaplus", "1.7.5", {"tla-sany"}),
+        (
+            "mise.lock",
+            "java",
+            "temurin-25.0.5+101.0.LTS",
+            {"alloy-parse", "tla-sany"},
+        ),
     ],
 )
 def test_each_provider_lock_widens_only_its_linter_steps(
-    fixture: dict[str, Any], lock: str, name: str, version: str, step: str
+    fixture: dict[str, Any], lock: str, name: str, version: str, steps: set[str]
 ) -> None:
     """A pnpm or mise linter bump widens the steps that invoke it."""
     endpoints = _commit_candidate(
@@ -358,12 +383,12 @@ def test_each_provider_lock_widens_only_its_linter_steps(
     result, runs = _run(fixture, endpoints)
     assert result.returncode == 0, result.stderr
     changed, complete = runs
-    assert f"--skip-step={step}" in changed["arguments"]
+    assert all(f"--skip-step={step}" in changed["arguments"] for step in steps)
     assert changed["ran"] == {
         "ruff": ["changed.py"],
         "ruff_format": ["changed.py"],
     }
-    assert list(complete["ran"]) == [step]
+    assert set(complete["ran"]) == steps
 
 
 def test_unrelated_lock_change_keeps_changed_file_scope(

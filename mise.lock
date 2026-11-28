@@ -199,6 +199,23 @@ url = "https://github.com/cli/cli/releases/download/v2.88.0/gh_2.88.0_windows_am
 url_api = "https://api.github.com/repos/cli/cli/releases/assets/371025645"
 provenance = "github-attestations"
 
+[[tools."github:AlloyTools/org.alloytools.alloy"]]
+version = "6.2.0"
+backend = "github:AlloyTools/org.alloytools.alloy"
+
+[tools."github:AlloyTools/org.alloytools.alloy".options]
+asset_pattern = "org.alloytools.alloy.dist.jar"
+
+[tools."github:AlloyTools/org.alloytools.alloy"."platforms.linux-x64"]
+checksum = "sha256:6b8c1cb5bc93bedfc7c61435c4e1ab6e688a242dc702a394628d9a9801edb78d"
+url = "https://github.com/AlloyTools/org.alloytools.alloy/releases/download/v6.2.0/org.alloytools.alloy.dist.jar"
+url_api = "https://api.github.com/repos/AlloyTools/org.alloytools.alloy/releases/assets/219079279"
+
+[tools."github:AlloyTools/org.alloytools.alloy"."platforms.windows-x64"]
+checksum = "sha256:6b8c1cb5bc93bedfc7c61435c4e1ab6e688a242dc702a394628d9a9801edb78d"
+url = "https://github.com/AlloyTools/org.alloytools.alloy/releases/download/v6.2.0/org.alloytools.alloy.dist.jar"
+url_api = "https://api.github.com/repos/AlloyTools/org.alloytools.alloy/releases/assets/219079279"
+
 [[tools."github:alibaba/open-code-review"]]
 version = "1.14.3"
 backend = "github:alibaba/open-code-review"

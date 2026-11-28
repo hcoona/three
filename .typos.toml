@@ -49,6 +49,7 @@ extend-ignore-re = [
   '(?:^|[^A-Za-z0-9_=-])[A-Za-z0-9_-]{40,}={0,2}(?:$|[^A-Za-z0-9_=-])',        # Base64URL
   '\bCC-BY-NC-ND-4.0\b',
   '\bPNGs?\b',
+  '\.als\b',                                                                   # Alloy model extension
   '(?i)\bsecur32\.dll\b',
   '\b(?:admittedTerm|deprecatedTerm|preferredTerm|supersededTerm)-admn-sts\b',
 ]

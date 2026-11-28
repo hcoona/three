@@ -513,7 +513,16 @@ local dotenv_linter = new Mapping<String, Step> {
   }
 }
 
-local tla_linters = new Mapping<String, Step> {
+local formal_model_linters = new Mapping<String, Step> {
+  ["alloy-parse"] {
+    profiles = List("small")
+    exclude = general_exclude_list
+    batch = true
+    glob = List("*.als")
+    check = new Command {
+      argv = List("python", "eng/scripts/alloy.py", "parse", "--", "{{files}}")
+    }
+  }
   ["tla-sany"] {
     profiles = List("small")
     exclude = general_exclude_list
@@ -553,7 +562,7 @@ local file_steps = new Mapping<String, Step> {
   ...javascript_typescript_linters
   ...python_linters
   ...dotenv_linter
-  ...tla_linters
+  ...formal_model_linters
 }
 
 local configured_steps = new Mapping<String, Step> {
