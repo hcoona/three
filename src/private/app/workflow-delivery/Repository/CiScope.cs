@@ -236,8 +236,9 @@ internal static partial class CiScope
                 Regular(".github/workflows/ci.yml"))
                 Add("conformance", ".github/workflows/ci.yml#conformance", PythonLint,
                     ".github/workflows/ci.yml", HkConfiguration);
+            // The bounded-model job executes its runner; the .py suffix is not a pytest consumer.
             else if (recordTasks.Length == 0 && (pythonInput ||
-                    path.EndsWith(".py", StringComparison.Ordinal)))
+                    path != ModelRunner && path.EndsWith(".py", StringComparison.Ordinal)))
                 Add("python", ".github/workflows/ci.yml#python-tests",
                     "native-python-caller-responsibility", ["pyproject.toml", .. python]);
             if (resourceInputs.Contains(path, StringComparer.Ordinal))
