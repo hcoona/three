@@ -25,6 +25,12 @@ required consumers fail qualification. The caller retains these results;
 [Release](release.md#request-and-preparation) independently prepares its own
 complete set and owns remote completion.
 
+Qualification and destination projection are separate operations. A registry
+selects from the originals already built by the ecosystem provider; it does not
+rebuild a package or alter its version or bytes during publication. An Official
+repository anchor uses originals from the same request, not artifacts fetched
+from the primary registry.
+
 ## Builds, Packages and Consumers
 
 Build and qualification operations receive the selected revision, native entry

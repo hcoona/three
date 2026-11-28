@@ -414,7 +414,8 @@ public sealed class GitMaterializationTests(TestContext context)
         string hooks = Directory.CreateDirectory(Path.Combine(repo.Directory, ".git", "hooks"))
             .FullName.Replace('\\', '/');
         await repo.GitAsync("config", "core.hooksPath", hooks);
-        await repo.GitAsync("lfs", "install", "--local");
+        await repo.GitAsync("config", "--local", "filter.lfs.process", "git-lfs filter-process");
+        await repo.GitAsync("config", "--local", "filter.lfs.required", "true");
         await File.WriteAllTextAsync(Path.Combine(repo.Directory, ".gitattributes"),
             "*.sf2 filter=lfs diff=lfs merge=lfs -text\n", context.CancellationToken);
         await repo.GitAsync("add", ".gitattributes");

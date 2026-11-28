@@ -2,9 +2,27 @@ using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Ecosystems;
 
+internal sealed record NpmOriginal(string Path, long Size, string Sha256)
+{
+    internal static async Task<NpmOriginal> ReadAsync(string path, CancellationToken token)
+    {
+        (long size, string digest) = await NpmPackageOperations.OriginalAsync(path, token);
+        return new(path, size, digest);
+    }
+
+    internal Task RequireOriginalAsync(CancellationToken token) =>
+        OwnedFile.VerifyAsync(Path, Size, Sha256, "Qualified original changed during consumption.",
+            token);
+}
+
 // These concrete PNPM operations are shared; CI and Release own their own checks.
 internal static class NpmPackageOperations
 {
+    internal static NativeCommand Import(string directory, string package, string probe,
+        int deadlineSeconds) => new("node", Path.Combine(directory, "consumer"),
+            ["--input-type=module", "--eval",
+                probe.Replace("@@PACKAGE@@", package, StringComparison.Ordinal)], deadlineSeconds);
+
     internal static NativeCommand Pack(string checkout, string product, string archive) =>
         new("pnpm", checkout, ["--dir", Path.Combine(checkout, product), "pack", "--out",
             archive], 300);
@@ -56,5 +74,4 @@ internal static class NpmPackageOperations
                 .. (string[])(offline ? ["--offline"] : []), "--ignore-scripts"],
             300);
     }
-
 }

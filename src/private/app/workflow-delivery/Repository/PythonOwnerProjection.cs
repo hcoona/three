@@ -45,16 +45,15 @@ internal static class PythonOwnerProjection
         }
         // Repository coordinates associate producers across endpoints. Opaque UV IDs
         // and package names remain endpoint-local; moves retain their two coordinates.
-        var consumers = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-        var quality = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        var relations = new ProducerImpact();
         foreach (var (endpoint, _) in endpoints)
         {
             foreach (PythonProjectDependencies project in endpoint.Projects)
                 foreach (string producer in project.Ordinary.Concat(project.Build))
-                    Add(consumers, producer, project.Directory);
+                    relations.AddConsumption(producer, project.Directory);
             foreach (PythonQualityBinding binding in endpoint.Quality)
                 if (binding.Member is { } member)
-                    Add(quality, member, binding.Owner);
+                    relations.BindOwner(member, binding.Owner);
         }
 
         var impacts = new List<PythonOwnerImpact>();
@@ -84,15 +83,7 @@ internal static class PythonOwnerProjection
                     owners.Add(binding.Owner);
                 if (nearest is null && !index.Inputs.Contains(path) && owners.Count == 0)
                     throw new InvalidDataException($"Unresolved Python input: {path}");
-                var pending = new Queue<string>(members);
-                while (pending.TryDequeue(out string? member))
-                {
-                    if (quality.TryGetValue(member, out HashSet<string>? targets))
-                        owners.UnionWith(targets);
-                    if (consumers.TryGetValue(member, out HashSet<string>? downstream))
-                        foreach (string consumer in downstream)
-                            if (members.Add(consumer)) pending.Enqueue(consumer);
-                }
+                relations.IncludeOwners(members, owners);
                 impacts.Add(new(path, endpoint.Revision.Commit,
                     owners.Order(StringComparer.Ordinal).ToArray()));
             }
@@ -163,10 +154,4 @@ internal static class PythonOwnerProjection
             throw new InvalidDataException("Unsupported Python source entry kind.");
     }
 
-    private static void Add(Dictionary<string, HashSet<string>> graph, string from, string to)
-    {
-        if (!graph.TryGetValue(from, out HashSet<string>? targets))
-            graph.Add(from, targets = new(StringComparer.Ordinal));
-        targets.Add(to);
-    }
 }

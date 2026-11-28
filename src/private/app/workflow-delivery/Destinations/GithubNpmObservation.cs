@@ -2,10 +2,8 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using WorkflowDelivery.Ecosystems;
-using WorkflowDelivery.Release;
-
 using WorkflowDelivery.Platform;
+using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Destinations;
 
@@ -18,17 +16,18 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
     private const string Host = "npm.pkg.github.com";
 
     // The registered unit's Buddy package is the only coordinate this destination reads.
-    internal static string Package(PreparedRelease prepared)
+    internal static string Package(PackageDestination prepared)
     {
-        string package = ReleaseUnitCatalog.AdmitNpm(prepared.Subject).BuddyName;
+        string package = prepared.Package;
         if (prepared.Subject.Channel != "buddy" ||
+            prepared.Subject.Destination != "github-packages-npm" ||
             !package.StartsWith(Scope, StringComparison.Ordinal) || prepared.Files is not
                 [{ Kind: "npm-tarball" } file] || file.Name != package)
             throw new InvalidDataException("Unsupported GitHub npm request.");
         return package;
     }
 
-    internal async Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
+    internal async Task<ReleaseObservationResult> ObserveAsync(PackageDestination prepared,
         string credential, CancellationToken token)
     {
         string bare = Package(prepared)[Scope.Length..];
@@ -36,7 +35,6 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
             throw new InvalidDataException("Unsupported GitHub npm request or read credential.");
         ReleaseFile file = prepared.Files[0];
         ReleaseCheckStatus control = ReleaseCheckStatus.Missing;
-        string? tarballUrlSha256 = null;
         using var session = new DestinationHttpSession(client, clock,
             TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(20), token, noCache: true);
         var github = new GithubApi(session, credential, 1_000_000);
@@ -72,8 +70,9 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
                 "objects.githubusercontent.com" or "github-registry-files.githubusercontent.com"))
                 throw new InvalidDataException("Unsupported native endpoint.");
             DestinationHttpSession.RequireHttpsOrigin(archive, archiveHost);
-            tarballUrlSha256 = Convert.ToHexStringLower(SHA256.HashData(
-                Encoding.UTF8.GetBytes(archive.AbsoluteUri)));
+            session.Reads.Add(new("tarball-location", null, "Resolved native tarball URL.",
+                UrlSha256: Convert.ToHexStringLower(SHA256.HashData(
+                    Encoding.UTF8.GetBytes(archive.AbsoluteUri)))));
             (status, RegistryOriginalBytes served) = await session.OriginalAsync("tarball", archive,
                 archiveHost, file.Size, retain: false, archiveHost == Host ? authorization : null);
             if (status != 200) return Result(ReleaseFileState.Unknown);
@@ -106,7 +105,7 @@ internal sealed class GithubNpmObservation(HttpClient client, TimeProvider? cloc
                 [new("native-package-control", control), new("native-metadata-visibility",
                     state is ReleaseFileState.Absent or ReleaseFileState.Exact
                         ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed)]),
-                [.. session.Reads], TarballUrlSha256: tarballUrlSha256);
+                [.. session.Reads]);
     }
 
     private static string? Text(JsonElement value, string name) =>

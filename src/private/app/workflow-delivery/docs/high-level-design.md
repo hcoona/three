@@ -48,9 +48,11 @@ C4Context
 
 ## Container View
 
-One internal C# CLI owns the use cases. Its modules are source organization,
-not independently deployed services or a public framework. Invocations are
-short-lived processes on Actions runners. The CLI starts Python and Ruby
+One internal C# CLI owns the use cases. Its statically referenced assemblies
+separate decisions, orchestration, native ecosystem providers and destination
+clients. They ship together; a library boundary does not grant a credential or
+create a service. Invocations are short-lived processes on Actions runners.
+The CLI starts Python and Ruby
 helpers as separate short-lived processes on the same runner when it needs
 their native library bindings.
 
@@ -110,6 +112,12 @@ missing, stop for owner disposition rather than inventing a parser, scheduler,
 reservation or approval mirror.
 
 Static registration selects supported ecosystem and destination combinations.
+The ecosystem side resolves native facts and qualifies originals. The
+destination side binds those originals to a remote coordinate, classifies
+what it observes and invokes only the operations the shared engine permits.
+The decision core consumes those facts without loading native SDKs. Actions
+still provides the isolation between preparation, authorized publication and
+verification.
 Application adapters compose native results and supported operations; a new
 native behavior or special project may require implementation. Do not introduce
 an arbitrary command DSL, dynamic policy registry or general V3 cache/reuse

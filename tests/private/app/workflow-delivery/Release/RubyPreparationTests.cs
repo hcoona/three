@@ -112,7 +112,7 @@ public sealed class RubyPreparationTests(TestContext context)
         NativeCommand build = result.Commands.First(command =>
             command.Command.Arguments.Contains("build")).Command;
         Assert.Contains("--norc", build.Arguments);
-        Assert.Contains(Path.Combine(fixture.Checkout, $"{directory}/{Fixture.Unit}.gemspec"),
+        Assert.Contains(Path.GetFullPath($"{directory}/{Fixture.Unit}.gemspec", fixture.Checkout),
             build.Arguments);
         NativeCommand install = result.Commands.Single(command =>
             command.Command.Arguments is [_, "install", "--norc", ..]).Command;

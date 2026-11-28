@@ -32,10 +32,15 @@ internal sealed class ChromeWebStore(HttpClient client, ReleaseSubject subject,
             return Classify(document.RootElement, version);
         });
 
-    public async Task<ReleaseObservationResult?> PublishAsync(StoreFile[] files,
-        List<ReleaseWriteStep> operations, CancellationToken cancel)
+    public StoreWriter Bind(StoreFile[] files) => (operation, cancel) => operation switch
     {
-        StoreFile file = files.Single();
+        "upload" => UploadAsync(files.Single(), cancel),
+        "publish" => PublishItemAsync(cancel),
+        _ => throw new InvalidDataException("Unsupported Chrome Web Store operation."),
+    };
+
+    private async Task<DestinationInvocation> UploadAsync(StoreFile file, CancellationToken cancel)
+    {
         var upload = Request(HttpMethod.Post, $"upload/v2/{Item}:upload");
         upload.Content = new StreamContent(File.OpenRead(file.Path));
         upload.Content.Headers.ContentType = new("application/zip");
@@ -47,7 +52,8 @@ internal sealed class ChromeWebStore(HttpClient client, ReleaseSubject subject,
             state = StoreHttp.Text(document.RootElement, "uploadState");
             string? crx = StoreHttp.Text(document.RootElement, "crxVersion");
             if (crx is not null && crx != version)
-                return Record("upload", false, "Uploaded package reports another version.");
+                return DestinationInvocation.Store(
+                    "upload", false, "Uploaded package reports another version.");
         }
         for (int attempt = 0; state == "IN_PROGRESS" && attempt < attempts; attempt++)
         {
@@ -58,9 +64,19 @@ internal sealed class ChromeWebStore(HttpClient client, ReleaseSubject subject,
             using JsonDocument document = StoreHttp.Json(status);
             state = StoreHttp.Text(document.RootElement, "lastAsyncUploadState");
         }
-        if (state != "SUCCEEDED")
-            return Record("upload", false, $"Upload state: {state ?? "unavailable"}.");
-        operations.Add(ReleaseWriteStep.FromStore("upload", true, "Package upload succeeded."));
+        if (state == "SUCCEEDED")
+            return DestinationInvocation.Store("upload", true, "Package upload succeeded.");
+        string reported = state switch
+        {
+            "FAILED" or "IN_PROGRESS" or "NOT_STARTED" => state,
+            null => "unavailable",
+            _ => "unsupported",
+        };
+        return DestinationInvocation.Store("upload", false, $"Upload state: {reported}.");
+    }
+
+    private async Task<DestinationInvocation> PublishItemAsync(CancellationToken cancel)
+    {
         var publish = Request(HttpMethod.Post, $"v2/{Item}:publish");
         publish.Content = new StringContent("{}", Encoding.UTF8, "application/json");
         StoreResponse published = await http.SendAsync("publish", publish, cancel);
@@ -70,16 +86,12 @@ internal sealed class ChromeWebStore(HttpClient client, ReleaseSubject subject,
             using JsonDocument document = StoreHttp.Json(published);
             itemState = StoreHttp.Text(document.RootElement, "state");
         }
-        return Record("publish", published.Status == 200 && itemState is "PENDING_REVIEW" or
-            "STAGED" or "PUBLISHED" or "PUBLISHED_TO_TESTERS",
-            $"Publish status {published.Status}, item state {itemState ?? "unavailable"}.");
-
-        // A separate read-only verification observes the final store state.
-        ReleaseObservationResult? Record(string operation, bool succeeded, string detail)
-        {
-            operations.Add(ReleaseWriteStep.FromStore(operation, succeeded, detail));
-            return null;
-        }
+        bool accepted =
+            itemState is "PENDING_REVIEW" or "STAGED" or "PUBLISHED" or "PUBLISHED_TO_TESTERS";
+        string? reported = accepted || itemState is "REJECTED" or "CANCELLED" ? itemState
+            : itemState is null ? "unavailable" : "unsupported";
+        return DestinationInvocation.Store("publish", published.Status == 200 && accepted,
+            $"Publish status {published.Status}, item state {reported}.");
     }
 
     internal static (StoreState, string) Classify(JsonElement status, string version)

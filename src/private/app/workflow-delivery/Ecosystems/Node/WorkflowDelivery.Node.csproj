@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(CurrentTargetFramework)</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Repository/PnpmGraphReader.cs;../../Repository/PnpmScriptReader.cs" />
+    <Compile Include="../AdoptedNpmPackage.cs;../NodePackageArchive.cs;../NpmPackageOperations.cs;../BrowserExtensionArchive.cs" />
+    <ProjectReference Include="../../Platform/WorkflowDelivery.NativePlatform.csproj" />
+    <ProjectReference Include="../../Core/WorkflowDelivery.Core.csproj" />
+    <InternalsVisibleTo Include="WorkflowDelivery;WorkflowDelivery.Tests" />
+    <GlobalPackageReference Update="Microsoft.SourceLink.GitHub" ExcludeAssets="Runtime;Native" />
+  </ItemGroup>
+</Project>

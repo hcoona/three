@@ -98,13 +98,13 @@ internal sealed class DotNetExecutionFixture(GitFixture repo, CiPlan plan,
         {
             DotNetBuildRequest request = JsonSerializer.Deserialize(await File.ReadAllTextAsync(
                 Path.Combine(wrapperDirectory, "build-request.json"), token),
-                TransferJson.Default.DotNetBuildRequest)!;
+                DotNetNativeJson.Default.DotNetBuildRequest)!;
             var entries = new JsonArray();
             foreach (DotNetNodeIdentity identity in request.Entries)
                 entries.Add(new JsonObject
                 {
                     ["identity"] = JsonSerializer.SerializeToNode(identity,
-                        TransferJson.Default.DotNetNodeIdentity),
+                        DotNetNativeJson.Default.DotNetNodeIdentity),
                     ["build"] = Code(targets, "Build"),
                     ["getTargetPath"] = Code(targets, "GetTargetPath"),
                     ["outputs"] = Outputs(targets),
@@ -116,7 +116,7 @@ internal sealed class DotNetExecutionFixture(GitFixture repo, CiPlan plan,
         }
         DotNetTestRequest tests = JsonSerializer.Deserialize(await File.ReadAllTextAsync(
             Path.Combine(wrapperDirectory, "test-request.json"), token),
-            TransferJson.Default.DotNetTestRequest)!;
+            DotNetNativeJson.Default.DotNetTestRequest)!;
         Directory.CreateDirectory(tests.Destination);
         for (int index = 0; index < tests.Entries.Length; index++)
         {
@@ -124,7 +124,7 @@ internal sealed class DotNetExecutionFixture(GitFixture repo, CiPlan plan,
             var receipt = new JsonObject
             {
                 ["identity"] = JsonSerializer.SerializeToNode(entry.Identity,
-                    TransferJson.Default.DotNetNodeIdentity),
+                    DotNetNativeJson.Default.DotNetNodeIdentity),
                 ["testTarget"] = entry.TestTarget,
                 ["overall"] = "Success",
                 ["build"] = Code(targets, "Build"),

@@ -166,12 +166,13 @@ Release coordinates publication and business completion through four
 shared stage transfer envelopes (`ReleasePreparationResult`,
 `ReleaseObservationResult`, `ReleasePublicationResult` and
 `ReleaseCompletionResult`). Each concrete
-[`IDestinationAdapter`](../../Destinations/ReleaseAdapters.cs) declares its
-`DestinationProfile` (`ExactBytes`, `VersionAvailable` or `StoreAccepted`
-verification; `Immediate`, `EventualIndex` or `BoundedSettle` visibility;
-`BeforeGate`, `PublisherOnly` or `Unavailable` version reads; and optional ordered
-multi-file kinds) and owns native identity, endpoint, response and partial-set
-semantics. Do not encode npm tags as universal identity or Python's two-file
+destination adapter declares its proof (served originals, available version or
+accepted submission), read capability, visibility and supported ordered
+operations. It owns native identity, endpoint, response and partial-set
+semantics. The [publication window](../../Engine/Release/PublicationWindow.cs)
+refreshes evidence in the publisher context and permits only a subset of the
+reviewed **operation identities**, not a different set of the same size.
+Do not encode npm tags as universal identity or Python's two-file
 behavior as a universal transaction.
 A supported interface does not require each method to have its own class or
 record.
@@ -192,7 +193,8 @@ extra probe records.
 | Complete exact state and all required checks                          | No mutation; live AMO/Edge still enter the WD-REL-008 credential gate | Satisfied by observed state                                         |
 | Absent required state with supported creation                         | Native gate, fresh observation, then only still-needed writes         | Pending until complete required verification                        |
 | Verified exact subset supported by the destination                    | Fresh request qualifies the complete set and plans only missing files | Pending until the full set is verified                              |
-| Edge first submission with `Unobserved` prestate under WD-REL-008     | Native gate, qualified upload and submission without a version read   | Pending until the submission operation establishes receipt          |
+| Edge `Unobserved`, first submission or owner-confirmed non-receipt    | Native gate, qualified upload and submission without a version read   | Pending until the submission operation establishes receipt          |
+| Edge `Unobserved`, without the required operator clearance            | Stay outside the native gate; do not acquire a store credential       | Unknown version state; no mutation attempted by this request        |
 | Conflicting bytes or unknown required state                           | No mutation                                                           | Unsatisfied or unknown, with the blocking reason                    |
 | Acknowledged upload and complete required verification                | No additional write                                                   | Satisfied; preserve the acknowledged command result                 |
 | Acknowledged upload with missing required verification                | No additional write                                                   | Unsatisfied or unknown; retain the successful command result        |
@@ -209,9 +211,11 @@ missing-file completion. An acknowledged native upload means the index committed
 that file, but the public index read is eventually consistent with no
 read-after-write guarantee. Successful acknowledged uploads therefore continue in
 their declared order without intermediate verification or application polling.
-Final verification reports an acknowledged file that the index does not yet show
-as unknown; a later fresh request confirms it without a write. Conflicting bytes
-still leave the request unsatisfied.
+Final verification reports an issued file not yet visible as unknown, whether
+the native call acknowledged it or timed out. If the wheel is now exact and
+only the never-attempted sdist is missing, the result is unsatisfied, not
+unknown. An authoritative byte conflict also leaves the request unsatisfied,
+even if the publisher receipt was lost.
 
 An initially exact request and a newly published request use the same completion
 predicate. There is no separate exact-satisfaction certificate. That predicate is
@@ -243,9 +247,10 @@ A later request never changes it retrospectively.
 
 Fresh recovery uses the original source/control revision and relevant inputs,
 rebuilds and qualifies its own complete set, and observes current destination state.
-It obtains current native authorization for remaining writes; live AMO/Edge
-requests always enter the native gate under
-[WD-REL-008](../requirements.md#release-delivery), even if no write is needed.
+It obtains current native authorization for remaining writes. A live AMO
+request enters its gate to read the version, even if it then issues no write.
+Edge cannot read its version: only a first submission or an owner-checked
+recovery can enter its gate under [WD-REL-008](../requirements.md#release-delivery).
 Do not reuse old approval, old output files or a prior model as authority.
 A tooling fix is a new revision; it cannot silently be combined with the old
 source for recovery.
@@ -338,10 +343,20 @@ For Official `Python`, `npm`, `Ruby` and `BrowserStore` requests carrying a
 `PreparedGithubAnchor`, completion requires both the primary destination's
 completion predicate above and observation of the `release/<unit>/v<version>`
 tag at the selected commit and its non-draft, non-prerelease GitHub Release
-with the prepared release notes and byte-equal assets. Anchor publication runs
-only when the initial primary observation is already satisfied or the primary
-publication step acknowledged upload/submission without error; for destinations
-that can reobserve satisfaction (`Python`, `npm`, `Ruby`, Chrome Web Store and
+with the prepared release notes and byte-equal assets. A read-only job
+evaluates the primary evidence **before** a separate writer can receive
+`contents: write`. A workflow job's exit status is not a publication receipt.
+The gate requires a missing anchor operation and positive primary evidence.
+An initially satisfied primary needs no publisher receipt. Otherwise the gate
+must receive this request's validated receipt: for AMO and Edge it must
+establish the accepted version in the publisher, without a definitively failed
+submission. For an independently readable primary, the publisher must find
+the target already satisfied on refresh or receive acknowledgments for every
+still-needed, reviewed operation. A later diagnostic read by that publisher
+cannot turn an ambiguous upload into permission to write to the anchor.
+The verifier still reads both destinations for final completion.
+
+For destinations that can reobserve satisfaction (`Python`, `npm`, `Ruby`, Chrome Web Store and
 Firefox AMO), if primary publication succeeded and anchor creation or asset
 upload failed, a fresh same-revision dispatch observes the satisfied primary
 destination without repeating primary writes and completes the missing tag,

@@ -1,6 +1,5 @@
 using System.Security;
 using System.Text.Json;
-using WorkflowDelivery.CI;
 using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Repository;
@@ -10,10 +9,9 @@ internal sealed record DotNetReadFiles(string Assembly, string Wrapper, string R
 internal sealed record DotNetBoundNode(string Project, DotNetGraphNode Native,
     string[] OwnedPaths);
 internal sealed record DotNetBoundInput(string? Path, DotNetGraphInput Native);
-internal sealed record DotNetRevisionInputs(GitRevision Revision, DotNetGraphResponse Graph,
-    DotNetBoundNode[] Nodes, DotNetBoundInput[] Inputs, NbgvInputs[] Versions,
-    IReadOnlyDictionary<string, QualitySelection?> Quality, SharedInput[] SelectionInputs,
-    ReleaseUnitDeclaration[] Units);
+internal sealed record DotNetVersionScope(NbgvInputs Version, string[] Consumers, string[] Paths);
+internal sealed record DotNetEndpointFacts(GitRevision Revision, DotNetGraphResponse Graph,
+    DotNetBoundNode[] Nodes, DotNetBoundInput[] Inputs, DotNetVersionScope[] Versions);
 
 // The caller owns prepared checkouts, the complete task distribution, and scratch
 // lifetime. This reader binds native answers; it does not restore or build projects.
@@ -32,7 +30,7 @@ internal sealed class DotNetRepositoryReader
             "SdkConfigurationCandidate",
         "ConfigurationCandidate", "RestoreLockCandidate", "CentralPackageConfiguration",
     };
-    private readonly GitMaterialization checkout;
+    internal GitMaterialization Checkout { get; }
     private readonly DotNetReadFiles files;
     private readonly string entryProject;
     private readonly Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> query;
@@ -42,10 +40,10 @@ internal sealed class DotNetRepositoryReader
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>>? query = null,
         string entryProject = "dirs.proj")
     {
-        this.checkout = checkout;
+        Checkout = checkout;
         this.files = files;
         this.entryProject = entryProject;
-        if (entryProject is not ("dirs.proj" or NodeGroupReader.ControlProject))
+        if (entryProject is not ("dirs.proj" or DotNetTaskHost.ControlProject))
             throw new InvalidDataException("Unsupported native graph entry.");
         this.query = query ?? NativeProcess.ExecuteAsync;
         foreach (GitEntry entry in checkout.Revision.Entries)
@@ -55,16 +53,16 @@ internal sealed class DotNetRepositoryReader
                     + entry.Path);
     }
 
-    internal async Task<DotNetRevisionInputs> ReadAsync(CancellationToken token)
+    internal async Task<DotNetEndpointFacts> ReadEndpointAsync(CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        string entry = Path.Combine(checkout.Root, entryProject);
+        string entry = Path.Combine(Checkout.Root, entryProject);
         RequireFile(entry, "Entry");
         if (new[] { files.Assembly, files.Wrapper, files.Request, files.Response }
             .Any(path => !Path.IsPathFullyQualified(path)) || files.DeadlineSeconds <= 0 ||
             !File.Exists(files.Assembly))
             throw Unavailable("Invocation", "Complete task distribution/scratch is unavailable.");
-        var request = new DotNetGraphRequest(checkout.Revision.Commit, checkout.Root, entry,
+        var request = new DotNetGraphRequest(Checkout.Revision.Commit, Checkout.Root, entry,
             new(StringComparer.Ordinal)
             {
                 ["Configuration"] = "Debug",
@@ -74,7 +72,7 @@ internal sealed class DotNetRepositoryReader
         await using (var output = new FileStream(files.Request, FileMode.CreateNew,
                          FileAccess.Write, FileShare.None))
             await JsonSerializer.SerializeAsync(output, request,
-                TransferJson.Default.DotNetGraphRequest, token);
+                DotNetNativeJson.Default.DotNetGraphRequest, token);
         string wrapper = $"""
             <Project>
               <UsingTask TaskName="WorkflowDelivery.Repository.DotNetGraphTask"
@@ -89,7 +87,7 @@ internal sealed class DotNetRepositoryReader
                          FileAccess.Write, FileShare.None))
         await using (var writer = new StreamWriter(output))
             await writer.WriteAsync(wrapper.AsMemory(), token);
-        NativeCommandResult result = await query(new("dotnet", checkout.Root,
+        NativeCommandResult result = await query(new("dotnet", Checkout.Root,
             ["msbuild", DotNetCli.DisableBuildServers, files.Wrapper, "-nologo",
                 "-noAutoResponse", "-target:Read"],
             files.DeadlineSeconds), token);
@@ -99,18 +97,18 @@ internal sealed class DotNetRepositoryReader
                 NativeDiagnostic.Describe(result, includeStdout: true));
         await using var response = File.OpenRead(files.Response);
         DotNetGraphResponse graph = await JsonSerializer.DeserializeAsync(response,
-            TransferJson.Default.DotNetGraphResponse, token)
+            DotNetNativeJson.Default.DotNetGraphResponse, token)
             ?? throw Unavailable("Response", "Missing native graph response.");
-        return await BindAsync(graph, token);
+        return BindEndpoint(graph, token);
     }
 
-    internal async Task<DotNetRevisionInputs> BindAsync(DotNetGraphResponse graph,
+    internal DotNetEndpointFacts BindEndpoint(DotNetGraphResponse graph,
         CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        if (graph.Revision != checkout.Revision.Commit ||
-            !PhysicalPaths.Equals(Absolute(graph.Root), checkout.Root) ||
-            !PhysicalPaths.Equals(Absolute(graph.Entry), Path.Combine(checkout.Root, entryProject)))
+        if (graph.Revision != Checkout.Revision.Commit ||
+            !PhysicalPaths.Equals(Absolute(graph.Root), Checkout.Root) ||
+            !PhysicalPaths.Equals(Absolute(graph.Entry), Path.Combine(Checkout.Root, entryProject)))
             throw Unavailable("Response", "Different native revision/root/traversal.");
         RequireFile(graph.Entry, "Entry");
         if (graph.Nodes is null || graph.Edges is null || graph.Inputs is null ||
@@ -196,59 +194,23 @@ internal sealed class DotNetRepositoryReader
                 throw Unavailable("Project", "Native project input is absent.",
                     node.Native.Identity);
 
-        string[] projects = nodes.Values.Where(node => node.Project != "dirs.proj")
-            .Select(node => node.Project).Distinct(StringComparer.Ordinal).ToArray();
-        var quality = new Dictionary<string, QualitySelection?>(StringComparer.Ordinal);
-        var shared = new List<SharedInput>();
-        var versions = new List<NbgvInputs>();
-        var selections = new QualitySelectionReader(checkout.Root,
-            checkout.ReadOptionalTextAsync);
+        var versions = new List<DotNetVersionScope>();
         foreach (var group in nodes.Values.Where(node => node.Project != "dirs.proj")
                      .GroupBy(VersionDirectory))
         {
             token.ThrowIfCancellationRequested();
             string[] consumers = group.Select(node => node.Project)
                 .Distinct(StringComparer.Ordinal).ToArray();
-            NbgvInputs version = new NbgvInputReader(checkout.Root).Read(checkout.Revision,
+            NbgvInputs version = new NbgvInputReader(Checkout.Root).Read(Checkout.Revision,
                 group.Key, token);
-            if (version.Commit != checkout.Revision.Commit || version.Directory != group.Key)
+            if (version.Commit != Checkout.Revision.Commit || version.Directory != group.Key)
                 throw Unavailable("NBGV", "Different native version subject.");
-            versions.Add(version);
-            foreach (string path in version.Paths)
-                shared.Add(new(RequireFile(Path.Combine(checkout.Root, path), "NBGV"), consumers));
-            foreach (string path in version.ConfigurationCandidates)
-                shared.Add(new(BindCandidate(path, "NBGV"), consumers));
+            versions.Add(new(version, consumers,
+                [.. version.Paths.Select(path =>
+                    RequireFile(Path.Combine(Checkout.Root, path), "NBGV")),
+                 .. version.ConfigurationCandidates.Select(path => BindCandidate(path, "NBGV"))]));
         }
-        foreach (IGrouping<string, string> group in projects.GroupBy(Parent))
-        {
-            token.ThrowIfCancellationRequested();
-            string[] consumers = group.ToArray();
-            QualitySelection? selection = await selections.ReadAsync(group.Key, "dotnet", token);
-            foreach (string project in consumers) quality.Add(project, selection);
-            string directory = group.Key;
-            while (true)
-            {
-                string path = directory == "." ? "workflow-delivery.quality.yml" :
-                    directory + "/workflow-delivery.quality.yml";
-                shared.Add(new(BindCandidate(path, "QualitySelection"), consumers));
-                if (path == selection?.SourcePath || directory == ".") break;
-                directory = Parent(directory);
-            }
-        }
-        var units = new List<ReleaseUnitDeclaration>();
-        foreach (GitEntry entry in checkout.Revision.Entries.Where(entry =>
-                     entry.Path == "workflow-delivery.release-unit.yml" ||
-                     entry.Path.EndsWith("/workflow-delivery.release-unit.yml",
-                         StringComparison.Ordinal)))
-        {
-            RequireFile(Path.Combine(checkout.Root, entry.Path), "ReleaseUnit");
-            units.Add(ReleaseUnitDeclarationReader.Read(
-                await checkout.ReadOptionalTextAsync(entry.Path, token) ??
-                    throw Unavailable("ReleaseUnit", "Missing committed release declaration."),
-                entry.Path));
-        }
-        return new(checkout.Revision, graph, nodes.Values.ToArray(), inputs.ToArray(),
-            versions.ToArray(), quality, shared.ToArray(), units.ToArray());
+        return new(Checkout.Revision, graph, [.. nodes.Values], [.. inputs], [.. versions]);
 
         void Resolve(DotNetNodeIdentity identity)
         {
@@ -262,12 +224,12 @@ internal sealed class DotNetRepositoryReader
             string native = node.Native.VersionBaseDirectory;
             if (native.Length == 0) return Parent(node.Project);
             string absolute = Absolute(native);
-            if (PhysicalPaths.Equals(absolute, checkout.Root)) return ".";
+            if (PhysicalPaths.Equals(absolute, Checkout.Root)) return ".";
             if (!IsInside(absolute))
                 throw Unavailable("NBGV", "Version base is outside the endpoint.",
                     node.Native.Identity);
             string directory = Relative(absolute);
-            string[] committed = checkout.Revision.Entries.Where(entry =>
+            string[] committed = Checkout.Revision.Entries.Where(entry =>
                     entry.Path.StartsWith(directory + "/", OperatingSystem.IsWindows()
                         ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
                 .Select(entry => entry.Path[..directory.Length])
@@ -277,6 +239,35 @@ internal sealed class DotNetRepositoryReader
                     node.Native.Identity);
             return committed[0];
         }
+    }
+
+    internal static HashSet<(string Project, string Globals)> ReachableControl(string root,
+        IEnumerable<DotNetGraphNode> nodes, DotNetGraphEdge[] edges, bool required)
+    {
+        var comparer = new NativeIdentityComparer();
+        var closure = new HashSet<(string Project, string Globals)>(comparer);
+        string application = Path.GetFullPath(DotNetTaskHost.ControlProject, root);
+        DotNetGraphNode[] control = nodes.Where(node => !node.OuterBuild &&
+            PhysicalPaths.Equals(node.Identity.Project, application)).ToArray();
+        if (control.Length == 0 && !required) return closure;
+        if (control.Length != 1)
+            throw new InvalidDataException("The control requires one complete native dimension.");
+        var references = edges.ToLookup(edge => Key(edge.Consumer), edge => Key(edge.Dependency),
+            comparer);
+        var cli = Key(control[0].Identity);
+        closure.Add(cli);
+        var pending = new Queue<(string Project, string Globals)>();
+        pending.Enqueue(cli);
+        while (pending.TryDequeue(out var project))
+            foreach (var dependency in references[project])
+            {
+                string path = Path.GetRelativePath(root, dependency.Project).Replace('\\', '/');
+                if (!DotNetTaskHost.IsControlProject(path))
+                    throw new InvalidDataException(
+                        "Control project dependencies require a concrete adapter.");
+                if (closure.Add(dependency)) pending.Enqueue(dependency);
+            }
+        return closure;
     }
 
     internal static (string Project, string Globals) Key(DotNetNodeIdentity identity)
@@ -299,7 +290,7 @@ internal sealed class DotNetRepositoryReader
             .Select(pair => new KeyValuePair<string, string>(
                 pair.Key.ToUpperInvariant(), pair.Value))
             .OrderBy(pair => pair.Key, StringComparer.Ordinal).ToArray(),
-            TransferJson.Default.KeyValuePairStringStringArray));
+            DotNetNativeJson.Default.KeyValuePairStringStringArray));
     }
 
     internal sealed class NativeIdentityComparer :
@@ -326,7 +317,7 @@ internal sealed class DotNetRepositoryReader
                 "TraversalPackage" => input.Stage == "Evaluation" &&
                     input.Role is not ("Project" or "CentralPackageConfiguration") &&
                     !IsCandidate(input.Role) && PhysicalPaths.Equals(input.Consumer.Project,
-                        Path.Combine(checkout.Root, entryProject)),
+                        Path.Combine(Checkout.Root, entryProject)),
                 "RestoreGenerated" => input.Role == "Import" && input.Stage == "Evaluation",
                 "RestoreAssets" => input.Role == "RestoreAssets" && input.Stage == "LockedRestore",
                 "RestoreEnvironment" => input.Role == "RestoreConfiguration" &&
@@ -338,31 +329,31 @@ internal sealed class DotNetRepositoryReader
                 + input.Path + ", stage " + input.Stage, input.Consumer);
     }
 
-    private string BindCandidate(string path, string role)
+    internal string BindCandidate(string path, string role)
     {
-        string absolute = Path.GetFullPath(Path.Combine(checkout.Root, path));
+        string absolute = Path.GetFullPath(Path.Combine(Checkout.Root, path));
         if (coordinates.ContainsKey(absolute)) return RequireFile(absolute, role);
         if (!IsInside(absolute) || File.Exists(absolute) || Directory.Exists(absolute))
             throw Unavailable(role, "Unsupported candidate source: " + path);
         return Relative(absolute);
     }
 
-    private string RequireFile(string path, string role)
+    internal string RequireFile(string path, string role)
     {
         if (!coordinates.TryGetValue(Absolute(path), out GitEntry? entry) ||
             entry.ObjectType != "blob" || entry.Mode is not ("100644" or "100755"))
             throw Unavailable(role, "Required input is not regular committed source: " + path);
-        ImpactPlanner.ValidatePath(entry.Path);
+        OwnedPath.RequireRepositoryRelative(entry.Path);
         return entry.Path;
     }
 
-    private bool IsInside(string path) => Path.GetFullPath(path).StartsWith(checkout.Root +
+    private bool IsInside(string path) => Path.GetFullPath(path).StartsWith(Checkout.Root +
         Path.DirectorySeparatorChar, OwnedPath.Comparison);
 
     private string Relative(string absolute)
     {
-        string relative = Path.GetRelativePath(checkout.Root, absolute).Replace('\\', '/');
-        ImpactPlanner.ValidatePath(relative);
+        string relative = Path.GetRelativePath(Checkout.Root, absolute).Replace('\\', '/');
+        OwnedPath.RequireRepositoryRelative(relative);
         return relative;
     }
 
@@ -378,8 +369,8 @@ internal sealed class DotNetRepositoryReader
 
     private InvalidDataException Unavailable(string role, string reason,
         DotNetNodeIdentity? consumer = null) => new($"Native .NET fact unavailable at " +
-        $"revision {checkout.Revision.Commit}, endpoint {checkout.Root}, " +
+        $"revision {Checkout.Revision.Commit}, endpoint {Checkout.Root}, " +
         $"consumer {JsonSerializer.Serialize(consumer,
-            TransferJson.Default.DotNetNodeIdentity)}, " +
+            DotNetNativeJson.Default.DotNetNodeIdentity)}, " +
         $"role {role}: {reason}");
 }

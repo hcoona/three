@@ -172,7 +172,7 @@ public sealed class GithubReleaseTests(TestContext context)
         ReleasePreparationResult preparation = Preparation(false);
         PreparedRelease prepared = preparation.Prepared;
         ReleaseObservationResult observed = await github.Destination().ObserveAsync(
-            prepared, context.CancellationToken);
+            DestinationBindings.GithubRelease(prepared), context.CancellationToken);
 
         Assert.IsTrue(observed.Observation.Files.All(file =>
             file.State == ReleaseFileState.Exact));
@@ -205,19 +205,23 @@ public sealed class GithubReleaseTests(TestContext context)
         const string SemVer = "1.2.0";
         const string Tag = "release/steam-account-history-to-csv/v" + SemVer;
         const string Notes = "### Added\n\n- Store changelog.";
+        const string Prefix = "originals/steam-account-history-to-csv-" + SemVer + "-";
+        const string ChromePath = Prefix + "chrome.zip";
+        const string FirefoxPath = Prefix + "firefox.zip";
+        const string SourcesPath = Prefix + "sources.zip";
         byte[] chromeBytes = "PK chrome"u8.ToArray();
         byte[] firefoxBytes = "PK firefox"u8.ToArray();
         byte[] sourcesBytes = "PK sources"u8.ToArray();
-        File.WriteAllBytes(Path.Combine(root.Root, "originals/chrome.zip"), chromeBytes);
-        File.WriteAllBytes(Path.Combine(root.Root, "originals/firefox.zip"), firefoxBytes);
-        File.WriteAllBytes(Path.Combine(root.Root, "originals/sources.zip"), sourcesBytes);
+        File.WriteAllBytes(Path.Combine(root.Root, ChromePath), chromeBytes);
+        File.WriteAllBytes(Path.Combine(root.Root, FirefoxPath), firefoxBytes);
+        File.WriteAllBytes(Path.Combine(root.Root, SourcesPath), sourcesBytes);
 
         // 1. Dry-run reports both the primary store write and the GitHub Release anchor.
         ReleasePreparationResult chromeDry = StorePrep("chrome-web-store", dryRun: true,
             [StoreFile("chrome-zip", "chrome-extension-zip", StoreVersion,
-                "originals/chrome.zip", chromeBytes)],
+                ChromePath, chromeBytes)],
             [AnchorFile("chrome-zip", "chrome-extension-zip", "chrome.zip",
-                "originals/chrome.zip", chromeBytes)],
+                ChromePath, chromeBytes)],
             ["steam-account-history-to-csv-1.2.0-firefox.zip",
                 "steam-account-history-to-csv-1.2.0-sources.zip",
                 "steam-account-history-to-csv-1.2.0-edge.zip"]);
@@ -227,6 +231,35 @@ public sealed class GithubReleaseTests(TestContext context)
             BrowserStoreDestinationAdapter.Unobserved(chromeDry),
             TransferJson.Default.ReleaseObservationResult);
         string chromeDryAnchorObs = Path.Combine(root.Root, "chrome-dry-anchor.json");
+        PreparedGithubAnchor originalAnchor = chromeDry.Prepared.Anchor!;
+        foreach (PreparedGithubAnchor foreign in new[]
+                 {
+                     originalAnchor with { AllowedSiblingAssets = ["foreign.zip"] },
+                     originalAnchor with
+                     {
+                         Assets = [originalAnchor.Assets[0] with { Name = "foreign.zip" }]
+                     },
+                     originalAnchor with
+                     {
+                         Assets =
+                         [
+                             originalAnchor.Assets[0] with
+                             {
+                                 Path = FirefoxPath,
+                                 Size = firefoxBytes.Length,
+                                 Sha256 = Convert.ToHexStringLower(SHA256.HashData(firefoxBytes))
+                             }
+                         ]
+                     },
+                 })
+        {
+            string path = root.Save("foreign.json", chromeDry with
+            { Prepared = chromeDry.Prepared with { Anchor = foreign } },
+                TransferJson.Default.ReleasePreparationResult);
+            Assert.ThrowsExactly<InvalidDataException>(() => RunCli(
+                ["release", "observe-github-anchor", path, root.Root, chromeDryAnchorObs]));
+        }
+        Assert.IsEmpty(github.Requests);
         Assert.AreEqual(0, RunCli(["release", "observe-github-anchor", chromeDryPath,
             root.Root, chromeDryAnchorObs]));
         ReleaseDryRun dry = RunJson(["release", "describe-browser-store", chromeDryPath,
@@ -251,6 +284,7 @@ public sealed class GithubReleaseTests(TestContext context)
         string chromeAnchorInitialPath = Path.Combine(root.Root, "chrome-anchor-initial.json");
         Assert.AreEqual(0, RunCli(["release", "observe-github-anchor", chromePrepPath,
             root.Root, chromeAnchorInitialPath]));
+        AssertGate("-", false);
         Assert.ThrowsExactly<InvalidDataException>(() => RunCli(
             ["release", "publish-github-anchor", chromePrepPath, root.Root, chromeInitialPath,
                 chromeAnchorInitialPath, "-"]));
@@ -275,6 +309,7 @@ public sealed class GithubReleaseTests(TestContext context)
                 prep.Prepared.Subject, prep.Target!, StoreVersion, "token"));
         string chromeFailedPubPath = root.Save("chrome-failed-pub.json", chromeFailedPub,
             TransferJson.Default.ReleasePublicationResult);
+        AssertGate(chromeFailedPubPath, false);
         Assert.ThrowsExactly<InvalidDataException>(() => RunCli(
             ["release", "publish-github-anchor", chromePrepPath, root.Root, chromeInitialPath,
                 chromeAnchorInitialPath, chromeFailedPubPath]));
@@ -297,6 +332,7 @@ public sealed class GithubReleaseTests(TestContext context)
         Assert.IsNull(chromePub.After);
         string chromePubPath = root.Save("chrome-pub.json", chromePub,
             TransferJson.Default.ReleasePublicationResult);
+        AssertGate(chromePubPath, true);
         ReleaseObservationResult chromePending = StoreObserved(chromeLive, StoreState.InReview);
         string chromePendingPath = root.Save("chrome-pending.json", chromePending,
             TransferJson.Default.ReleaseObservationResult);
@@ -327,18 +363,39 @@ public sealed class GithubReleaseTests(TestContext context)
             TransferJson.Default.ReleaseCompletionResult);
         Assert.AreEqual(ReleaseBusinessState.Satisfied, chromeCompleted.Outcome.State);
 
+        // Verification may lose the primary receipt the gate used, independently
+        // of anchor delivery.
+        foreach (bool deliveredAnchor in new[] { true, false })
+        {
+            ReleaseCompletionResult independentLoss = RunJson(["release", "complete-browser-store",
+                chromePrepPath, chromeInitialPath, chromePendingPath, "-", chromeAnchorInitialPath,
+                chromeAnchorFinalPath, deliveredAnchor ? chromeAnchorPubPath : "-"],
+                TransferJson.Default.ReleaseCompletionResult, expectedExit: 1);
+            Assert.AreEqual(ReleaseBusinessState.Unknown, independentLoss.Outcome.State);
+            Assert.IsNull(independentLoss.Publication);
+            Assert.AreEqual(
+                deliveredAnchor ? true : (bool?)null, independentLoss.MutationAttempted);
+            Assert.AreEqual(
+                deliveredAnchor ? ReleaseBusinessState.Satisfied : ReleaseBusinessState.Unknown,
+                independentLoss.AnchorOutcome!.State);
+            if (deliveredAnchor)
+                CollectionAssert.AreEqual(
+                    chromeAnchorPub.Steps, independentLoss.AnchorPublication!.Steps);
+            else Assert.IsNull(independentLoss.AnchorPublication);
+        }
+
         // 4. Sibling store (Firefox) on anchor-repair rerun (primary already Published inside
         // publisher with no store writes) tolerates Chrome's existing asset and uploads only
         // Firefox's two zips to the shared release.
         ReleasePreparationResult firefoxLive = StorePrep("firefox-amo", dryRun: false,
             [StoreFile("firefox-zip", "firefox-extension-zip", StoreVersion,
-                "originals/firefox.zip", firefoxBytes),
+                FirefoxPath, firefoxBytes),
                 StoreFile("firefox-sources", "firefox-source-zip", StoreVersion,
-                    "originals/sources.zip", sourcesBytes)],
+                    SourcesPath, sourcesBytes)],
             [AnchorFile("firefox-zip", "firefox-extension-zip", "firefox.zip",
-                "originals/firefox.zip", firefoxBytes),
+                FirefoxPath, firefoxBytes),
                 AnchorFile("firefox-sources", "firefox-source-zip", "sources.zip",
-                    "originals/sources.zip", sourcesBytes)],
+                    SourcesPath, sourcesBytes)],
             ["steam-account-history-to-csv-1.2.0-chrome.zip",
                 "steam-account-history-to-csv-1.2.0-edge.zip"]);
         string firefoxPrepPath = root.Save("firefox-prep.json", firefoxLive,
@@ -361,23 +418,24 @@ public sealed class GithubReleaseTests(TestContext context)
         Assert.ThrowsExactly<InvalidDataException>(() => RunCli(
             ["release", "publish-github-anchor", firefoxPrepPath, root.Root, firefoxInitialPath,
                 firefoxAnchorInitialPath, firefoxUnverifiedPubPath]));
-        string firefoxAmbiguousPubPath = root.Save("firefox-ambiguous-pub.json",
+        string firefoxRejectedPubPath = root.Save("firefox-rejected-pub.json",
             new ReleasePublicationResult(firefoxLive.Prepared.Subject,
                 StoreObserved(firefoxLive, StoreState.Absent),
                 [ReleaseWriteStep.FromStore("upload", true, "Package upload validated."),
                     ReleaseWriteStep.FromStore("create-version", false,
-                        "Version create response was unavailable.")],
+                        "Version create status 409.")],
                 StoreObserved(firefoxLive, StoreState.InReview),
-                ["create-version: Version create response was unavailable."]),
+                ["create-version: Version create status 409."]),
             TransferJson.Default.ReleasePublicationResult);
         Assert.ThrowsExactly<InvalidDataException>(() => RunCli(
             ["release", "publish-github-anchor", firefoxPrepPath, root.Root, firefoxInitialPath,
-                firefoxAnchorInitialPath, firefoxAmbiguousPubPath]));
-        ReleaseCompletionResult firefoxSkippedAnchor = RunJson(
+                firefoxAnchorInitialPath, firefoxRejectedPubPath]));
+        ReleaseCompletionResult firefoxMissingAnchor = RunJson(
             ["release", "complete-browser-store", firefoxPrepPath, firefoxInitialPath, "-",
-                firefoxAmbiguousPubPath, firefoxAnchorInitialPath, firefoxAnchorInitialPath, "-"],
+                firefoxRejectedPubPath, firefoxAnchorInitialPath, firefoxAnchorInitialPath, "-"],
             TransferJson.Default.ReleaseCompletionResult, expectedExit: 1);
-        Assert.AreEqual(ReleaseBusinessState.Unsatisfied, firefoxSkippedAnchor.Outcome.State);
+        Assert.AreEqual(ReleaseBusinessState.Unknown, firefoxMissingAnchor.Outcome.State);
+        Assert.AreEqual(ReleaseBusinessState.Unknown, firefoxMissingAnchor.AnchorOutcome!.State);
         string firefoxPubPath = root.Save("firefox-pub.json", new ReleasePublicationResult(
             firefoxLive.Prepared.Subject, firefoxPublished, [], firefoxPublished, []),
             TransferJson.Default.ReleasePublicationResult);
@@ -502,6 +560,14 @@ public sealed class GithubReleaseTests(TestContext context)
             StoreHttp.Observation(preparation.Prepared.Subject, preparation.Target!, StoreVersion,
                 state, [], []);
 
+        void AssertGate(string receipt, bool permitted)
+        {
+            using var output = new StringWriter();
+            Assert.AreEqual(0, ReleaseCli.Run(["release", "may-publish-github-anchor",
+                chromePrepPath, chromeInitialPath, chromeAnchorInitialPath, receipt], output));
+            Assert.AreEqual(permitted ? "true" : "false", output.ToString().Trim());
+        }
+
         int RunCli(string[] arguments)
         {
             string? previous = Environment.GetEnvironmentVariable("GITHUB_TOKEN");
@@ -580,7 +646,8 @@ public sealed class GithubReleaseTests(TestContext context)
         ReleasePreparationResult preparation = Preparation(false);
         PreparedRelease prepared = preparation.Prepared;
         GithubReleaseDestination destination = github.Destination();
-        ReleaseObservationResult observed = await destination.ObserveAsync(prepared,
+        ReleaseObservationResult observed = await destination.ObserveAsync(
+            DestinationBindings.GithubRelease(prepared),
             context.CancellationToken);
 
         Assert.Contains(expected, observed.Observation.Files.Select(file => file.State));
@@ -602,12 +669,27 @@ public sealed class GithubReleaseTests(TestContext context)
         ReleasePreparationResult preparation = Preparation(false);
         PreparedRelease prepared = preparation.Prepared;
         GithubReleaseDestination destination = github.Destination();
-        ReleaseObservationResult initial = await destination.ObserveAsync(prepared,
+        GithubReleaseTarget target = DestinationBindings.GithubRelease(prepared);
+        ReleaseObservationResult initial = await destination.ObserveAsync(target,
             context.CancellationToken);
+        string transfer = JsonSerializer.Serialize(initial,
+            TransferJson.Default.ReleaseObservationResult);
+        Assert.AreEqual(ContainerPresence.Present, initial.Container);
+        Assert.DoesNotContain("releaseId", transfer);
+        Assert.DoesNotContain($"/releases/{github.Release!.Id}/", transfer);
+        JsonObject transported = JsonNode.Parse(transfer)!.AsObject();
+        transported["releaseId"] = github.Release.Id;
+        Assert.ThrowsExactly<JsonException>(() => transported.Deserialize(
+            TransferJson.Default.ReleaseObservationResult));
+
+        // The semantic prerequisite is unchanged, but the replacement has a different native ID.
+        github.DeleteRelease();
+        github.Publish(Revision, prerelease: true, ("setup", Setup));
 
         ReleasePublicationResult publication = await Publish(preparation, originals,
-            initial, destination);
-        ReleaseObservationResult final = await destination.ObserveAsync(prepared,
+            JsonSerializer.Deserialize(transfer, TransferJson.Default.ReleaseObservationResult)!,
+            github.Destination());
+        ReleaseObservationResult final = await destination.ObserveAsync(target,
             context.CancellationToken);
         ReleaseCompletionResult result = ReleaseEngine.Complete(ReleaseAdapters.GithubRelease,
             preparation, initial,
@@ -634,7 +716,7 @@ public sealed class GithubReleaseTests(TestContext context)
         ReleasePreparationResult preparation = Preparation(false);
         GithubReleaseDestination destination = github.Destination();
         ReleaseObservationResult observed = await destination.ObserveAsync(
-            preparation.Prepared, context.CancellationToken);
+            DestinationBindings.GithubRelease(preparation.Prepared), context.CancellationToken);
 
         // Exact assets alone do not bind the release to the prepared commit.
         Assert.IsTrue(observed.Observation.Files.All(file =>
@@ -643,9 +725,10 @@ public sealed class GithubReleaseTests(TestContext context)
             Planned(preparation, observed));
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => Publish(preparation,
             originals, observed, destination));
-        Assert.ThrowsExactly<InvalidDataException>(() =>
-            ReleaseEngine.Complete(ReleaseAdapters.GithubRelease,
-            preparation, observed, observed, null));
+        ReleaseCompletionResult blocked = ReleaseEngine.Complete(ReleaseAdapters.GithubRelease,
+            preparation, observed, observed, null);
+        Assert.AreEqual(ReleaseBusinessState.Unsatisfied, blocked.Outcome.State);
+        Assert.IsFalse(blocked.MutationAttempted);
         Assert.AreEqual(ReleaseBusinessState.Unsatisfied, ReleaseCompletion.Evaluate(
             preparation.Prepared, observed.Observation, []).State);
         Assert.IsFalse(github.Requests.Any(request => request.Method != HttpMethod.Get));
@@ -662,14 +745,14 @@ public sealed class GithubReleaseTests(TestContext context)
             ReleasePreparationResult preparation = Preparation(official);
             GithubReleaseDestination destination = github.Destination();
             ReleaseObservationResult initial = await destination.ObserveAsync(
-                preparation.Prepared, context.CancellationToken);
+                DestinationBindings.GithubRelease(preparation.Prepared), context.CancellationToken);
             // The earlier Buddy prerelease does not occupy the Official coordinate.
             Assert.IsTrue(initial.Observation.Files.All(file =>
                 file.State == ReleaseFileState.Absent));
             ReleasePublicationResult publication = await Publish(preparation, originals,
                 initial, destination);
             ReleaseObservationResult final = await destination.ObserveAsync(
-                preparation.Prepared, context.CancellationToken);
+                DestinationBindings.GithubRelease(preparation.Prepared), context.CancellationToken);
             ReleaseCompletionResult completion =
                 ReleaseEngine.Complete(ReleaseAdapters.GithubRelease,
                 preparation, initial, final, publication);
@@ -690,7 +773,7 @@ public sealed class GithubReleaseTests(TestContext context)
         ReleasePreparationResult preparation = Preparation(false);
         GithubReleaseDestination destination = github.Destination();
         ReleaseObservationResult initial = await destination.ObserveAsync(
-            preparation.Prepared, context.CancellationToken);
+            DestinationBindings.GithubRelease(preparation.Prepared), context.CancellationToken);
         // Another writer publishes different bytes after the reviewed observation.
         github.Publish(Revision, prerelease: true, ("setup", Encoding.ASCII.GetBytes(
             "MZ other bytes!!!!")));
@@ -711,7 +794,8 @@ public sealed class GithubReleaseTests(TestContext context)
         ReleasePreparationResult preparation = Preparation(false);
         GithubReleaseDestination destination = github.Destination();
         github.Publish(Revision, prerelease: true);
-        ReleaseObservationResult initial = await destination.ObserveAsync(preparation.Prepared,
+        ReleaseObservationResult initial = await destination.ObserveAsync(
+            DestinationBindings.GithubRelease(preparation.Prepared),
             context.CancellationToken);
         github.DeleteRelease();
 
@@ -721,7 +805,8 @@ public sealed class GithubReleaseTests(TestContext context)
         Assert.IsEmpty(github.Requests.Where(request => request.Method != HttpMethod.Get));
         Assert.IsEmpty(publication.Steps);
         Assert.Contains("enlarge", Assert.ContainsSingle(publication.Errors));
-        ReleaseObservationResult final = await destination.ObserveAsync(preparation.Prepared,
+        ReleaseObservationResult final = await destination.ObserveAsync(
+            DestinationBindings.GithubRelease(preparation.Prepared),
             context.CancellationToken);
         ReleaseCompletionResult result = ReleaseEngine.Complete(ReleaseAdapters.GithubRelease,
             preparation, initial, final, publication);
@@ -737,7 +822,8 @@ public sealed class GithubReleaseTests(TestContext context)
         ReleasePreparationResult preparation = Preparation(false);
         GithubReleaseDestination destination = github.Destination();
         Task<ReleaseObservationResult> Observe() =>
-            destination.ObserveAsync(preparation.Prepared, context.CancellationToken);
+            destination.ObserveAsync(
+                DestinationBindings.GithubRelease(preparation.Prepared), context.CancellationToken);
 
         github.Publish(Revision, prerelease: true);
         ReleaseObservationResult uploadsOnly = await Observe();
@@ -764,6 +850,40 @@ public sealed class GithubReleaseTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task CancellationAfterCreationRetainsTheAttemptWithoutUploadingAnAsset()
+    {
+        using var github = new FakeGithub();
+        using var originals = new Originals();
+        using var cancel =
+            CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
+        ReleasePreparationResult prep = Preparation(false);
+        GithubReleaseDestination port = github.Destination();
+        GithubReleaseTarget target = DestinationBindings.GithubRelease(prep.Prepared);
+        ReleaseObservationResult initial = await port.ObserveAsync(target, cancel.Token);
+        DestinationPublishPlan native = DestinationPublishPlan.GithubRelease(prep.Prepared,
+            port.OpenPublisher(target, originals.Root));
+        ReleasePublicationResult receipt = await ReleaseEngine.PublishAsync(
+            ReleaseAdapters.GithubRelease, prep, originals.Root, initial, native with
+            {
+                InvokeAsync = async (operation, token) =>
+                {
+                    DestinationInvocation created = await native.InvokeAsync(operation, token);
+                    cancel.Cancel();
+                    return created;
+                },
+            }, cancel.Token);
+
+        Assert.AreEqual("container", Assert.ContainsSingle(receipt.Steps).Kind);
+        Assert.Contains("interrupted", Assert.ContainsSingle(receipt.Errors));
+        Assert.ContainsSingle(github.Requests.Where(request => request.Method == HttpMethod.Post));
+        var final = await port.ObserveAsync(target, context.CancellationToken);
+        var completion = ReleaseEngine.Complete(
+            ReleaseAdapters.GithubRelease, prep, initial, final, receipt);
+        Assert.IsTrue(completion.MutationAttempted);
+        Assert.AreEqual(ReleaseBusinessState.Unsatisfied, completion.Outcome.State);
+    }
+
+    [TestMethod]
     [DataRow(0)]
     [DataRow(-1)]
     public async Task InvalidCreatedReleaseIdPreventsAssetUploads(int id)
@@ -773,7 +893,7 @@ public sealed class GithubReleaseTests(TestContext context)
         ReleasePreparationResult preparation = Preparation(false);
         GithubReleaseDestination destination = github.Destination();
         ReleaseObservationResult initial = await destination.ObserveAsync(
-            preparation.Prepared, context.CancellationToken);
+            DestinationBindings.GithubRelease(preparation.Prepared), context.CancellationToken);
 
         ReleasePublicationResult publication = await Publish(preparation, originals,
             initial, destination);
@@ -798,7 +918,7 @@ public sealed class GithubReleaseTests(TestContext context)
         ReleasePreparationResult preparation = Preparation(false);
         GithubReleaseDestination destination = github.Destination();
         ReleaseObservationResult initial = await destination.ObserveAsync(
-            preparation.Prepared, context.CancellationToken);
+            DestinationBindings.GithubRelease(preparation.Prepared), context.CancellationToken);
 
         ReleasePublicationResult publication = await Publish(preparation, originals,
             initial, destination);
@@ -808,11 +928,13 @@ public sealed class GithubReleaseTests(TestContext context)
         Assert.HasCount(failWrite, github.Requests.Where(request =>
             request.Method == HttpMethod.Post));
         ReleaseObservationResult final = await destination.ObserveAsync(
-            preparation.Prepared, context.CancellationToken);
+            DestinationBindings.GithubRelease(preparation.Prepared), context.CancellationToken);
         ReleaseCompletionResult completion = ReleaseEngine.Complete(ReleaseAdapters.GithubRelease,
             preparation,
             initial, final, publication);
-        Assert.AreEqual(ReleaseBusinessState.Unsatisfied, completion.Outcome.State);
+        Assert.AreEqual(ReleaseBusinessState.Unknown, completion.Outcome.State);
+        Assert.IsTrue(completion.MutationAttempted);
+        Assert.AreEqual(publication.Steps[^1], completion.Publication!.Steps[^1]);
         // Without the publication result the effects of a required write stay unknown.
         Assert.AreEqual(ReleaseBusinessState.Unknown,
             ReleaseEngine.Complete(ReleaseAdapters.GithubRelease,
@@ -823,8 +945,7 @@ public sealed class GithubReleaseTests(TestContext context)
         ReleasePreparationResult preparation, Originals originals,
         ReleaseObservationResult initial, GithubReleaseDestination destination) =>
         ReleaseAdapters.GithubRelease.PublishAsync(preparation, originals.Root, initial,
-            destination.ObserveAsync, destination.CreateAsync, destination.UploadAsync,
-            CancellationToken.None);
+            destination, CancellationToken.None);
 
     private static string[] Planned(ReleasePreparationResult preparation,
         ReleaseObservationResult observed) =>

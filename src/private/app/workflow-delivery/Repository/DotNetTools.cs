@@ -9,30 +9,13 @@ internal sealed record DotNetToolGroup(string Key, Dictionary<string, string> To
 // External tools that a whole .NET test project declares. One tool set is one execution group.
 internal static partial class DotNetTools
 {
-    internal const string Item = "ThreeRequiredTool";
     internal const string Dimension = "tools";
     internal const string None = "none";
     internal const string Bundled = "bundled";
-    internal static readonly string[] Supported = ["node", "npm", "python"];
-
-    // The declared names, sorted; unknown, repeated or npm without node fail closed.
-    internal static string[] Names(IEnumerable<string> declared)
-    {
-        string[] names = declared.ToArray();
-        string? unknown = names.FirstOrDefault(name => !Supported.Contains(name,
-            StringComparer.Ordinal));
-        if (unknown is not null)
-            throw new InvalidDataException("Unsupported required external tool: " + unknown);
-        if (names.Distinct(StringComparer.Ordinal).Count() != names.Length)
-            throw new InvalidDataException("Repeated required external tool.");
-        if (names.Contains("npm") && !names.Contains("node"))
-            throw new InvalidDataException("Required external tool npm needs node.");
-        return names.Order(StringComparer.Ordinal).ToArray();
-    }
 
     internal static string Key(IEnumerable<string> names)
     {
-        string[] sorted = Names(names);
+        string[] sorted = DotNetRequiredTools.Names(names);
         return sorted.Length == 0 ? None : string.Join('+', sorted);
     }
 
@@ -41,7 +24,7 @@ internal static partial class DotNetTools
         IReadOnlyDictionary<string, string> versions)
     {
         var tools = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (string name in Names(names))
+        foreach (string name in DotNetRequiredTools.Names(names))
         {
             if (!versions.TryGetValue(name, out string? version))
                 throw new InvalidDataException("Missing planned version for external tool " +
@@ -73,7 +56,7 @@ internal static partial class DotNetTools
         Dictionary<string, string> tools = JsonSerializer.Deserialize(dimension,
             TransferJson.Default.DictionaryStringString)
             ?? throw new InvalidDataException("Missing external tool dimension.");
-        Names(tools.Keys);
+        DotNetRequiredTools.Names(tools.Keys);
         foreach ((string name, string version) in tools)
             Version(name, version);
         if (Serialize(tools) != dimension)

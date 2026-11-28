@@ -125,7 +125,9 @@ Unavailable or contradictory facts are unknown and permit no mutation.
 Only the `publish` job receives the destination Environment and
 `contents: write` on its job `GITHUB_TOKEN`; no other credential is used.
 It refreshes the complete observation and refuses to enlarge the reviewed
-writes. When the release is absent, it creates it once at the selected
+writes. The observation transfers container presence, not a numeric release
+ID. The publisher obtains its own ID from this refresh or its own create
+response; a later job cannot reuse it. When the release is absent, it creates it once at the selected
 revision, which also creates the tag. Then it uploads each missing asset,
 installer first. A failed or ambiguous create or upload stops all further
 writes. Existing exact assets are retained, and different assets are never

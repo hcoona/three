@@ -12,6 +12,40 @@ namespace WorkflowDelivery.Tests.Release;
 public sealed class RubyReleaseTests(TestContext context)
 {
     [TestMethod]
+    [TestCategory("DeliveryTlcConformance")]
+    public async Task OfficialRubyGateAgreesWithSealedVerifierReadReceipts()
+    {
+        using var fixture = new RubyCallerFixture("official");
+        var absent = fixture.Observe(ReleaseFileState.Absent);
+        foreach (string[] row in DeliveryModelOracle.Rows("VerifierReadGateOracle"))
+        {
+            if (row is not [var name, var fresh, var response, var gate])
+                throw new AssertFailedException("Incomplete verifier-read gate observation.");
+            ReleaseFileState refresh = fresh switch
+            {
+                "missing" => ReleaseFileState.Absent,
+                "established" => ReleaseFileState.Exact,
+                "conflict" => ReleaseFileState.Conflict,
+                "unknown" => ReleaseFileState.Unknown,
+                _ => throw new AssertFailedException(name),
+            };
+            int reads = 0;
+            var receipt = await PublishAsync(fixture.Preparation, fixture.Root, absent,
+                (_, _) => Task.FromResult(fixture.Observe(
+                    reads++ == 0 ? refresh : ReleaseFileState.Exact)),
+                (_, _, _) => Task.FromResult(fixture.Publish(response switch
+                {
+                    "acknowledged" => RubyCallerFixture.Command(),
+                    "failed" => RubyCallerFixture.Command(code: 17),
+                    "ambiguous" => new(NativeTermination.TimedOut, null, "", "", 1, "Timeout"),
+                    _ => throw new AssertFailedException("Unexpected upload: " + name),
+                })), context.CancellationToken);
+            Assert.AreEqual(gate == "allow", ReleaseEngine.AnchorAllowed(ReleaseAdapters.Ruby,
+                fixture.Preparation, absent, receipt), name);
+        }
+    }
+
+    [TestMethod]
     public void ValidateCompletePreparationBindsPortableOriginal()
     {
         using var fixture = new RubyCallerFixture();
@@ -185,14 +219,17 @@ public sealed class RubyReleaseTests(TestContext context)
     }
 
     [TestMethod]
-    public async Task PublishReadbackCancellationRetainsInvocationForFreshVerification()
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task PublishReadbackCancellationRetainsInvocationForFreshVerification(
+        bool acknowledged)
     {
-        using var fixture = new RubyCallerFixture();
+        using var fixture = new RubyCallerFixture("official");
         using var cancellation =
             CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
         ReleaseObservationResult absent = fixture.Observe(ReleaseFileState.Absent);
-        RubyPublishResult attempt =
-            fixture.Publish(RubyCallerFixture.Command(NativeTermination.Cancelled, 17));
+        RubyPublishResult attempt = fixture.Publish(acknowledged ? RubyCallerFixture.Command() :
+            RubyCallerFixture.Command(NativeTermination.Cancelled, 17));
         int reads = 0, writes = 0;
         ReleasePublicationResult publication = await PublishAsync(fixture.Preparation,
             fixture.Root, absent,
@@ -208,13 +245,15 @@ public sealed class RubyReleaseTests(TestContext context)
         Assert.AreEqual(attempt.Upload, Assert.ContainsSingle(publication.Uploads));
         Assert.IsNull(publication.After);
         Assert.Contains("attempted effects retained", Assert.ContainsSingle(publication.Errors));
+        Assert.AreEqual(acknowledged, ReleaseEngine.AnchorAllowed(ReleaseAdapters.Ruby,
+            fixture.Preparation, absent, publication));
         ReleaseCompletionResult complete = ReleaseEngine.Complete(ReleaseAdapters.Ruby,
                 fixture.Preparation, absent,
             fixture.Observe(ReleaseFileState.Exact), publication);
         Assert.AreEqual(ReleaseBusinessState.Satisfied, complete.Outcome.State);
         Assert.AreEqual(true, complete.MutationAttempted);
         Assert.AreEqual(attempt.Upload, Assert.ContainsSingle(complete.Outcome.Uploads));
-        Assert.AreEqual(NativeTermination.Cancelled,
+        Assert.AreEqual(acknowledged ? NativeTermination.Exited : NativeTermination.Cancelled,
             complete.Outcome.Uploads[0].Command.Termination);
     }
 
@@ -338,7 +377,8 @@ public sealed class RubyReleaseTests(TestContext context)
         int calls = 0;
         int? exit = ReleaseCli.Run(["release", "observe-ruby", Preparation(fixture),
             fixture.Root,
-            fixture.Write("tools.json", tools, TransferJson.Default.RubySourceTools)], output,
+            fixture.Write("tools.json", tools, DestinationToolJson.Default.RubySourceTools)],
+            output,
             new(ObserveRuby: (prepared, captured, credential, _) =>
             {
                 calls++;
@@ -355,10 +395,7 @@ public sealed class RubyReleaseTests(TestContext context)
         Assert.AreEqual(observed.Observation.Subject, transfer.Observation.Subject);
         Assert.AreEqual(observed.Observation.Files[0],
             Assert.ContainsSingle(transfer.Observation.Files));
-        Assert.AreEqual(observed.RubySource!.State, transfer.RubySource!.State);
-        Assert.AreEqual(observed.RubySource!.Original, transfer.RubySource!.Original);
-        Assert.AreEqual(observed.RubySource!.Command, transfer.RubySource!.Command);
-        CollectionAssert.AreEqual(observed.RubySource!.Errors, transfer.RubySource!.Errors);
+        CollectionAssert.AreEqual(observed.Reads, transfer.Reads);
         CollectionAssert.AreEqual(observed.Observation.Checks, transfer.Observation.Checks);
     }
 
@@ -386,7 +423,7 @@ public sealed class RubyReleaseTests(TestContext context)
     [TestMethod]
     [DataRow(false, nameof(ReleaseFileState.Exact), nameof(ReleaseBusinessState.Satisfied), 0)]
     [DataRow(true, nameof(ReleaseFileState.Exact), nameof(ReleaseBusinessState.Satisfied), 0)]
-    [DataRow(true, nameof(ReleaseFileState.Absent), nameof(ReleaseBusinessState.Unsatisfied), 1)]
+    [DataRow(true, nameof(ReleaseFileState.Absent), nameof(ReleaseBusinessState.Unknown), 1)]
     public void PublishAndCompleteRetainSingleWriteAndNativeResult(bool timedOut,
         string final, string expectedState, int expectedExit)
     {
@@ -407,9 +444,10 @@ public sealed class RubyReleaseTests(TestContext context)
         int? exit = ReleaseCli.Run(["release", "publish-ruby", Preparation(fixture),
             fixture.Root,
             Observation(fixture, "initial.json", ReleaseFileState.Absent),
-                fixture.Write("read-tools.json", readTools, TransferJson.Default.RubySourceTools),
+                fixture.Write(
+                    "read-tools.json", readTools, DestinationToolJson.Default.RubySourceTools),
             fixture.Write("publisher-tools.json", writeTools,
-                TransferJson.Default.RubyPublisherTools)], output,
+                DestinationToolJson.Default.RubyPublisherTools)], output,
             new(ObserveRuby: (prepared, tools, credential, _) =>
             {
                 Assert.AreEqual(fixture.Prepared.Subject, prepared.Subject);
@@ -450,6 +488,9 @@ public sealed class RubyReleaseTests(TestContext context)
             .State);
         Assert.AreEqual(!timedOut, upload.Command.Succeeded);
         Assert.IsEmpty(result.Errors);
+        Assert.AreEqual(!timedOut,
+            ReleaseEngine.AnchorAllowed(ReleaseAdapters.Ruby, fixture.Preparation,
+                fixture.Observe(ReleaseFileState.Absent), result));
 
         string finalPath = Observation(fixture, "final.json", finalState);
         using var completion = new StringWriter();
@@ -567,11 +608,11 @@ public sealed class RubyReleaseTests(TestContext context)
         Func<PreparedRelease, CancellationToken, Task<ReleaseObservationResult>> observe,
         Func<ReleasePreparationResult, string, CancellationToken, Task<RubyPublishResult>> publish,
         CancellationToken token) =>
-        ReleaseEngine.PublishAsync(ReleaseAdapters.Ruby, preparation, originals, initial, new(
-            ObserveAsync: observe,
-            WriteOutputAsync: async (_, cancel) => ReleaseWriteStep.FromUpload(
+        ReleaseEngine.PublishAsync(ReleaseAdapters.Ruby, preparation, originals, initial,
+            DestinationPublishPlan.Files(
+                preparation.Prepared, observe, async (_, cancel) => ReleaseWriteStep.FromUpload(
                 (await publish(preparation, originals, cancel)).Upload),
-            Readback: DestinationReadbackMode.AllowCancellation), token);
+            DestinationReadbackMode.AllowCancellation), token);
 
     private static string[] CompleteArgs(RubyCallerFixture fixture, string final,
         string publication) => ["release", "complete-ruby", Preparation(fixture),
@@ -625,11 +666,8 @@ internal sealed class RubyCallerFixture : IDisposable
             Original.Sha256 : null)], ["native-source-original"], [new("native-source-original",
             state is ReleaseFileState.Exact or ReleaseFileState.Absent ? ReleaseCheckStatus.Passed :
             ReleaseCheckStatus.Failed)]),
-        [], RubySource: new(state == ReleaseFileState.Absent ? RubySourceState.Absent : state ==
-            ReleaseFileState.Exact ? RubySourceState.Present : RubySourceState.Unknown, state ==
-            ReleaseFileState.Exact ? RemoteOriginal() : null, Command(), []));
-    internal RubySourceOriginal RemoteOriginal() => new(Path.Combine(Root, "remote.gem"),
-        Original.Name, Original.Version, "ruby", Original.Size, Original.Sha256);
+        [new("native-source", null, state == ReleaseFileState.Absent ? "Absent" : state ==
+            ReleaseFileState.Exact ? "Present" : "Unknown", Command: Command())]);
     internal RubyPublishResult Publish(NativeCommandResult command) => new(Prepared.Subject,
         new(Original.Output, command));
     internal string Directory(string name) => System.IO.Directory.CreateDirectory(Path.Combine(Root,

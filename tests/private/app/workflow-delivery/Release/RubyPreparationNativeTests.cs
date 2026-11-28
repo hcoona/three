@@ -148,6 +148,18 @@ public sealed class RubyPreparationNativeTests(TestContext context)
                     Assert.DoesNotContain("fetch", command.Arguments);
                     if (command.Arguments[0] == gem && command.Arguments.Contains("install"))
                         Assert.Contains("--local", command.Arguments);
+                    if (command.Executable == dotnet &&
+                        command.Arguments is ["tool", "install", ..] &&
+                        Environment.GetEnvironmentVariable(
+                            "WORKFLOW_NATIVE_OFFLINE_CONFIG") is { Length: > 0 } config)
+                        command = command with
+                        {
+                            Arguments = [
+                            .. command.Arguments,
+                            "--configfile",
+                            config
+                        ]
+                        };
                     return NativeProcess.ExecuteAsync(command, token);
                 },
                 context.CancellationToken

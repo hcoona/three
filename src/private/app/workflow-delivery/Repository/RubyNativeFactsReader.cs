@@ -163,19 +163,14 @@ internal sealed record RubyBundleMessage(string Gemfile, string Lockfile, string
     string LockedBundlerVersion, string[] Gemfiles, string[] DirectDependencies,
     RubySpecificationMessage[] Specifications);
 
-[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower, WriteIndented = true,
     RespectNullableAnnotations = true, RespectRequiredConstructorParameters = true,
     UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow)]
-[JsonSerializable(typeof(RubySourceRequest))]
-[JsonSerializable(typeof(RubySourceAnswer))]
+[JsonSerializable(typeof(RubyFactRequest))]
 [JsonSerializable(typeof(RubySourceMessage))]
 [JsonSerializable(typeof(RubyArchiveMessage))]
 [JsonSerializable(typeof(RubyContextMessage))]
 [JsonSerializable(typeof(RubyVersionMessage))]
 [JsonSerializable(typeof(RubyBundleMessage))]
 internal partial class RubyFactJson : JsonSerializerContext;
-
-internal sealed record RubySourceRequest(string Host, string Name, string Version,
-    string Directory);
-internal sealed record RubySourceAnswer(string State, string? Name = null, string? Version = null,
-    string? Platform = null, string? Path = null, long? Size = null, string? Sha256 = null);

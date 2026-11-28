@@ -49,6 +49,49 @@ public sealed class PythonFactsAssemblerTests
         CiPlanner.Plan(assembly.Request, assembly.PairedReasons);
 
     [TestMethod]
+    [TestCategory("DeliveryTlcConformance")]
+    public void PairedPythonWorkspaceSelectionAgreesWithComponentPlan()
+    {
+        string[] owners = ["consumer", "independent", "library", "new-consumer"];
+        var basis = Endpoint("comparison", [Member("."), Member("former"),
+            Member("library", ["former"]), Member("consumer", ["library"]),
+            Member("bridge", ["library"]), Member("independent")], ["library/tests"],
+            inputs: [new("inert", [], [])], paths: ["inert", "unclaimed"]);
+        var candidate = Endpoint("tested-candidate", [Member("."), Member("library"),
+            Member("consumer"), Member("bridge"), Member("new-consumer", ["bridge"]),
+            Member("independent")], owners.Select(name => name + "/tests").ToArray(),
+            inputs: [new("inert", [], [])], paths: ["inert", "unclaimed"]);
+
+        foreach (string[] row in DeliveryModelOracle.Rows("CiSelectionOracle"))
+        {
+            if (row is not [var name, var scope, var projects] ||
+                name.Split(':') is not [var mode, var issue, var seed])
+                throw new AssertFailedException("Incomplete CI selection observation.");
+            string[] changed = issue switch
+            {
+                "inert-path" => ["inert"],
+                "unclaimed-path" => ["unclaimed"],
+                _ => seed == "none" ? [] : [seed + "/pyproject.toml"],
+            };
+            PythonFactsEndpoint after = issue == "prov-b-incomplete"
+                ? candidate with { Projects = [] } : candidate;
+            CiPlan? actual = null;
+            try
+            {
+                actual = Plan(PythonFactsAssembler.Assemble(basis, after, changed, mode == "full"));
+            }
+            catch (InvalidDataException) when (scope == "unresolved") { }
+            Assert.AreEqual(scope, actual is null
+                ? "unresolved"
+                : actual.Full ? "full" : "selective", name);
+            string[] selected = (actual?.Checks ?? []).Select(check => check.Work.Key.Target)
+                .Order(StringComparer.Ordinal).ToArray();
+            CollectionAssert.AreEqual(projects.Split(';', StringSplitOptions.RemoveEmptyEntries)
+                .Select(member => $"pytest:{member}/tests").ToArray(), selected, name);
+        }
+    }
+
+    [TestMethod]
     public void MixedEndpointsReachCandidateOnlyTargetWithoutProxy()
     {
         var basis = Endpoint("before", [Member("."), Member("src/a"),

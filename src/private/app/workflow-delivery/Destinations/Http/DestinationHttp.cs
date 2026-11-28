@@ -1,14 +1,12 @@
 using System.Globalization;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Destinations;
-
-internal sealed record DestinationRead(string Stage, int? Status, string Detail,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Url = null);
 
 internal sealed class DestinationHttpSession : IDisposable
 {
@@ -49,19 +47,20 @@ internal sealed class DestinationHttpSession : IDisposable
         bool allowQuery = true, Action<HttpRequestMessage>? configure = null) =>
         ReadAsync(stage, uri, host, accept, (stream, length, token) =>
             RegistryBody.LimitedAsync(stream, length, limit, token), authorization, allowQuery,
-            null, Array.Empty<byte>(), configure);
+            null, Array.Empty<byte>(), configure, providerLocation: false);
 
     internal Task<(int Status, RegistryOriginalBytes Body)> OriginalAsync(string stage, Uri uri,
         string host, long size, bool retain, AuthenticationHeaderValue? authorization = null,
         TimeSpan? timeout = null, Action<HttpRequestMessage>? configure = null) =>
         ReadAsync(stage, uri, host, "application/octet-stream", (stream, length, token) =>
             RegistryBody.OriginalAsync(stream, length, size, retain, token), authorization,
-            true, timeout, new RegistryOriginalBytes(null, null, null), configure);
+            true, timeout, new RegistryOriginalBytes(null, null, null), configure,
+            providerLocation: true);
 
     private async Task<(int Status, T Body)> ReadAsync<T>(string stage, Uri uri, string host,
         string accept, Func<Stream, long?, CancellationToken, Task<T>> read,
         AuthenticationHeaderValue? authorization, bool allowQuery, TimeSpan? timeout, T unread,
-        Action<HttpRequestMessage>? configure)
+        Action<HttpRequestMessage>? configure, bool providerLocation)
     {
         RequireHttpsOrigin(uri, host, allowQuery);
         if (maxRequests is int limit && ++sends > limit)
@@ -76,7 +75,12 @@ internal sealed class DestinationHttpSession : IDisposable
         using HttpResponseMessage response = await client.SendAsync(request,
             HttpCompletionOption.ResponseHeadersRead, deadline.Token);
         int status = (int)response.StatusCode;
-        Reads.Add(new(stage, status, headerDetail, recordUrl ? uri.AbsoluteUri : null));
+        bool fingerprint = providerLocation || uri.Query.Length != 0;
+        Reads.Add(new(stage, status, headerDetail,
+            recordUrl && !fingerprint ? uri.AbsoluteUri : null,
+            recordUrl && fingerprint
+                ? Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(uri.AbsoluteUri)))
+                : null));
         if (skipUnexpectedStatus && status is not (200 or 404)) return (status, unread);
         if (response.Content.Headers.ContentEncoding.Any(value =>
                 !value.Equals("identity", StringComparison.OrdinalIgnoreCase)))

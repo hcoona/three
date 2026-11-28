@@ -395,6 +395,19 @@ public sealed class CiScopeTests
     }
 
     [TestMethod]
+    [DataRow("eng/scripts/check_workflow_delivery_models.py", false)]
+    [DataRow("eng/scripts/tla.py", true)]
+    public void ModelRunnerAndSharedLauncherKeepTheirActualConsumers(string path, bool python)
+    {
+        GitRevision revision = Revision("eng/scripts/check_workflow_delivery_models.py",
+            "eng/scripts/tla.py");
+        ScopeCoordinate row = Assert.ContainsSingle(CiScope.Owners(revision, [path], [], [],
+            Tasks, Hk));
+        Assert.IsTrue(row.Reasons.Any(reason => reason.Owner == "delivery-models"));
+        Assert.AreEqual(python, row.Reasons.Any(reason => reason.Owner == "python"));
+    }
+
+    [TestMethod]
     [DataRow("tests/eng/test_repository_records.py")]
     [DataRow("eng/scripts/check_repository_records.py")]
     [DataRow(CiScope.RecordMatcher)]

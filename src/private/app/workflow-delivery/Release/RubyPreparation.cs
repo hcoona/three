@@ -1,4 +1,5 @@
 using System.Text.Json;
+using WorkflowDelivery.CI;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
@@ -40,15 +41,13 @@ internal static class RubyPreparation
         foreach (string path in new[] { tools.Ruby, tools.Gem, tools.Dotnet, tools.Mise, miseData })
             _ = Absolute(path);
         var qualification = new ReleaseQualification(execute, token);
-        var files = new List<ReleaseFile>();
         var native = new Dictionary<string, string>(StringComparer.Ordinal);
         Dictionary<string, string?> environment = EnvironmentFor(scratch, request, tools);
         GitMaterialization? bound = null;
         RubyPackageOperations? operations = null;
-        RubyGemArchive? original = null;
         ReleaseBuild? build = null;
         string[] required = Required;
-        string entry = "", directory = "", projectDirectory = "", version = "";
+        string entry = "", directory = "", version = "";
         string? releaseNotes = null;
 
         await qualification.CheckAsync("native-input", async () =>
@@ -60,7 +59,7 @@ internal static class RubyPreparation
             RubyReleaseRecipe recipe = await ReadRecipeAsync(subject, bound.Root,
                 bound.ReadOptionalTextAsync, token);
             (build, entry, directory) = (recipe.Build, recipe.Entry, recipe.Directory);
-            projectDirectory = Path.Combine(checkout, directory);
+            string projectDirectory = Path.Combine(checkout, directory);
             // The runtime selection query reads the checkout; the revision must commit it.
             await ReleasePreparationContext.RequireCommittedInputsAsync(bound, ToolConfiguration,
                 token);
@@ -134,34 +133,25 @@ internal static class RubyPreparation
             operations = ReleaseUnitCatalog.RubyPackage(unit, facts, tools.Gem, nbgv,
                 Directory.CreateDirectory(Path.Combine(scratch, "package")).FullName);
         });
-        await qualification.CheckAsync("build", async () => original =
-            await operations!.BuildAsync(bound!, directory, entry, version, ExecuteAsync, token));
-        await qualification.CheckAsync("contents", async () =>
-            _ = await operations!.InspectAsync(bound!, directory, original!, version,
-                release: true, ExecuteAsync, token));
-        await qualification.CheckAsync("consumer", () =>
-            operations!.ConsumeAsync(projectDirectory, original!, version, release: true,
-                ExecuteAsync, token));
-        if (required.Contains("tests"))
-            await qualification.CheckAsync("tests", () =>
-                operations!.TestReleaseAsync(bound!, directory, projectDirectory, ExecuteAsync,
-                    token));
-        await qualification.CheckAsync("original-bytes", () =>
-        {
-            RubyPackageOperations.RequireOriginal(original!);
-            files.Add(new(build!.Id, build.Outputs[0].Id, "ruby-gem", native["name"], version,
-                Path.GetRelativePath(scratch, original!.Path).Replace('\\', '/'), original.Length,
-                original.Sha256));
-            return Task.CompletedTask;
-        });
+        ReleaseFile[] files = await UnitPreparation.QualifyAsync(request.Subject, build, scratch,
+            qualification, required, subject => operations!.QualifyAsync(subject, bound!, directory,
+                entry, version, RunSuiteAsync, qualification.CheckAsync, ExecuteAsync, token));
         PreparedGithubAnchor? anchor = releaseNotes is not null &&
-            qualification.Errors.Length == 0 && files.Count > 0
-                ? new([.. files.Select(file => file with
-                    { Name = $"{native["name"]}-{version}.gem" })], releaseNotes)
+            qualification.Errors.Length == 0 && files.Length > 0
+                ? DestinationBindings.GithubAnchor(request.Subject, files, releaseNotes)
                 : null;
         return new(new(request.Subject, [.. files], required.ToArray(), qualification.Checks,
                 Anchor: anchor),
             native, qualification.Commands, qualification.Errors);
+
+        async Task RunSuiteAsync(RubyRSpecRequest suite)
+        {
+            RubyRSpecRun run = await RubyRSpecExecution.RunAsync(
+                new(directory, RubyProjectChecks.RSpec, "default"), suite, ExecuteAsync, token);
+            if (run.Status != CheckStatus.Passed)
+                throw new InvalidDataException(run.ReportError ?? "Native RSpec suite did not " +
+                    "pass: " + run.Status + ". " + NativeDiagnostic.Describe(run.Result));
+        }
 
         Task<NativeCommandResult> ExecuteAsync(NativeCommand command,
             CancellationToken cancellation) => RunAsync(command, cancellation);

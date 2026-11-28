@@ -62,7 +62,7 @@ internal static class NodeExecution
         var commands = new List<NodeCommandObservation>();
         var outputs = new List<NodeOriginalOutput>();
         var failures = new List<NodeCheckFailure>();
-        var archives = new Dictionary<string, string>(StringComparer.Ordinal);
+        var archives = new Dictionary<string, NpmOriginal>(StringComparer.Ordinal);
 
         foreach (PlannedCheck item in selected.Checks.Where(item =>
             item.Work.Key.Check is Build or Test))
@@ -80,7 +80,6 @@ internal static class NodeExecution
             PackageTarget package = check.Package!;
             string directory = Path.Combine(scratch, "build-" + index++);
             string archive = Path.Combine(directory, "package.tgz");
-            archives.Add(check.Key.Target, directory);
             await CompleteAsync(check, async () =>
             {
                 Directory.CreateDirectory(directory);
@@ -88,11 +87,11 @@ internal static class NodeExecution
                     NpmPackageOperations.Pack(checkout, package.Directory, archive));
                 if (status != CheckStatus.Passed)
                     return status;
-                (long size, string digest) = await NpmPackageOperations.OriginalAsync(archive,
-                    token);
+                NpmOriginal original = await NpmOriginal.ReadAsync(archive, token);
+                archives.Add(check.Key.Target, original);
                 PackageOutput output = package.Outputs.Single();
                 outputs.Add(new(package.Unit, package.Build, output.Id, output.Role, output.Kind,
-                    archive, size, digest));
+                    original.Path, original.Size, original.Sha256));
                 return CheckStatus.Passed;
             });
         }
@@ -102,8 +101,10 @@ internal static class NodeExecution
             CheckSpec check = item.Work;
             await CompleteAsync(check, async () =>
             {
-                string directory = archives[check.Key.Target];
-                string archive = Path.Combine(directory, "package.tgz");
+                NpmOriginal original = archives[check.Key.Target];
+                await original.RequireOriginalAsync(token);
+                string archive = original.Path;
+                string directory = Path.GetDirectoryName(archive)!;
                 string metadata = Path.Combine(directory, check.Key.Check == Contents
                     ? "contents-metadata" : "consumer-metadata");
                 NativeCommandResult value = await ObserveAsync(check,
@@ -111,13 +112,18 @@ internal static class NodeExecution
                 if (!value.Succeeded)
                     return Status(value);
                 AdoptedNpmPackage.ValidateMetadata(value.Stdout, check.Package!.ExpectedVersion);
+                await original.RequireOriginalAsync(token);
                 if (check.Key.Check == Contents)
                     return CheckStatus.Passed;
                 CheckStatus installed = await CommandAsync(check,
                     await NpmPackageOperations.InstallAsync(archive, directory, token));
                 if (installed != CheckStatus.Passed)
                     return installed;
-                return await CommandAsync(check, AdoptedNpmPackage.Import(directory));
+                CheckStatus imported = await CommandAsync(check,
+                    ReleaseUnitCatalog.AdoptedNpmImport(directory));
+                if (imported == CheckStatus.Passed)
+                    await original.RequireOriginalAsync(token);
+                return imported;
             });
         }
         return new(plan.Candidate, runner.InPlanOrder(),

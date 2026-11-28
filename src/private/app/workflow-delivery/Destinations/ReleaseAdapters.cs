@@ -7,6 +7,12 @@ namespace WorkflowDelivery.Destinations;
 
 internal static class ReleaseAdapters
 {
+    // The standalone single-observation API predates an explicit bound publication profile.
+    internal static DestinationProfile ObservationProfile(ReleaseSubject subject) =>
+        subject.Destination == "nugetorg"
+            ? NuGet.Profile(subject)
+            : new(DestinationVerificationMode.ExactBytes);
+
     internal static readonly NuGetDestinationAdapter NuGet = new();
     internal static readonly NpmDestinationAdapter Npm = new();
     internal static readonly PythonDestinationAdapter Python = new();
@@ -33,11 +39,42 @@ internal static class ReleaseAdapters
 
     internal static void ValidateOptionalAnchor(ReleasePreparationResult preparation)
     {
-        if (preparation.Prepared.Anchor is null) return;
-        if (preparation.Prepared.Subject.Channel != "official")
+        PreparedRelease prepared = preparation.Prepared;
+        if (prepared.Anchor is not { } anchor) return;
+        PreparedGithubAnchor expected = DestinationBindings.GithubAnchor(prepared.Subject,
+            prepared.Files, anchor.ReleaseNotes, anchor.Assets.FirstOrDefault()?.Version);
+        if (!anchor.Assets.SequenceEqual(expected.Assets) ||
+            !(anchor.AllowedSiblingAssets ?? []).Order(StringComparer.Ordinal)
+                .SequenceEqual((expected.AllowedSiblingAssets ?? []).Order(StringComparer.Ordinal)))
             throw new InvalidDataException(
-                "Buddy release preparation cannot carry an Official GitHub Release anchor.");
+                "GitHub Release anchor differs from the qualified originals.");
         GithubAnchor.ValidatePreparation(AnchorPreparation(preparation));
+    }
+
+    internal static void ValidateGithubObservation(PreparedRelease prepared,
+        ReleaseObservationResult result, DestinationProfile profile)
+    {
+        if (!result.Observation.RequiredChecks.SequenceEqual([GithubReleaseDestination.Check]) ||
+            result.Container is null ||
+            result.Container == ContainerPresence.Missing &&
+                result.Observation.Files.Any(file => file.State != ReleaseFileState.Absent) ||
+            result.Container == ContainerPresence.Unknown &&
+                (result.Observation.Files.Any(file => file.State is ReleaseFileState.Exact or
+                    ReleaseFileState.Absent) || result.Observation.Checks.Any(check =>
+                        check.Status == ReleaseCheckStatus.Passed)))
+            throw new InvalidDataException("Incomplete GitHub Release observation.");
+        ReleaseCompletion.ValidateObservation(prepared, result.Observation, profile);
+    }
+
+    internal static Task<ReleasePublicationResult> PublishGithubAsync(IDestinationAdapter adapter,
+        ReleasePreparationResult preparation, string originals, ReleaseObservationResult initial,
+        GithubReleaseDestination destination, IReadOnlyCollection<string>? allowedSiblingAssets,
+        CancellationToken token)
+    {
+        var publisher = destination.OpenPublisher(DestinationBindings.GithubRelease(
+            preparation.Prepared, allowedSiblingAssets), originals);
+        return ReleaseEngine.PublishAsync(adapter, preparation, originals, initial,
+            DestinationPublishPlan.GithubRelease(preparation.Prepared, publisher), token);
     }
 
     internal static IDestinationAdapter ForEcosystem(string ecosystem) => ecosystem switch
@@ -54,6 +91,9 @@ internal static class ReleaseAdapters
 
 internal sealed class NuGetDestinationAdapter : IDestinationAdapter
 {
+    public PublicationBinding BindPublication(ReleasePreparationResult preparation) =>
+        PublicationBinding.Files(this, preparation, "push");
+
     public DestinationProfile Profile(ReleaseSubject subject) => new(
         subject.Destination == "nugetorg"
             ? DestinationVerificationMode.VersionAvailable
@@ -66,7 +106,7 @@ internal sealed class NuGetDestinationAdapter : IDestinationAdapter
         ReleaseCompletion.Validate(prepared);
         NuGetReleaseUnit unit = ReleaseUnitCatalog.AdmitNuGet(prepared.Subject);
         ReleasePolicy.RequireEligible(prepared.Subject);
-        if (prepared.Files is not [{ Kind: "nuget-package" }] ||
+        if (prepared.Anchor is not null || prepared.Files is not [{ Kind: "nuget-package" }] ||
             !prepared.RequiredChecks.SequenceEqual(NuGetPreparation.Required) ||
             !ReleasePolicy.Qualified(prepared.RequiredChecks, prepared.Checks) ||
             preparation.Errors.Length != 0 || preparation.Commands.Length == 0 ||
@@ -99,8 +139,7 @@ internal sealed class NuGetDestinationAdapter : IDestinationAdapter
             file.Size, file.Sha256);
         DotNetPackageConsumer.RequireFile(original.Path);
         DotNetPackageArchive.RequireOriginal(original);
-        DotNetPackageArchive.RequireIdentity(DotNetPackageArchive.Identity(original.Path),
-            preparation.Native);
+        DotNetPackageArchive.RequireArchiveIdentity(original.Path, preparation.Native);
         return original;
     }
 
@@ -110,31 +149,28 @@ internal sealed class NuGetDestinationAdapter : IDestinationAdapter
         PreparedRelease prepared = preparation.Prepared;
         bool github = prepared.Subject.Destination == "github-packages-nuget";
         if (!result.Observation.RequiredChecks.SequenceEqual(github
-                ? GithubNuGetObservation.RequiredChecks : NuGetOrgObservation.RequiredChecks) ||
-            result.Resources is { } resources && resources.PackagePublish != (github
-                ? NuGetPublisher.GithubEndpoint : NuGetPublisher.NuGetOrgEndpoint) ||
-            ReleasePolicy.Qualified(result.Observation.RequiredChecks, result.Observation.Checks)
-                && result.Resources is null)
+                ? GithubNuGetObservation.RequiredChecks : NuGetOrgObservation.RequiredChecks))
             throw new InvalidDataException("Incomplete native NuGet observation.");
         ReleaseCompletion.ValidateObservation(prepared, result.Observation,
             Profile(prepared.Subject));
     }
 
     internal Task<ReleasePublicationResult> PublishAsync(ReleasePreparationResult preparation,
-        string originals, string credential,
+        ReleaseObservationResult initial, string originals, string readCredential,
+        string writeCredential,
         Func<PreparedRelease, string, CancellationToken, Task<ReleaseObservationResult>> observe,
         Func<PreparedRelease, string, string, string, CancellationToken,
-            Task<NuGetPushResult>> push,
+            Task<NativeLibraryResult>> push,
         CancellationToken token)
     {
-        ReleaseObservationResult? latestBefore = null;
-        return ReleaseEngine.PublishAsync(this, preparation, originals, null, new(
-            ObserveAsync: async (prepared, cancel) =>
-                latestBefore = await observe(prepared, credential, cancel),
-            WriteOutputAsync: async (file, cancel) => ReleaseWriteStep.FromPush(file.Output,
-                await push(preparation.Prepared, originals,
-                    latestBefore!.Resources!.PackagePublish, credential, cancel)),
-            Readback: DestinationReadbackMode.Required), token);
+        string endpoint = preparation.Prepared.Subject.Destination == "nugetorg"
+            ? NuGetPublisher.NuGetOrgEndpoint : NuGetPublisher.GithubEndpoint;
+        return ReleaseEngine.PublishAsync(this, preparation, originals, initial,
+            DestinationPublishPlan.Files(preparation.Prepared,
+                (prepared, cancel) => observe(prepared, readCredential, cancel),
+                async (file, cancel) => ReleaseWriteStep.FromPush(file.Output,
+                    await push(preparation.Prepared, originals, endpoint, writeCredential, cancel)),
+                DestinationReadbackMode.Required), token);
     }
 }
 
@@ -149,11 +185,12 @@ internal sealed class NpmDestinationAdapter : IDestinationAdapter
     {
         PreparedRelease prepared = preparation.Prepared;
         ReleaseCompletion.Validate(prepared);
-        _ = ReleaseUnitCatalog.AdmitNpm(prepared.Subject);
+        NpmReleaseUnit unit = ReleaseUnitCatalog.AdmitNpm(prepared.Subject);
         ReleasePolicy.RequireQualified(prepared);
         if (preparation.Errors.Length != 0 ||
             prepared.Subject.Destination is not ("npmjs" or "github-packages-npm") ||
-            prepared.Files is not [{ Kind: "npm-tarball" }])
+            prepared.Files is not [{ Kind: "npm-tarball" } file] ||
+            file.Name != unit.PackageName(prepared.Subject))
             throw new InvalidDataException("Unqualified or unsupported npm preparation.");
         ReleaseAdapters.ValidateOptionalAnchor(preparation);
     }
@@ -162,6 +199,36 @@ internal sealed class NpmDestinationAdapter : IDestinationAdapter
         ReleaseObservationResult observed) =>
         ReleaseCompletion.ValidateObservation(preparation.Prepared, observed.Observation,
             DefaultProfile);
+
+    internal Task<ReleasePublicationResult> PublishNpmjsAsync(ReleasePreparationResult preparation,
+        ReleaseObservationResult initial, string originals, string scratch, string toolchain,
+        IReadOnlyDictionary<string, string?> platform,
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        Func<PreparedRelease, CancellationToken, Task<ReleaseObservationResult>> observe,
+        CancellationToken token) => PublishAsync(preparation, initial, originals,
+            NpmjsPublication.Bind(DestinationBindings.Npm(preparation.Prepared), originals, scratch,
+                toolchain, platform, execute), observe, token);
+
+    internal Task<ReleasePublicationResult> PublishGithubAsync(ReleasePreparationResult preparation,
+        ReleaseObservationResult initial, string originals, string scratch, string toolchain,
+        string credential,
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        Func<PreparedRelease, string, CancellationToken, Task<ReleaseObservationResult>> observe,
+        CancellationToken token) => PublishAsync(preparation, initial, originals,
+            GithubNpmPublication.Bind(DestinationBindings.Npm(preparation.Prepared), originals,
+                scratch, toolchain, credential, execute),
+            (prepared, cancel) => observe(prepared, credential, cancel), token);
+
+    private Task<ReleasePublicationResult> PublishAsync(ReleasePreparationResult preparation,
+        ReleaseObservationResult initial, string originals, NpmPublishSession publisher,
+        Func<PreparedRelease, CancellationToken, Task<ReleaseObservationResult>> observe,
+        CancellationToken token) =>
+        ReleaseEngine.PublishAsync(this, preparation, originals, initial,
+            DestinationPublishPlan.Files(preparation.Prepared, async (prepared, cancel) =>
+            {
+                await publisher.RequireRuntimeAsync(cancel);
+                return await observe(prepared, cancel);
+            }, publisher.PublishAsync, DestinationReadbackMode.Required), token);
 }
 
 internal sealed class PythonDestinationAdapter : IDestinationAdapter
@@ -169,10 +236,14 @@ internal sealed class PythonDestinationAdapter : IDestinationAdapter
     private static readonly string[] Formats = ["python-wheel", "python-sdist"];
     private static readonly DestinationProfile DefaultProfile = new(
         DestinationVerificationMode.ExactBytes,
-        DestinationVisibilityMode.EventualIndex,
+        DestinationVisibilityMode.EventualRead,
         OrderedKinds: Formats);
 
     public DestinationProfile Profile(ReleaseSubject subject) => DefaultProfile;
+
+    public string UnconfirmedOperation(OperationAttempt attempt) =>
+        $"{(attempt.Acknowledged ? "Acknowledged" : "Attempted")} Python upload is not yet " +
+        $"visible: {attempt.Operation.Target}.";
 
     public void ValidatePreparation(ReleasePreparationResult preparation)
     {
@@ -286,8 +357,11 @@ internal sealed class GithubReleaseDestinationAdapter : IDestinationAdapter
     private static readonly string[] Kinds = ["inno-installer", "portable-zip"];
     private static readonly DestinationProfile DefaultProfile = new(
         DestinationVerificationMode.ExactBytes,
-        OrderedKinds: Kinds,
-        AllowsContainer: true);
+        DestinationVisibilityMode.EventualRead,
+        OrderedKinds: Kinds);
+
+    public PublicationBinding BindPublication(ReleasePreparationResult preparation) =>
+        PublicationBinding.Files(this, preparation, createRelease: true);
 
     public DestinationProfile Profile(ReleaseSubject subject) => DefaultProfile;
 
@@ -298,7 +372,7 @@ internal sealed class GithubReleaseDestinationAdapter : IDestinationAdapter
         ReleaseSubject subject = prepared.Subject;
         (GithubReleaseUnit unit, bool official) = ReleaseUnitCatalog.AdmitGithubRelease(subject);
         string version = prepared.Files.Length == 0 ? "" : prepared.Files[0].Version;
-        if (prepared.Files.Length != 2 || Kinds.Any(kind =>
+        if (prepared.Anchor is not null || prepared.Files.Length != 2 || Kinds.Any(kind =>
                 prepared.Files.Count(file => file.Kind == kind &&
                     file.Name == unit.Asset(kind, version)) != 1) ||
             prepared.Files.Any(file => file.Version != version) ||
@@ -316,48 +390,13 @@ internal sealed class GithubReleaseDestinationAdapter : IDestinationAdapter
     }
 
     public void ValidateObservation(ReleasePreparationResult preparation,
-        ReleaseObservationResult result)
-    {
-        if (!result.Observation.RequiredChecks.SequenceEqual([GithubReleaseDestination.Check]) ||
-            result.ReleaseId is null && result.Observation.Files.Any(file =>
-                file.State == ReleaseFileState.Exact))
-            throw new InvalidDataException("Incomplete GitHub Release observation.");
-        ReleaseCompletion.ValidateObservation(preparation.Prepared, result.Observation,
-            DefaultProfile);
-    }
+        ReleaseObservationResult result) =>
+        ReleaseAdapters.ValidateGithubObservation(preparation.Prepared, result, DefaultProfile);
 
     internal Task<ReleasePublicationResult> PublishAsync(ReleasePreparationResult preparation,
-        string originals, ReleaseObservationResult initial,
-        Func<PreparedRelease, CancellationToken, Task<ReleaseObservationResult>> observe,
-        Func<PreparedRelease, CancellationToken, Task<(NativeCommandResult, long?)>> create,
-        Func<long, ReleaseFile, string, CancellationToken, Task<NativeCommandResult>> upload,
-        CancellationToken token)
-    {
-        long? releaseId = null;
-        return ReleaseEngine.PublishAsync(this, preparation, originals, initial, new(
-            ObserveAsync: async (prepared, cancel) =>
-            {
-                ReleaseObservationResult before = await observe(prepared, cancel);
-                releaseId = before.ReleaseId;
-                return before;
-            },
-            EnsureContainerAsync: async (prepared, before, cancel) =>
-            {
-                if (before.ReleaseId is not null) return null;
-                cancel.ThrowIfCancellationRequested();
-                (NativeCommandResult result, long? created) = await create(prepared, cancel);
-                releaseId = created;
-                return ReleaseWriteStep.FromContainer(result, created is not null);
-            },
-            WriteOutputAsync: async (file, cancel) =>
-            {
-                string path = OwnedPath.ResolveWithin(originals, file.Path,
-                    "Original GitHub Release directory must be absolute.",
-                    "Original GitHub Release path leaves its root.");
-                NativeCommandResult result = await upload(releaseId!.Value, file, path, cancel);
-                return ReleaseWriteStep.FromUpload(new(file.Output, result));
-            }), token);
-    }
+        string originals, ReleaseObservationResult initial, GithubReleaseDestination destination,
+        CancellationToken token) => ReleaseAdapters.PublishGithubAsync(this, preparation, originals,
+            initial, destination, null, token);
 
     private static bool Native(ReleasePreparationResult preparation, string key, string expected) =>
         preparation.Native.TryGetValue(key, out string? value) && value == expected;
@@ -366,9 +405,10 @@ internal sealed class GithubReleaseDestinationAdapter : IDestinationAdapter
 internal sealed class GithubAnchorDestinationAdapter : IDestinationAdapter
 {
     private static readonly DestinationProfile DefaultProfile = new(
-        DestinationVerificationMode.ExactBytes,
-        OrderedKinds: null,
-        AllowsContainer: true);
+        DestinationVerificationMode.ExactBytes, DestinationVisibilityMode.EventualRead);
+
+    public PublicationBinding BindPublication(ReleasePreparationResult preparation) =>
+        PublicationBinding.Files(this, preparation, createRelease: true);
 
     public DestinationProfile Profile(ReleaseSubject subject) => DefaultProfile;
 
@@ -387,55 +427,31 @@ internal sealed class GithubAnchorDestinationAdapter : IDestinationAdapter
     }
 
     public void ValidateObservation(ReleasePreparationResult preparation,
-        ReleaseObservationResult result)
-    {
-        if (!result.Observation.RequiredChecks.SequenceEqual([GithubReleaseDestination.Check]) ||
-            result.ReleaseId is null && result.Observation.Files.Any(file =>
-                file.State == ReleaseFileState.Exact))
-            throw new InvalidDataException("Incomplete GitHub Release anchor observation.");
-        ReleaseCompletion.ValidateObservation(preparation.Prepared, result.Observation,
-            DefaultProfile);
-    }
+        ReleaseObservationResult result) =>
+        ReleaseAdapters.ValidateGithubObservation(preparation.Prepared, result, DefaultProfile);
 
     internal Task<ReleasePublicationResult> PublishAsync(ReleasePreparationResult anchorPreparation,
         string originals, ReleaseObservationResult initial,
         IReadOnlyCollection<string>? allowedSiblingAssets,
-        Func<PreparedRelease, IReadOnlyCollection<string>?, CancellationToken,
-            Task<ReleaseObservationResult>> observe,
-        Func<PreparedRelease, CancellationToken, Task<(NativeCommandResult, long?)>> create,
-        Func<long, ReleaseFile, string, CancellationToken, Task<NativeCommandResult>> upload,
-        CancellationToken token)
-    {
-        long? releaseId = null;
-        return ReleaseEngine.PublishAsync(this, anchorPreparation, originals, initial, new(
-            ObserveAsync: async (prepared, cancel) =>
-            {
-                ReleaseObservationResult before =
-                    await observe(prepared, allowedSiblingAssets, cancel);
-                releaseId = before.ReleaseId;
-                return before;
-            },
-            EnsureContainerAsync: async (prepared, before, cancel) =>
-            {
-                if (before.ReleaseId is not null) return null;
-                cancel.ThrowIfCancellationRequested();
-                (NativeCommandResult result, long? created) = await create(prepared, cancel);
-                releaseId = created;
-                return ReleaseWriteStep.FromContainer(result, created is not null);
-            },
-            WriteOutputAsync: async (file, cancel) =>
-            {
-                string path = OwnedPath.ResolveWithin(originals, file.Path,
-                    "Original GitHub Release anchor directory must be absolute.",
-                    "Original GitHub Release anchor path leaves its root.");
-                NativeCommandResult result = await upload(releaseId!.Value, file, path, cancel);
-                return ReleaseWriteStep.FromUpload(new(file.Output, result));
-            }), token);
-    }
+        GithubReleaseDestination destination, CancellationToken token) =>
+        ReleaseAdapters.PublishGithubAsync(this, anchorPreparation, originals, initial, destination,
+            allowedSiblingAssets, token);
 }
 
 internal sealed class BrowserStoreDestinationAdapter : IDestinationAdapter
 {
+    public PublicationBinding BindPublication(ReleasePreparationResult preparation) =>
+        PublicationBinding.Store(
+            this, preparation, SubmissionFor(preparation.Prepared.Subject.Destination));
+
+    internal static string SubmissionFor(string store) => store switch
+    {
+        BrowserStorePreparation.ChromeWebStore => "publish",
+        BrowserStorePreparation.FirefoxAmo => "create-version",
+        BrowserStorePreparation.EdgeAddons => "submit",
+        _ => throw new InvalidDataException("Unsupported store submission."),
+    };
+
     public DestinationProfile Profile(ReleaseSubject subject) => new(
         DestinationVerificationMode.StoreAccepted,
         VersionRead: VersionReadForStore(subject.Destination) ?? DestinationVersionRead.BeforeGate);
@@ -541,9 +557,15 @@ internal sealed class BrowserStoreDestinationAdapter : IDestinationAdapter
 
     internal Task<ReleasePublicationResult> PublishAsync(ReleasePreparationResult preparation,
         string originalsDirectory, StoreFile[] files, ReleaseObservationResult initial,
-        IBrowserStore store, CancellationToken token) =>
-        ReleaseEngine.PublishAsync(this, preparation, originalsDirectory, initial, new(
-            ObserveAsync: (_, cancel) => store.ObserveAsync(cancel),
-            SubmitStoreAsync: (steps, cancel) => store.PublishAsync(files, steps, cancel)),
+        IBrowserStore store, CancellationToken token)
+    {
+        StoreWriter? writer = null;
+        return ReleaseEngine.PublishAsync(this, preparation, originalsDirectory, initial,
+            DestinationPublishPlan.Store((_, cancel) => store.ObserveAsync(cancel),
+                SubmissionFor(preparation.Prepared.Subject.Destination),
+                (op, cancel) => (writer ??= store.Bind(files))(op, cancel),
+                preparation.Prepared.Subject.Destination == BrowserStorePreparation.FirefoxAmo,
+                () => ReleaseEngine.VerifyOriginals(preparation.Prepared, originalsDirectory)),
             token);
+    }
 }

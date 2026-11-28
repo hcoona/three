@@ -14,7 +14,8 @@ internal sealed class CiCallerState : IDisposable
     internal const string ActionsOutputSwitch = "--workflow-delivery-test-actions-output";
     internal static readonly string Candidate = new('a', 40);
     internal static readonly string Foreign = new('b', 40);
-    private static readonly string[] Distribution = ["WorkflowDelivery.dll",
+    private static readonly string[] Distribution =
+        ["WorkflowDelivery.dll", "WorkflowDelivery.DotNet.dll",
         "WorkflowDelivery.deps.json", "WorkflowDelivery.runtimeconfig.json"];
     private static readonly string[] Runtimes = ["node22", "node24"];
     private static readonly string[] NodeOperations =

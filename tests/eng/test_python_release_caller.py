@@ -35,7 +35,7 @@ def workflow():
 
 def scripts(job):
     """Collect job scripts without depending on YAML layout."""
-    return "\n".join(step.get("run", "") for step in job["steps"])
+    return "\n".join(step.get("run", "") for step in job.get("steps", []))
 
 
 def test_workflow_publisher_owns_write_identity_and_environment(
@@ -116,19 +116,19 @@ def test_workflow_publisher_gate_excludes_dry_and_initial_exact(
     [
         (("pypi", False, "success", True), True),
         (("pypi", False, "skipped", True), True),
-        (("pypi", False, "failure", True), False),
+        (("pypi", False, "failure", True), True),
         (("pypi", False, "cancelled", True), False),
         (("pypi", False, "success", False), False),
         (("pypi", True, "skipped", True), False),
         (("testpypi", False, "success", True), False),
     ],
 )
-def test_workflow_anchor_gate_requires_official_primary_success_or_skip(
+def test_read_only_gate_may_examine_a_retained_official_receipt(
     workflow, case, allowed
 ):
-    """Anchor publisher runs only for Official non-dry primary pass or skip."""
+    """A primary job conclusion cannot replace the read-only proof check."""
     registry, dry, publish_result, anchor_needed = case
-    job = workflow["jobs"]["publish-github-anchor"]
+    job = workflow["jobs"]["anchor-gate"]
     assert {"prepare", "observe", "publish"} <= set(dependencies(job))
     assert (
         condition(

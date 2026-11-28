@@ -6,6 +6,24 @@ using WorkflowDelivery.Release;
 namespace WorkflowDelivery.Destinations;
 
 internal sealed record StoreFile(string Output, string Path);
+internal delegate Task<DestinationInvocation> StoreWriter(
+    string operation,
+    CancellationToken token);
+
+internal static class StoreArtifacts
+{
+    internal const string Chrome = "chrome-web-store";
+    internal const string Firefox = "firefox-amo";
+    internal const string Edge = "edge-addons";
+
+    internal static string[] For(string store) => store switch
+    {
+        Chrome => ["chrome-zip"],
+        Firefox => ["firefox-zip", "firefox-sources"],
+        Edge => ["edge-zip"],
+        _ => throw new InvalidDataException("Unsupported browser store."),
+    };
+}
 
 // One store adapter. The publisher context supplies its credential; observation reads are
 // credential-free records.
@@ -13,10 +31,8 @@ internal interface IBrowserStore
 {
     Task<ReleaseObservationResult> ObserveAsync(CancellationToken token);
 
-    // Performs the store's native submission and returns the store's post-submission
-    // observation when the publisher is the only reader, or null when another job reads.
-    Task<ReleaseObservationResult?> PublishAsync(StoreFile[] files, List<ReleaseWriteStep> steps,
-        CancellationToken token);
+    // Bind one publisher session; each call performs only the selected native operation.
+    StoreWriter Bind(StoreFile[] files);
 }
 
 internal sealed record StoreResponse(int Status, byte[] Body, string? Location);
@@ -36,13 +52,13 @@ internal sealed class StoreHttp(HttpClient client, List<DestinationRead> reads,
             interval, token);
 
     internal async Task<StoreResponse> SendAsync(string stage, HttpRequestMessage request,
-        CancellationToken token)
+        CancellationToken token, bool sessionLocation = false)
     {
         using HttpRequestMessage owned = request;
         using var timer = new CancellationTokenSource(TimeSpan.FromSeconds(120),
             time ?? TimeProvider.System);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token, timer.Token);
-        string url = owned.RequestUri!.GetLeftPart(UriPartial.Path);
+        string? url = sessionLocation ? null : owned.RequestUri!.GetLeftPart(UriPartial.Path);
         owned.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         using HttpResponseMessage response = await client.SendAsync(owned,
             HttpCompletionOption.ResponseHeadersRead, deadline.Token);
@@ -92,7 +108,7 @@ internal sealed class StoreHttp(HttpClient client, List<DestinationRead> reads,
         };
         ReleaseCheckStatus checkStatus = state is StoreState.Conflict or StoreState.Unknown
             ? ReleaseCheckStatus.Failed : ReleaseCheckStatus.Passed;
-        ReleaseFileObservation[] files = [.. BrowserStorePreparation.StoreOutputs(target.Store)
+        ReleaseFileObservation[] files = [.. StoreArtifacts.For(target.Store)
             .Select(output => new ReleaseFileObservation(output, subject.Unit, version,
                 fileState, null, null))];
         return new(new(subject, files, [Check], [new(Check, checkStatus)],

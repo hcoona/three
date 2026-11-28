@@ -1,11 +1,14 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Destinations;
+
+internal sealed record GithubReleaseTarget(ReleaseSubject Subject, ReleaseFile[] Files,
+    string Tag, string Title, string? ReleaseNotes,
+    IReadOnlyCollection<string>? AllowedSiblingAssets);
 
 // The repository's GitHub Release for one tag. GitHub owns tags, releases and asset
 // storage; the application reads the tag's commit, the release's channel and every served
@@ -20,11 +23,11 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
     private const string Uploads = "https://" + UploadHost + "/repos/" + Repository;
     private const int MetadataLimit = 2 * 1024 * 1024;
 
-    internal Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
-        CancellationToken token) => ObserveAsync(prepared, null, token);
+    internal async Task<ReleaseObservationResult> ObserveAsync(GithubReleaseTarget target,
+        CancellationToken token) => (await ReadAsync(target, token)).Observation;
 
-    internal async Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
-        IReadOnlyCollection<string>? allowedSiblingAssets, CancellationToken token)
+    private async Task<(ReleaseObservationResult Observation, long? Id)> ReadAsync(
+        GithubReleaseTarget prepared, CancellationToken token)
     {
         (string tag, bool buddy) = Identity(prepared);
         long? releaseId = null;
@@ -53,7 +56,9 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
 
             (status, body) = await github.MetadataAsync("release",
                 new(Api + "/releases/tags/" + Escape(tag)));
-            if (status == 404) return Result(ReleaseFileState.Absent, ReleaseCheckStatus.Passed);
+            if (status == 404)
+                return Result(ReleaseFileState.Absent, ReleaseCheckStatus.Passed,
+                    ContainerPresence.Missing);
             DestinationHttpSession.RequireOk(status);
             using JsonDocument releaseDocument = StrictJson.Parse(body);
             JsonElement release = releaseDocument.RootElement;
@@ -75,8 +80,8 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
                 });
             // A release carrying any unexpected asset is not this request's release.
             if (assets.Keys.Any(name => !prepared.Files.Any(file => file.Name == name) &&
-                    (allowedSiblingAssets is null ||
-                        !allowedSiblingAssets.Contains(name, StringComparer.Ordinal))))
+                    (prepared.AllowedSiblingAssets is null ||
+                        !prepared.AllowedSiblingAssets.Contains(name, StringComparer.Ordinal))))
                 return Result(ReleaseFileState.Conflict, ReleaseCheckStatus.Failed);
 
             var files = new List<ReleaseFileObservation>();
@@ -106,9 +111,9 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
                     ? Observed(file, ReleaseFileState.Exact, served.Size, served.Sha256)
                     : Observed(file, ReleaseFileState.Conflict, served.Size, served.Sha256));
             }
-            return new(new(prepared.Subject, [.. files], [Check],
+            return (new(new(prepared.Subject, [.. files], [Check],
                 [new(Check, ReleaseCheckStatus.Passed)]), [.. session.Reads],
-                ReleaseId: releaseId);
+                Container: ContainerPresence.Present), releaseId);
         }
         catch (OperationCanceledException)
         {
@@ -126,15 +131,78 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
             return Result(ReleaseFileState.Unknown, ReleaseCheckStatus.Failed);
         }
 
-        ReleaseObservationResult Result(ReleaseFileState state, ReleaseCheckStatus check) =>
-            new(new(prepared.Subject, [.. prepared.Files.Select(file => Observed(file, state))],
-                [Check], [new(Check, check)]), [.. session.Reads], ReleaseId: releaseId);
+        (ReleaseObservationResult, long?) Result(ReleaseFileState state, ReleaseCheckStatus check,
+            ContainerPresence presence = ContainerPresence.Unknown) =>
+            (new(new(prepared.Subject, [.. prepared.Files.Select(file => Observed(file, state))],
+                [Check], [new(Check, check)]), [.. session.Reads],
+                Container: releaseId.HasValue ? ContainerPresence.Present : presence), null);
+    }
+
+    internal Publisher OpenPublisher(GithubReleaseTarget target, string originals)
+    {
+        if (target.Subject.DryRun)
+            throw new InvalidDataException("A dry run cannot open a GitHub publisher.");
+        LiveReleaseRef.RequireEligible(target.Subject);
+        return new(this, target, originals);
+    }
+
+    // A publisher starts with no native handle. Only its own fresh read or acknowledged
+    // creation can bind the release to which its asset uploads are addressed.
+    internal sealed class Publisher(
+        GithubReleaseDestination destination,
+        GithubReleaseTarget target,
+        string originals)
+    {
+        private long? releaseId;
+        private bool canCreate;
+
+        internal async Task<ReleaseObservationResult> RefreshAsync(CancellationToken token)
+        {
+            releaseId = null;
+            canCreate = false;
+            (ReleaseObservationResult observed, long? id) =
+                await destination.ReadAsync(target, token);
+            if (observed.Observation.Checks.All(check => check.Status == ReleaseCheckStatus.Passed)
+                && observed.Observation.Files.All(file => file.State is
+                    ReleaseFileState.Absent or ReleaseFileState.Exact))
+            {
+                releaseId = id;
+                canCreate = observed.Container == ContainerPresence.Missing;
+            }
+            return observed;
+        }
+
+        internal async Task<ReleaseWriteStep> CreateAsync(CancellationToken token)
+        {
+            if (!canCreate)
+                throw new InvalidDataException("The publisher has not observed a missing release.");
+            canCreate = false;
+            token.ThrowIfCancellationRequested();
+            (NativeCommandResult result, long? created) = await destination.CreateAsync(target,
+                token);
+            ReleaseWriteStep step = ReleaseWriteStep.FromContainer(result, created.HasValue);
+            if (step.Acknowledged) releaseId = created;
+            return step;
+        }
+
+        internal async Task<ReleaseWriteStep> UploadAsync(ReleaseFile file, CancellationToken token)
+        {
+            if (releaseId is not long id || !target.Files.Contains(file))
+                throw new InvalidDataException("Missing publisher-bound GitHub release or asset.");
+            string path = OwnedPath.ResolveWithin(originals, file.Path,
+                "Original GitHub Release directory must be absolute.",
+                "Original GitHub Release path leaves its root.");
+            OwnedFile.Verify(path, file.Size, file.Sha256, "Transferred GitHub original differs.");
+            token.ThrowIfCancellationRequested();
+            return ReleaseWriteStep.FromUpload(new(file.Output,
+                await destination.UploadAsync(id, file, path, token)));
+        }
     }
 
     // One native create of a published release at the selected commit; GitHub creates a
     // missing lightweight tag there and rejects a second release for the tag.
-    internal async Task<(NativeCommandResult Result, long? Id)> CreateAsync(
-        PreparedRelease prepared, CancellationToken token)
+    private async Task<(NativeCommandResult Result, long? Id)> CreateAsync(
+        GithubReleaseTarget prepared, CancellationToken token)
     {
         (string tag, bool buddy) = Identity(prepared);
         string version = prepared.Files[0].Version;
@@ -142,7 +210,7 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
         {
             ["tag_name"] = tag,
             ["target_commitish"] = prepared.Subject.Revision,
-            ["name"] = GithubReleaseUnit.Title(prepared.Subject.Unit, version),
+            ["name"] = prepared.Title,
             ["body"] = prepared.ReleaseNotes ??
                 "Workflow Delivery " + prepared.Subject.Channel + " release of " +
                 prepared.Subject.Unit + " " + version + " from " + prepared.Subject.Revision + ".",
@@ -156,7 +224,7 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
     }
 
     // One native upload of one original asset to the observed release.
-    internal async Task<NativeCommandResult> UploadAsync(long release, ReleaseFile file,
+    private async Task<NativeCommandResult> UploadAsync(long release, ReleaseFile file,
         string path, CancellationToken token)
     {
         await using FileStream stream = File.OpenRead(path);
@@ -218,14 +286,14 @@ internal sealed class GithubReleaseDestination(HttpClient client, string credent
         }
     }
 
-    private (string Tag, bool Buddy) Identity(PreparedRelease prepared)
+    private (string Tag, bool Buddy) Identity(GithubReleaseTarget prepared)
     {
         bool buddy = prepared.Subject.Channel == "buddy";
         if (prepared.Files.Length == 0 ||
             prepared.Files.Any(file => file.Version != prepared.Files[0].Version) ||
             string.IsNullOrEmpty(credential) || credential.Any(c => c is '\r' or '\n' or '\0'))
             throw new InvalidDataException("Unsupported GitHub Release request.");
-        return (GithubReleaseUnit.Tag(prepared.Subject, prepared.Files[0].Version), buddy);
+        return (prepared.Tag, buddy);
     }
 
     private static ReleaseFileObservation Observed(ReleaseFile file, ReleaseFileState state,

@@ -1,5 +1,4 @@
 using System.Text.Json;
-using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Ecosystems;
 
@@ -63,7 +62,4 @@ internal static class AdoptedNpmPackage
         }
     }
 
-    internal static NativeCommand Import(string directory) =>
-        ReleaseUnitCatalog.NpmUnits.Single(u => u.OfficialName == PackageName)
-            .Import(directory, PackageName, deadlineSeconds: 30);
 }

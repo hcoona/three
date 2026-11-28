@@ -24,7 +24,7 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
         {
             observed = command;
             await File.WriteAllTextAsync(files.Response, JsonSerializer.Serialize(
-                fixture.Response(), TransferJson.Default.DotNetGraphResponse), token);
+                fixture.Response(), DotNetNativeJson.Default.DotNetGraphResponse), token);
             return new(NativeTermination.Exited, 0, "", "", 0, null);
         });
         DotNetRevisionInputs result = await reader.ReadAsync(context.CancellationToken);
@@ -41,7 +41,8 @@ public sealed class DotNetRepositoryReaderTests(TestContext context)
             "-nologo", "-noAutoResponse",
             "-target:Read" }, observed.Arguments);
         DotNetGraphRequest request = JsonSerializer.Deserialize(await File.ReadAllTextAsync(
-            files.Request, context.CancellationToken), TransferJson.Default.DotNetGraphRequest)!;
+            files.Request, context.CancellationToken),
+            DotNetNativeJson.Default.DotNetGraphRequest)!;
         Assert.AreEqual(fixture.Revision.Commit, request.Revision);
         Assert.HasCount(3, request.Globals);
         Assert.Contains(Path.GetFullPath(fixture.PathOf("product/A.csproj")),

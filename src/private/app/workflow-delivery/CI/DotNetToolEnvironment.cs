@@ -23,7 +23,7 @@ internal static class DotNetToolEnvironment
             : [""];
         var kept = new List<string>();
         string? node = null;
-        foreach (string tool in DotNetTools.Names(tools.Keys))
+        foreach (string tool in DotNetRequiredTools.Names(tools.Keys))
         {
             // Sorted names validate node before npm, which must resolve beside it.
             string expected = tool switch

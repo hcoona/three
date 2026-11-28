@@ -7,8 +7,11 @@ using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.CI;
 
+[JsonConverter(typeof(JsonStringEnumConverter<ModelChecks>))]
+internal enum ModelChecks { None, Callers, Full }
+
 internal sealed record NativePreparationSelection(CiComparison Comparison,
-    bool Python, bool Ruby, bool Node, bool Browser);
+    bool Python, bool Ruby, bool Node, bool Browser, ModelChecks Models);
 
 // The native Linux scenarios own preparation; this boundary only selects them. The runner's
 // filter, per-module minimum count and exit code qualify the selected rows.
@@ -43,7 +46,9 @@ internal static class NativePreparationQualification
             comparison.Full || changedPaths.Any(path => Input(path, true)),
             comparison.Full || changedPaths.Any(path => Input(path, false)),
             comparison.Full || changedPaths.Any(NodeInput),
-            comparison.Full || changedPaths.Any(BrowserInput));
+            comparison.Full || changedPaths.Any(BrowserInput),
+            comparison.Full ? ModelChecks.Full : changedPaths.Select(CiScope.DeliveryModelInput)
+                .DefaultIfEmpty(ModelChecks.None).Max());
     }
 
     internal static int? Run(string[] args, TextWriter output)
@@ -72,7 +77,8 @@ internal static class NativePreparationQualification
                     $"python={selected.Python.ToString().ToLowerInvariant()}\n" +
                     $"ruby={selected.Ruby.ToString().ToLowerInvariant()}\n" +
                     $"node={selected.Node.ToString().ToLowerInvariant()}\n" +
-                    $"browser={selected.Browser.ToString().ToLowerInvariant()}\n");
+                    $"browser={selected.Browser.ToString().ToLowerInvariant()}\n" +
+                    $"models={selected.Models.ToString().ToLowerInvariant()}\n");
             return 0;
         }
         return null;

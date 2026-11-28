@@ -15,6 +15,8 @@ internal sealed class NbgvInputReader(string root)
     private static readonly StringComparison PhysicalComparison = OperatingSystem.IsWindows()
         ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
+    internal static bool IsGitError(Exception error) => error is GitException;
+
     // Full projection uses the caller-bound clean HEAD and the same native cloud/ref
     // context as the build. Version height and native projections remain NBGV operations.
     internal string NpmVersion(GitRevision revision, string directory, CancellationToken token)

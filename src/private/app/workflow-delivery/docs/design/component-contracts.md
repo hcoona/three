@@ -154,11 +154,10 @@ five primary profiles and their `AnchorProfileFor` descriptors):
    operations on `verifier`-read ports, or established `ProofToken` in
    `pubFinalObs` on `publisher`-read ports (including owner-specified bounded
    post-`ambiguous` readback under `WD-REL-009` and `WD-RET-004`'s
-   _"acknowledged or observed satisfied"_ rule, while primary writes themselves
-   stop immediately on the first abnormal outcome per `WD-OPS-002`; this
-   intentionally refines pre-split [`release.md`](release.md#post-publication-completion)'s
-   narrower _"initially satisfied or acknowledged without error"_ wording for
-   `#1947`).
+   _"acknowledged or observed satisfied"_ rule). Primary writes stop on the
+   first abnormal outcome per `WD-OPS-002`. The
+   [Release completion contract](release.md#post-publication-completion)
+   distinguishes this permission to open the anchor from final satisfaction.
 4. `verify` receives `PrimaryReceiptAtVerify` and `AnchorReceiptAtVerify`
    independently of `anchor-gate` (so `verify` may lose the primary receipt even
    after `anchor-gate` received it and mutated GitHub, yielding
@@ -233,11 +232,13 @@ nodeChecks, advisoryChecks, baselineGroups)`. `Core` verifies that the
 
 ## What the finite component models check
 
-[`ReleaseSystemRefinement`](models/ReleaseSystemRefinement.tla) and
-[`CiComponentComposition`](models/CiComponentComposition.tla) connect these
-concrete-noun-free component models back to [`business-semantics.md`](business-semantics.md)
-via TLA+ `INSTANCE` refinement while covering general posets, envelope loss/expiry
-and `WD-RET-004` dual-`RightPort` Official anchors:
+The component models connect to the [business decisions](business-semantics.md)
+at different levels. [`ReleaseSystemRefinement`](models/ReleaseSystemRefinement.tla)
+maps component state to `PublicationWindow` and checks its temporal specification
+on two finite configurations. [`CiComponentComposition`](models/CiComponentComposition.tla)
+compares the plan and verdict with `CandidateQualification` at the `verify`
+boundary; it does not check temporal refinement of every CI step. The Official
+anchor model checks composition and capability isolation across two ports.
 
 | Model and configuration                                                                                                    | Finite boundary and checked contracts                                                                                                                                                                                                                                                                                                                                                                                                                                 | Distinct states |
 | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------: |
@@ -269,7 +270,42 @@ named invariant):
 | [`AnchorReadableRecoveryWitness`](models/AnchorReadableRecoveryWitness.cfg)                 | `OfficialAnchorComposition` | `NoReadablePrimarySkipAnchorRecovery`: existential witness on two-archive `GatedReadBundledStore` that after Run 1 satisfies primary and leaves `"op2"` missing on the anchor, Run 2 performs zero primary writes, uploads only `"op2"` (`attempted = "yes"`), and satisfies.                                                                                                                                    |
 | [`AnchorBlindPostReceiptWitness`](models/AnchorBlindPostReceiptWitness.cfg)                 | `OfficialAnchorComposition` | `NoBlindPostReceiptAnchorFailureBlocksRedispatch`: existential witness that after Run 1 satisfies `BlindReceiptStore` primary (`received`) and fails on the Official anchor, Run 2 has `clearance = "unresolved"` and blocks before `isolated-pub-primary` with zero writes.                                                                                                                                     |
 
-Reproduce any row from the repository root with the
+The Linux Workflow Delivery verification job runs
+[`check_workflow_delivery_models.py`](../../../../../../eng/scripts/check_workflow_delivery_models.py)
+on explicit full validation and changes to the models, their runner or locked
+toolchain. Changes confined to the control application and its tests rerun the
+TLC-to-caller comparisons below without rechecking unchanged temporal models.
+The full lane checks
+all five positive configurations above and three shortcuts: filtering an
+input-only bridge before closure, joining checks without their partitions, and
+authorizing a refreshed operation set by count alone. Each shortcut must fail
+on its specified invariant;
+a different failure is not a witness. HK still checks TLA+ syntax with SANY.
+[`PublicationWindowOracle`](models/PublicationWindowOracle.tla) then drives the
+unchanged `Grant`, `Invoke`, `LoseResult`, and `Verify` actions on fixed port
+responses. The managed test issues the same responses to the real Python
+publisher and verifier entry points and compares actual calls, retained
+receipts, attempted mutation, and satisfaction with TLC's terminal report.
+[`VerifierReadGateOracle`](models/VerifierReadGateOracle.tla) enumerates the
+six sealed receipts for one initially missing operation on a verifier-read
+port. The Ruby publisher sees matching bytes on its diagnostic readback;
+the actual Official gate must still agree with `PrimaryPermitsAnchor`,
+including when the native upload times out.
+[`CiJoinOracle`](models/CiJoinOracle.tla) supplies the component specification's
+verdict for sixteen receipt conditions at the two-partition CI join.
+[`CiSelectionOracle`](models/CiSelectionOracle.tla) exports sixteen selective
+and full planning results. The Python workspace planner receives corresponding
+native dependency and pytest-target facts; the comparison checks its actual
+candidate targets, including the consumer across the input-only bridge, and its
+refusal of incomplete or unaccounted input. It does not assert that every
+ecosystem runs in one process or that GitHub executes every possible schedule.
+These comparisons exercise compiled callers with controlled ports, not a live
+index, GitHub Environment, or a proof over all C# executions.
+
+Reproduce the lane with `python eng/scripts/check_workflow_delivery_models.py`
+with the locked .NET SDK, Java and TLC tools on `PATH`. Use `--conformance-only`
+to run just the compiled comparisons. Reproduce any configuration from the
+repository root with the
 [locked TLA+ toolchain](../../../../../../docs/engineering/workspaces.md#tla)
 (`TLC` 2.19 in `tla2tools.jar` 1.7.4):
 

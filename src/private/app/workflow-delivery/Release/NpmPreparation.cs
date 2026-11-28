@@ -30,7 +30,6 @@ internal static class NpmPreparation
         // Admission precedes every scratch write.
         NpmReleaseUnit recipe = ReleaseUnitCatalog.AdmitNpm(request.Subject);
         var qualification = new ReleaseQualification(execute, token);
-        var files = new List<ReleaseFile>();
         var environment = ReleasePreparationContext.CreateHomeEnvironment(scratch,
             ["PATH", "SystemRoot", "WINDIR", "PATHEXT", "DOTNET_ROOT", "DOTNET_ROOT_X64",
                 "NUGET_PACKAGES", "GITHUB_ACTIONS", "GITHUB_REF", "GITHUB_SHA", "GITHUB_RUN_ID",
@@ -111,61 +110,13 @@ internal static class NpmPreparation
                     request.Subject.Revision, changelogPath);
             }
         });
-        string originals = Path.Combine(scratch, "original");
-        Directory.CreateDirectory(originals);
-        string archive = Path.Combine(originals, "package.tgz");
-        long size = 0;
-        string? sha256 = null;
-        var actions = new Dictionary<string, Func<Task>>(StringComparer.Ordinal)
-        {
-            ["build"] = async () => await RunAsync("build", new("pnpm", checkout,
-                ["--dir", Path.Combine(checkout, product),
-                    "--config.verify-deps-before-run=false", "run", "build"], 300)),
-            ["test"] = async () => await RunAsync("test", new("pnpm", checkout,
-                ["--dir", Path.Combine(checkout, product),
-                    "--config.verify-deps-before-run=false", "run", "test"], 300)),
-            ["pack"] = async () =>
-            {
-                // The channel package name is set only in the disposable checkout.
-                if (package != recipe.SourceName)
-                    await RunAsync("pack", new("pnpm", checkout,
-                        ["--dir", Path.Combine(checkout, product), "pkg", "set",
-                            "name=" + package], 30));
-                await RunAsync("pack", NpmPackageOperations.Pack(checkout, product, archive));
-                (size, sha256) = await NpmPackageOperations.OriginalAsync(archive, token);
-            },
-            ["contents"] = async () =>
-            {
-                NativeCommand command = await NpmPackageOperations.MetadataAsync(archive,
-                    Path.Combine(scratch, "metadata"), token);
-                NativeCommandResult result = await RunAsync("contents", command);
-                AdoptedNpmPackage.ValidateMetadata(result.Stdout, nativeVersion, package,
-                    recipe.Main, recipe.RegistryDependencies);
-            },
-            ["consumer"] = async () =>
-            {
-                await RunAsync("consumer", await NpmPackageOperations.InstallAsync(archive,
-                    scratch, offline: !recipe.RegistryDependencies, token));
-                await RunAsync("consumer", recipe.Import(scratch, package));
-            },
-            ["original-bytes"] = async () =>
-            {
-                (long actualSize, string actualDigest) =
-                    await NpmPackageOperations.OriginalAsync(archive, token);
-                if (actualSize != size || actualDigest != sha256)
-                    throw new InvalidDataException(
-                        "Qualified original changed during consumption.");
-                files.Add(new(build.Id, build.Outputs[0].Id, "npm-tarball", package,
-                    nativeVersion, "original/package.tgz", size, sha256!));
-            },
-        };
-        foreach (string id in recipe.Required.Skip(1))
-            await qualification.CheckAsync(id, actions[id]);
+        ReleaseFile[] files = await UnitPreparation.QualifyAsync(request.Subject, build, scratch,
+            qualification, recipe.Required, subject => recipe.Native.QualifyAsync(subject, checkout,
+                scratch, product, package, nativeVersion,
+                qualification.CheckAsync, RunAsync, token));
         PreparedGithubAnchor? anchor = releaseNotes is not null &&
-            qualification.Errors.Length == 0 && files.Count > 0
-                ? new([.. files.Select(file => file with
-                    { Name = $"{NpmReleaseUnit.UnscopedName(package)}-{nativeVersion}.tgz" })],
-                    releaseNotes)
+            qualification.Errors.Length == 0 && files.Length > 0
+                ? DestinationBindings.GithubAnchor(request.Subject, files, releaseNotes)
                 : null;
         return new(new(request.Subject, [.. files], [.. recipe.Required], qualification.Checks,
                 Anchor: anchor),

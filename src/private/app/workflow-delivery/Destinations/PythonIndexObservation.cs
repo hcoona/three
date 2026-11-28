@@ -1,6 +1,4 @@
-using System.Security.Cryptography;
 using System.Text.Json;
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -15,14 +13,14 @@ internal sealed class PythonIndexObservation(HttpClient client, PythonIndexTools
 {
     private const int MetadataLimit = 2 * 1024 * 1024;
 
-    internal Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
+    internal Task<ReleaseObservationResult> ObserveAsync(PackageDestination prepared,
         CancellationToken token) => ObserveAsync(prepared, NativeProcess.ExecuteAsync, token);
 
-    internal async Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
+    internal async Task<ReleaseObservationResult> ObserveAsync(PackageDestination prepared,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
-        string package = ReleaseUnitCatalog.AdmitPython(prepared.Subject).Id;
+        string package = prepared.Package;
         if (prepared.Files.Length != 2 ||
             prepared.Files.Count(file => file.Kind == "python-wheel") != 1 ||
             prepared.Files.Count(file => file.Kind == "python-sdist") != 1 ||

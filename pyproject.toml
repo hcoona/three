@@ -192,6 +192,7 @@ testpaths = [
   "tests/private/app/workflow-delivery/Native/Python",
   "tests/eng/test_python_release_caller.py",
   "tests/eng/test_browser_store_release_caller.py",
+  "tests/eng/test_official_anchor_gate.py",
   "tests/eng/test_general_ci_workflow.py",
   "tests/eng/test_node_release_schedule.py",
   "tests/eng/test_python_runtime.py",

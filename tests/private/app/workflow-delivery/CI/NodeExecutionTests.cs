@@ -149,6 +149,46 @@ public sealed class NodeExecutionTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task ConsumerCannotQualifyAReplacedOriginalTarball()
+    {
+        using var fixture = Shared();
+        fixture.Override = command =>
+        {
+            if (command.Arguments.Contains("install"))
+                File.AppendAllText(Value(command, "install"), "changed");
+            return null;
+        };
+
+        NodeRunResult result = await fixture.RunAsync(context.CancellationToken);
+
+        Assert.AreEqual(CheckStatus.Passed, Status(result, NodeExecutionFixture.Contents));
+        Assert.AreEqual(CheckStatus.Failed, Status(result, NodeExecutionFixture.Consumer));
+        Assert.Contains("original changed", Assert.ContainsSingle(result.Failures).Error);
+    }
+
+    [TestMethod]
+    public async Task OriginalChangedDuringContentsCannotQualifyOrReachConsumerInstall()
+    {
+        using var fixture = Shared();
+        fixture.Override = command =>
+        {
+            if (Path.GetFileName(command.Directory) == "contents-metadata")
+            {
+                NativeCommand pack = fixture.Commands.Single(
+                    item => item.Arguments.Contains("pack"));
+                File.AppendAllText(Value(pack, "--out"), "changed");
+            }
+            return null;
+        };
+
+        NodeRunResult result = await fixture.RunAsync(context.CancellationToken);
+
+        Assert.AreEqual(CheckStatus.Failed, Status(result, NodeExecutionFixture.Contents));
+        Assert.AreEqual(CheckStatus.Failed, Status(result, NodeExecutionFixture.Consumer));
+        Assert.IsFalse(fixture.Commands.Any(command => command.Arguments.Contains("install")));
+    }
+
+    [TestMethod]
     public async Task EachPackRetainsItsOwnTarballForTheOriginalSelectedBuild()
     {
         using var fixture = Shared("first", "second");

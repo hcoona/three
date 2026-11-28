@@ -665,6 +665,8 @@ public sealed class DotNetGraphTaskTests(TestContext context)
             .. releaseNotesProjects.Select(name =>
                 ($"src/public/lib/{name}/{name}.csproj", "SetPackageReleaseNotes")),
             ("src/private/app/workflow-delivery/WorkflowDelivery.csproj", "ReferenceOfficialNbgv"),
+            ("src/private/app/workflow-delivery/Ecosystems/DotNet/WorkflowDelivery.DotNet.csproj",
+                "ReferenceOfficialNbgv"),
             ("tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj",
                 "ReferenceOfficialNbgv"),
             ("tests/public/lib/WebHdfs.Extensions.FileProviders.UnitTest/" +

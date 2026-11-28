@@ -233,7 +233,8 @@ public sealed class NpmPackContractTests(TestContext context)
         }
         else
             Directory.CreateDirectory(Path.Combine(directory, "consumer"));
-        NativeCommandResult import = await tool.RunAsync(AdoptedNpmPackage.Import(directory),
+        NativeCommandResult import = await tool.RunAsync(
+            ReleaseUnitCatalog.AdoptedNpmImport(directory),
             context.CancellationToken);
 
         PnpmNativeTool.AssertExited(import, variant == "original");

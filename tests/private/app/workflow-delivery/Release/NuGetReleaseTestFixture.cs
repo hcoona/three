@@ -19,34 +19,35 @@ internal sealed class NuGetReleaseTestFixture : IDisposable
     internal ReleasePreparationResult Preparation { get; }
     internal PreparedRelease Prepared => Preparation.Prepared;
 
-    internal NuGetReleaseTestFixture(bool dryRun = false)
+    internal NuGetReleaseTestFixture(bool dryRun = false, bool official = false)
     {
+        NuGetReleaseUnit unit = ReleaseUnitCatalog.NuGet(official ? "phi-failure-detector"
+            : "hcoona-release-smoke-github-packages");
         // Matches the controlled archive used by NuGetPublisherTests.
         using (var zip = new ZipArchive(File.Create(Archive), ZipArchiveMode.Create))
         using (var writer = new StreamWriter(zip.CreateEntry("package.nuspec").Open()))
-            writer.Write("<package><metadata><id>Hcoona.ReleaseSmoke.GithubPackages</id>"
+            writer.Write($"<package><metadata><id>{unit.PackageId}</id>"
                 + "<version>1.0.0</version><authors>hcoona</authors>"
                 + "<description>Controlled native archive</description></metadata></package>");
         var native = DotNetPackageResults.NativeProperties
             .Where(name => name != "MSBuildProjectFullPath")
             .ToDictionary(name => name, _ => "", StringComparer.Ordinal);
-        native["TargetFramework"] = "net10.0";
+        native["TargetFramework"] = official ? "" : "net10.0";
         native["NETCoreSdkVersion"] = "10.0.401";
         native["IsPackable"] = native["GenerateDocumentationFile"] = "true";
-        native["DocumentationFile"] = "obj/Release/Hcoona.ReleaseSmoke.GithubPackages.xml";
+        native["DocumentationFile"] = official
+            ? "" : "obj/Release/Hcoona.ReleaseSmoke.GithubPackages.xml";
         native["PackageReadmeFile"] = "README.md";
-        native["PackageId"] = native["AssemblyName"] = "Hcoona.ReleaseSmoke.GithubPackages";
+        native["PackageId"] = native["AssemblyName"] = unit.PackageId;
         native["NuGetPackageVersion"] = native["PackageVersion"] = "1.0.0";
         native["AssemblyVersion"] = native["AssemblyFileVersion"] = "1.0.0.0";
         native["AssemblyInformationalVersion"] = "1.0.0";
-        var subject = new ReleaseSubject(new string('a', 40), "refs/heads/development",
-            "hcoona-release-smoke-github-packages",
-            "tests/private/app/workflow-delivery/" +
-                "fixtures/products/hcoona-release-smoke-github-packages/"
-                + "workflow-delivery.release-unit.yml",
-            "buddy", "github-packages-nuget", dryRun);
+        var subject = new ReleaseSubject(new string('a', 40),
+            official ? "refs/heads/main" : "refs/heads/development", unit.Id, unit.Declaration,
+            official ? "official" : "buddy",
+            official ? "nugetorg" : "github-packages-nuget", dryRun);
         var prepared = new PreparedRelease(subject,
-            [new("package", "original", "nuget-package", "Hcoona.ReleaseSmoke.GithubPackages",
+            [new("package", "original", "nuget-package", unit.PackageId,
                 "1.0.0", "original.nupkg", new FileInfo(Archive).Length,
                 DotNetPackageArchive.Digest(Archive))], [.. NuGetPreparation.Required],
             NuGetPreparation.Required.Select(id => new ReleaseCheck(id,
@@ -62,15 +63,15 @@ internal sealed class NuGetReleaseTestFixture : IDisposable
         ReleaseCheckStatus qualification = ReleaseCheckStatus.Passed)
     {
         ReleaseFile file = Prepared.Files[0];
+        string[] required = Prepared.Subject.Destination == "nugetorg"
+            ? NuGetOrgObservation.RequiredChecks : GithubNuGetObservation.RequiredChecks;
         return new(new(Prepared.Subject,
             [new(file.Output, file.Name, file.Version, state,
                 state == ReleaseFileState.Exact ? file.Size : null,
                 state == ReleaseFileState.Exact ? file.Sha256 : null)],
-            ["native-package-control", "native-metadata-visibility"],
-            [new("native-package-control", qualification),
-                new("native-metadata-visibility", ReleaseCheckStatus.Passed)]),
-            [], Resources: new("https://nuget.pkg.github.com/hcoona/flat/",
-                NuGetPublisher.GithubEndpoint));
+            required, [.. required.Select((id, i) => new ReleaseCheck(id,
+                i == 0 ? qualification : ReleaseCheckStatus.Passed))]),
+            []);
     }
 
     internal string Write<T>(string name, T value, JsonTypeInfo<T> type) =>

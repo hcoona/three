@@ -15,6 +15,7 @@ internal sealed class FirefoxAmo(HttpClient client, ReleaseSubject subject,
     int attempts = 60) : IBrowserStore
 {
     internal static readonly Uri Origin = new("https://addons.mozilla.org/api/v5/");
+    internal const string CreateResponseUnavailable = "Version create response was unavailable.";
     private readonly StoreHttp http = new(client, [], delay, time);
     private readonly TimeProvider clock = time ?? TimeProvider.System;
 
@@ -41,11 +42,30 @@ internal sealed class FirefoxAmo(HttpClient client, ReleaseSubject subject,
             return Classify(document.RootElement, version);
         });
 
-    public async Task<ReleaseObservationResult?> PublishAsync(StoreFile[] files,
-        List<ReleaseWriteStep> operations, CancellationToken cancel)
+    public StoreWriter Bind(StoreFile[] files)
     {
-        string package = files.Single(file => file.Output == "firefox-zip").Path;
-        string source = files.Single(file => file.Output == "firefox-sources").Path;
+        string? validatedUpload = null;
+        return async (operation, cancel) =>
+        {
+            if (operation == "upload")
+            {
+                var (step, uuid) = await UploadAsync(
+                    files.Single(file => file.Output == "firefox-zip").Path, cancel);
+                validatedUpload = uuid;
+                return step;
+            }
+            if (operation != "create-version" || validatedUpload is null)
+                throw new InvalidDataException(
+                    "No validated AMO upload is bound in this publisher.");
+            return await CreateVersionAsync(validatedUpload,
+                files.Single(file => file.Output == "firefox-sources").Path, cancel);
+        };
+    }
+
+    private async Task<(DestinationInvocation, string?)> UploadAsync(
+        string package,
+        CancellationToken cancel)
+    {
         var upload = Request(HttpMethod.Post, "addons/upload/");
         upload.Content = new MultipartFormDataContent
         {
@@ -60,13 +80,16 @@ internal sealed class FirefoxAmo(HttpClient client, ReleaseSubject subject,
             uuid = StoreHttp.Text(document.RootElement, "uuid");
         }
         if (string.IsNullOrWhiteSpace(uuid))
-            return await Final("upload", false, $"Upload status {uploaded.Status}.");
+            return (
+                DestinationInvocation.Store("upload", false, $"Upload status {uploaded.Status}."),
+                null);
         bool? valid = null;
         for (int attempt = 0; valid is null && attempt < attempts; attempt++)
         {
             if (attempt != 0) await http.DelayAsync(TimeSpan.FromSeconds(5), cancel);
             StoreResponse detail = await http.SendAsync("upload-status", Request(
-                HttpMethod.Get, "addons/upload/" + Uri.EscapeDataString(uuid) + "/"), cancel);
+                HttpMethod.Get, "addons/upload/" + Uri.EscapeDataString(uuid) + "/"), cancel,
+                sessionLocation: true);
             if (detail.Status != 200) continue;
             using JsonDocument document = StoreHttp.Json(detail);
             JsonElement root = document.RootElement;
@@ -78,9 +101,17 @@ internal sealed class FirefoxAmo(HttpClient client, ReleaseSubject subject,
                 StoreHttp.Text(root, "version") == version;
         }
         if (valid != true)
-            return await Final("upload", false, valid is null
-                ? "Upload validation did not finish." : "Upload is invalid or another version.");
-        operations.Add(ReleaseWriteStep.FromStore("upload", true, "Package upload validated."));
+            return (DestinationInvocation.Store("upload", false, valid is null
+                ? "Upload validation did not finish."
+                : "Upload is invalid or another version."), null);
+        return (DestinationInvocation.Store("upload", true, "Package upload validated."), uuid);
+    }
+
+    private async Task<DestinationInvocation> CreateVersionAsync(
+        string uuid,
+        string source,
+        CancellationToken cancel)
+    {
         var create = Request(HttpMethod.Post, Addon + "versions/");
         create.Content = new MultipartFormDataContent
         {
@@ -93,16 +124,11 @@ internal sealed class FirefoxAmo(HttpClient client, ReleaseSubject subject,
             failure is OperationCanceledException && !cancel.IsCancellationRequested)
         {
             // Read back with a fresh request deadline; the version may already exist.
-            return await Final("create-version", false, "Version create response was unavailable.");
+            return DestinationInvocation.Store("create-version", false, CreateResponseUnavailable,
+                ambiguous: true);
         }
-        return await Final("create-version", created.Status == 201,
+        return DestinationInvocation.Store("create-version", created.Status == 201,
             $"Version create status {created.Status}.");
-
-        async Task<ReleaseObservationResult?> Final(string operation, bool succeeded, string text)
-        {
-            operations.Add(ReleaseWriteStep.FromStore(operation, succeeded, text));
-            return await ObserveAsync(cancel);
-        }
     }
 
     internal static (StoreState, string) Classify(JsonElement detail, string version)

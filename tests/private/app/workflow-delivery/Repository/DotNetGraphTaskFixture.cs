@@ -191,7 +191,7 @@ internal sealed class DotNetGraphTaskFixture : IDisposable
             RequestRoot ?? Root, PathOf("dirs.proj"), Globals, PathOf("response.json"),
             IncludeRootConfiguration ? [.. CommittedPaths, PathOf("nuget.config")]
                 : CommittedPaths),
-            TransferJson.Default.DotNetGraphRequest));
+            DotNetNativeJson.Default.DotNetGraphRequest));
         string assembly = SecurityElement.Escape(typeof(DotNetGraphTask).Assembly.Location)!;
         string request = SecurityElement.Escape(PathOf("request.json"))!;
         Write("read.proj", $"""
@@ -215,7 +215,7 @@ internal sealed class DotNetGraphTaskFixture : IDisposable
                 $"Native graph {query.Termination}, exit {query.ExitCode}: " +
                 query.Error + "\n" + query.Stdout + query.Stderr);
         return JsonSerializer.Deserialize(await File.ReadAllTextAsync(
-            PathOf("response.json"), token), TransferJson.Default.DotNetGraphResponse)
+            PathOf("response.json"), token), DotNetNativeJson.Default.DotNetGraphResponse)
             ?? throw new InvalidDataException("Missing graph response.");
     }
 

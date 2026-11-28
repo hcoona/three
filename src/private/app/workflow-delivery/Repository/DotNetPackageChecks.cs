@@ -105,7 +105,7 @@ internal static class DotNetPackageChecks
             ["globals"] = JsonSerializer.Serialize(context.Node.Identity.Globals,
                 TransferJson.Default.DictionaryStringString),
             ["msbuild"] = JsonSerializer.Serialize(context.Node.Dimension,
-                TransferJson.Default.MsBuildDimension),
+                DotNetNativeJson.Default.MsBuildDimension),
             ["native"] = JsonSerializer.Serialize(
                 values, TransferJson.Default.DictionaryStringString),
         };
@@ -134,7 +134,7 @@ internal static class DotNetPackageChecks
             Path.GetFullPath(Path.Combine(checkout, subject.EntryPoint)),
             JsonSerializer.Deserialize(globals, TransferJson.Default.DictionaryStringString) ??
                 throw new InvalidDataException("Missing native package globals.")), false,
-            JsonSerializer.Deserialize(dimension, TransferJson.Default.MsBuildDimension) ??
+            JsonSerializer.Deserialize(dimension, DotNetNativeJson.Default.MsBuildDimension) ??
                 throw new InvalidDataException("Missing native package dimension."), "", "", [],
             "None");
         Dictionary<string, string> values = JsonSerializer.Deserialize(native,

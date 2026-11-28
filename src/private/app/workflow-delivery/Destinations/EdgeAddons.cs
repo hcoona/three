@@ -28,17 +28,26 @@ internal sealed class EdgeAddons(HttpClient client, ReleaseSubject subject,
         StoreHttp.Observation(subject, target, version, StoreState.Unobserved,
             ["The store exposes no version read before submission."], []);
 
-    public async Task<ReleaseObservationResult?> PublishAsync(StoreFile[] files,
-        List<ReleaseWriteStep> operations, CancellationToken cancel)
+    public StoreWriter Bind(StoreFile[] files) => (operation, cancel) => operation switch
+    {
+        "upload" => UploadAsync(files.Single(), cancel),
+        "submit" => SubmitAsync(cancel),
+        _ => throw new InvalidDataException("Unsupported Edge Add-ons operation."),
+    };
+
+    private async Task<DestinationInvocation> UploadAsync(StoreFile file, CancellationToken cancel)
     {
         var upload = Request(HttpMethod.Post, Product + "/submissions/draft/package");
-        upload.Content = new StreamContent(File.OpenRead(files.Single().Path));
+        upload.Content = new StreamContent(File.OpenRead(file.Path));
         upload.Content.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
         (bool uploaded, string uploadDetail) = await OperationAsync("upload", upload,
             Product + "/submissions/draft/package/operations/", cancel);
-        operations.Add(ReleaseWriteStep.FromStore("upload", uploaded, uploadDetail));
-        if (!uploaded)
-            return Final(StoreState.Unknown, "Package upload did not succeed.");
+        return DestinationInvocation.Store("upload", uploaded, uploadDetail,
+            uploaded ? null : Final(StoreState.Unknown, "Package upload did not succeed."));
+    }
+
+    private async Task<DestinationInvocation> SubmitAsync(CancellationToken cancel)
+    {
         var submit = Request(HttpMethod.Post, Product + "/submissions");
         // The prepared version is dot-separated digits, so it needs no JSON escaping.
         submit.Content = new StringContent(
@@ -46,15 +55,15 @@ internal sealed class EdgeAddons(HttpClient client, ReleaseSubject subject,
             "application/json");
         (bool submitted, string submitDetail) = await OperationAsync("submit", submit,
             Product + "/submissions/operations/", cancel);
-        operations.Add(ReleaseWriteStep.FromStore("submit", submitted, submitDetail));
-        return submitted ? Final(StoreState.Received, "")
+        return DestinationInvocation.Store(
+            "submit", submitted, submitDetail, submitted ? Final(StoreState.Received, "")
             : Final(submitDetail.StartsWith("Failed", StringComparison.Ordinal)
-                ? StoreState.Conflict : StoreState.Unknown, "Submission did not succeed.");
-
-        ReleaseObservationResult Final(StoreState state, string reason) =>
-            StoreHttp.Observation(subject, target, version, state,
-                reason.Length == 0 ? [] : [reason], [.. http.Reads]);
+                ? StoreState.Conflict : StoreState.Unknown, "Submission did not succeed."));
     }
+
+    private ReleaseObservationResult Final(StoreState state, string reason) =>
+        StoreHttp.Observation(subject, target, version, state,
+            reason.Length == 0 ? [] : [reason], [.. http.Reads]);
 
     // Starts an asynchronous operation (202 with its id in Location) and polls its status.
     private async Task<(bool, string)> OperationAsync(string stage, HttpRequestMessage start,
@@ -76,7 +85,7 @@ internal sealed class EdgeAddons(HttpClient client, ReleaseSubject subject,
             try
             {
                 status = await http.SendAsync(stage + "-status", Request(HttpMethod.Get,
-                    statusPath + Uri.EscapeDataString(operation)), cancel);
+                    statusPath + Uri.EscapeDataString(operation)), cancel, sessionLocation: true);
             }
             catch (Exception failure) when (failure is HttpRequestException or IOException)
             { continue; }
@@ -85,8 +94,13 @@ internal sealed class EdgeAddons(HttpClient client, ReleaseSubject subject,
             string? state = StoreHttp.Text(document.RootElement, "status");
             if (state == "Succeeded") return (true, "Succeeded.");
             if (state == "Failed")
-                return (false, "Failed: " + (StoreHttp.Text(document.RootElement,
-                    "errorCode") ?? "no error code") + ".");
+            {
+                string? code = StoreHttp.Text(document.RootElement, "errorCode");
+                string reported = code is { Length: > 0 and <= 64 } &&
+                    code.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-')
+                        ? code : "no usable error code";
+                return (false, $"Failed: {reported}.");
+            }
         }
         return (false, "Unavailable: operation did not finish.");
     }

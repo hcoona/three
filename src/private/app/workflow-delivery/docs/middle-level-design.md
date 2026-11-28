@@ -4,8 +4,8 @@
 
 This overview zooms into the CLI in the [HLD](high-level-design.md), then routes
 each reader to one scoped contract. The [requirements](requirements.md) govern
-behavior. Modules below are internal responsibilities, not new services,
-required projects, public interfaces or a persistent application model.
+behavior. The modules below run in the same CLI distribution; their compile-time
+boundaries do not introduce services, public interfaces or persistent state.
 
 The five scoped designs separate repository selection, shared qualification,
 CI, Release and execution boundaries because they have different consumers and
@@ -20,35 +20,26 @@ ecosystem and destination differences remain with the
 C4Component
     title Workflow Delivery CLI - component responsibilities
     Container_Boundary(cli, "Workflow Delivery CLI - one C# application") {
-        Component(repository, "Repository", "Repository/", "Native facts, ownership, declarations and impact inputs")
-        Component(ci, "CI", "CI/", "Select candidate work and evaluate required results")
-        Component(ecosystems, "Ecosystems", "Ecosystems/", "Native versions, builds, package checks and local consumers")
-        Component(release, "Release", "Release/", "Prepare, choose permitted operations and evaluate completion")
-        Component(destinations, "Destinations", "Destinations/", "Native coordinates, observations, upload and verification")
-        Component(platform, "Platform helpers", "Git, processes, HTTP and artifacts", "Shared native mechanisms")
+        Component(host, "CLI and job adapters", "C#", "Bind the selected revision, originals and providers")
+        Component(ecosystems, "Ecosystem providers", ".NET, Node, Python, Ruby", "Read facts and qualify originals")
+        Component(engine, "Engine", "C#", "Plan and join CI work; execute the reviewed Release window")
+        Component(destinations, "Destination clients", "Registries and stores", "Observe and publish to bound targets")
+        Component(core, "Decision core", "C#", "CI obligations, operation identities, evidence and decisions")
     }
-    Rel(ci, repository, "Paired native<br/>facts")
-    Rel(ci, ecosystems, "Selected native<br/>checks")
-    Rel(release, repository, "Requested closure")
-    Rel(release, ecosystems, "Builds and qualifies<br/>own originals")
-    Rel(release, destinations, "Observe<br/>Publish if allowed<br/>Verify")
-    Rel(repository, platform, "Committed/native inputs")
-    Rel(ecosystems, platform, "Bounded native tools")
-    Rel(destinations, platform, "Native clients<br/>Bounded reads")
+    Rel(host, ecosystems, "Collect or qualify")
+    Rel(host, engine, "Submit bound facts")
+    Rel(host, destinations, "Supply the selected port")
+    Rel(engine, core, "Apply decisions")
+    Rel(ecosystems, core, "Project native facts")
+    Rel(destinations, core, "Project operation evidence")
     UpdateLayoutConfig("3", "1")
-    UpdateRelStyle(release, ecosystems, $offsetX="130", $offsetY="-35")
-    UpdateRelStyle(repository, platform, $offsetX="90", $offsetY="35")
-    UpdateRelStyle(ci, repository, $offsetX="-45", $offsetY="-18")
-    UpdateRelStyle(ci, ecosystems, $offsetX="-45", $offsetY="-18")
-    UpdateRelStyle(release, destinations, $offsetX="-50", $offsetY="-18")
-    UpdateRelStyle(destinations, platform, $offsetX="-45", $offsetY="-18")
 ```
 
-Arrows are responsibility dependencies, not a mandatory class/interface graph.
-Repository's ecosystem readers and the use cases may share native mechanisms;
-the view does not introduce an evaluation service or require all native code to
-live behind one interface. Python and Ruby helpers are the separate processes
-shown in the HLD, not C# components deployed as services.
+Arrows show responsibility dependencies, not process or permission boundaries.
+The engine has no reference to a native provider. The host supplies the
+selected destination's operations; a fresh publisher context owns any upload
+or container handle. Shared native process and filesystem helpers are omitted.
+Python and Ruby helpers are the separate processes shown in the HLD.
 
 ## Components and Native Responsibilities
 
@@ -76,15 +67,19 @@ names may change with all producers and consumers, without compatibility aliases
 
 ### Owned Projects
 
-| Owner                                                               | Responsibility                                                                                                     |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `src/private/app/workflow-delivery/WorkflowDelivery.csproj`         | Internal CI and Release entry point, native readers, selection, execution, package and destination operations      |
-| [Release decision core](../Core/WorkflowDelivery.Core.csproj)       | Pure read and submission decisions consumed by the browser-store Release path; ships with the CLI                  |
-| `tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj` | Managed scenario, algorithm, transfer and native integration tests                                                 |
-| `tests/private/app/workflow-delivery/Native/{Python,Ruby}/`         | Tests of the corresponding native-language helpers                                                                 |
-| `tests/private/app/workflow-delivery/fixtures/products/`            | Four ordinary npm, NuGet, Python and Ruby inputs, with native manifests, versions and quality/release declarations |
-| `src/private/app/workflow-delivery/docs/`                           | Current requirements/design/contracts and retained research/evidence readers                                       |
-| `src/public/lib/nbgv-python/` and `src/sample/nbgv-hatch-demo/`     | Independent public NBGV component and sample, retaining their own consumers and authorities                        |
+| Owner                                                                                                                                                     | Responsibility                                                                                                     |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| [CLI](../WorkflowDelivery.csproj)                                                                                                                         | Static command registration, native integration binding, Actions inputs and transfer serialization                 |
+| [Decision core](../Core/WorkflowDelivery.Core.csproj)                                                                                                     | Paired CI impact and obligation contracts; Release operation, observation, admission and receipt rules             |
+| [Engine](../Engine/WorkflowDelivery.Engine.csproj)                                                                                                        | CI planning and two-level receipt collection; the destination-neutral Release publication window                   |
+| [Ecosystems](../Ecosystems/)                                                                                                                              | Separate .NET, Node, Python and Ruby native fact and qualification providers                                       |
+| [Native destinations](../Destinations/WorkflowDelivery.Destinations.csproj) and [NuGet](../Destinations/NuGet/WorkflowDelivery.Destinations.NuGet.csproj) | Registry, GitHub Release and browser-store clients; only the NuGet destination links the publishing SDK            |
+| [Release ports](../Release/Ports/WorkflowDelivery.Release.Ports.csproj) and [HTTP](../Destinations/Http/WorkflowDelivery.Destinations.Http.csproj)        | Portable coordinates and receipts shared by the host and clients; bounded transport with no registry SDK           |
+| `tests/private/app/workflow-delivery/WorkflowDelivery.Tests.csproj`                                                                                       | Managed scenario, algorithm, transfer and native integration tests                                                 |
+| `tests/private/app/workflow-delivery/Native/{Python,Ruby}/`                                                                                               | Tests of the corresponding native-language helpers                                                                 |
+| `tests/private/app/workflow-delivery/fixtures/products/`                                                                                                  | Four ordinary npm, NuGet, Python and Ruby inputs, with native manifests, versions and quality/release declarations |
+| `src/private/app/workflow-delivery/docs/`                                                                                                                 | Current requirements/design/contracts and retained research/evidence readers                                       |
+| `src/public/lib/nbgv-python/` and `src/sample/nbgv-hatch-demo/`                                                                                           | Independent public NBGV component and sample, retaining their own consumers and authorities                        |
 
 Native fixtures retain their package coordinates but have no old/new byte or
 version continuity promise. Preserve their deliberate native version bases,

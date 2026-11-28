@@ -4,7 +4,7 @@
 # ///
 """Dispatch one ordinary per-unit Release caller run per entry and await them.
 
-Each entry is ``CALLER:INPUT=VALUE,...`` and must give every declared
+Each entry is ``CALLER:INPUT=VALUE,...`` and must give every required
 ``workflow_dispatch`` input of
 ``.github/workflows/workflow-delivery-v3-CALLER-release.yml``, including
 ``dry-run``. All entries are validated before any dispatch. Every run keeps its
@@ -140,8 +140,11 @@ def parse_entry(text: str, known: dict[str, dict]) -> Run:
             raise EntryError(message)
         _validate_input_value(text, caller, key, value, declared[key])
         inputs[key] = value
-    # Defaults are not applied: every input, including dry-run, is explicit.
-    missing = [key for key in declared if key not in inputs]
+    missing = [
+        key
+        for key, spec in declared.items()
+        if key not in inputs and (spec.get("required") or key == "dry-run")
+    ]
     if missing:
         message = f"{text!r}: missing inputs {missing}"
         raise EntryError(message)

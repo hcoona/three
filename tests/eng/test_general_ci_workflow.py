@@ -1365,15 +1365,25 @@ def test_native_preparation_provisions_selected_tools_and_retains_failures(
         "steps.plan.outputs.python == 'true' || "
         "steps.plan.outputs.ruby == 'true' || "
         "steps.plan.outputs.node == 'true' || "
-        "steps.plan.outputs.browser == 'true'"
+        "steps.plan.outputs.browser == 'true' || "
+        "steps.plan.outputs.models != 'none'"
     )
     assert " ".join(setup["with"]["install_args"].split()) == (
         "--jobs 1 dotnet "
         "${{ steps.plan.outputs.python == 'true' && 'python uv' || '' }} "
         "${{ steps.plan.outputs.ruby == 'true' && 'ruby' || '' }} "
         "${{ (steps.plan.outputs.node == 'true' || "
-        "steps.plan.outputs.browser == 'true') && 'node pnpm' || '' }}"
+        "steps.plan.outputs.browser == 'true') && 'node pnpm' || '' }} "
+        "${{ steps.plan.outputs.models != 'none' && "
+        "'java github:tlaplus/tlaplus' || '' }}"
     )
+    models = next(
+        s
+        for s in job["steps"]
+        if "check_workflow_delivery_models.py" in s.get("run", "")
+    )
+    assert _normalized_if(models["if"]) == "steps.plan.outputs.models != 'none'"
+    assert not models.get("continue-on-error")
     skipped = next(
         s
         for s in job["steps"]
@@ -1477,8 +1487,11 @@ def test_nuget_reproducibility_runs_on_dispatch_and_main_changes(workflow):
         "stylecop.json",
         ".editorconfig",
         "src/private/app/workflow-delivery/Release/NuGet*.cs",
+        "src/private/app/workflow-delivery/Release/UnitPreparation.cs",
+        "src/private/app/workflow-delivery/Core/UnitOriginals.cs",
+        "src/private/app/workflow-delivery/Ecosystems/DotNet/**",
         "src/private/app/workflow-delivery/Ecosystems/ReleaseUnitCatalog.cs",
-        "src/private/app/workflow-delivery/Destinations/*NuGet*.cs",
+        "src/private/app/workflow-delivery/Destinations/NuGet/**",
         (
             "tests/private/app/workflow-delivery/fixtures/products/"
             "hcoona-release-smoke-github-packages/**"
@@ -1733,7 +1746,12 @@ def test_retired_buddy_routes_stay_absent_and_v3_buddy_stays_dedicated():
             assert not (workflows / (name + suffix)).exists(), name + suffix
     buddy = _workflow("workflow-delivery-v3-npm-release")
     assert "workflow_dispatch" in buddy.get("on", buddy.get(True))
-    assert not any("uses" in job for job in buddy["jobs"].values())
+    gate = "./.github/workflows/workflow-delivery-v3-anchor-gate.yml"
+    assert {
+        name: job["uses"]
+        for name, job in buddy["jobs"].items()
+        if "uses" in job
+    } == {"anchor-gate": gate}
 
 
 def test_hk_scope_drift_reads_the_profiles_ci_runs():

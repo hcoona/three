@@ -27,13 +27,13 @@ public sealed class DotNetTestTask : ITask
     public string RequestFile { get; set; } = "";
 
     internal static string Receipt(string destination, int index) =>
-        Path.Combine(destination, "entry-" + index + ".json");
+        DotNetTaskHost.TestReceipt(destination, index);
 
     public bool Execute()
     {
         string requestText = File.ReadAllText(RequestFile);
         DotNetTestRequest request = JsonSerializer.Deserialize(requestText,
-            TransferJson.Default.DotNetTestRequest)
+            DotNetNativeJson.Default.DotNetTestRequest)
             ?? throw new InvalidDataException("Missing native test request.");
         Directory.CreateDirectory(request.Destination);
         using var collection = new ProjectCollection();
@@ -117,7 +117,8 @@ public sealed class DotNetTestTask : ITask
         string partial = receipt + ".partial";
         using (var output = new FileStream(partial, FileMode.CreateNew, FileAccess.Write,
                    FileShare.None))
-            JsonSerializer.Serialize(output, result, TransferJson.Default.DotNetTestEntryResult);
+            JsonSerializer.Serialize(
+                output, result, DotNetNativeJson.Default.DotNetTestEntryResult);
         File.Move(partial, receipt);
     }
 

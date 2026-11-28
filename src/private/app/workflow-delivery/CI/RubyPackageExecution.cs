@@ -82,8 +82,12 @@ internal static class RubyPackageExecution
                     {
                         if (kind == RubyPackageChecks.Build)
                         {
+                            RubySourceGemFacts source = await RubySourceCollector.ReadSourceAsync(
+                                checkout, subject.EntryPoint, request.Facts, request.Nbgv,
+                                ExecuteAsync, token);
                             original = await operations.BuildAsync(checkout, subject.Directory,
-                                subject.EntryPoint, subject.ExpectedVersion, ExecuteAsync, token);
+                                subject.EntryPoint, subject.ExpectedVersion, source, ExecuteAsync,
+                                token);
                             gems.Add(new(subject, original.Path, original.Length, original.Sha256));
                         }
                         else if (kind == RubyPackageChecks.Contents)

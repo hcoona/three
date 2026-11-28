@@ -1,4 +1,4 @@
-using WorkflowDelivery.CI;
+using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Repository;
 
@@ -112,7 +112,7 @@ internal static class RubyDependencyProjection
             throw new InvalidDataException("Ruby coordinates require absolute native paths.");
         string relative = Path.GetRelativePath(root, Path.GetFullPath(path))
             .Replace(Path.DirectorySeparatorChar, '/');
-        if (relative != ".") ImpactPlanner.ValidatePath(relative);
+        if (relative != ".") OwnedPath.RequireRepositoryRelative(relative);
         return relative;
     }
 

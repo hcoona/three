@@ -32,7 +32,8 @@ public sealed class PythonNativePublisherTests(TestContext context)
         };
         using var masks = new StringWriter();
         int calls = 0;
-        PythonPublishResult result = await PythonNativePublisher.PublishAsync(prepared,
+        PythonPublishResult result = await PythonNativePublisher.PublishAsync(
+            DestinationBindings.Python(prepared),
             fixture.Originals, output, fixture.Tools, fixture.Platform, masks, (command, _) =>
             {
                 calls++;
@@ -99,7 +100,8 @@ public sealed class PythonNativePublisherTests(TestContext context)
             "token " + Oidc + "\n::add-mask::second-secret\n", 4.25,
             "unsafe " + Oidc);
         int calls = 0;
-        PythonPublishResult result = await PythonNativePublisher.PublishAsync(fixture.Prepared,
+        PythonPublishResult result = await PythonNativePublisher.PublishAsync(
+            DestinationBindings.Python(fixture.Prepared),
             fixture.Originals, "wheel", fixture.Tools, fixture.Platform, masks, (_, _) =>
                 { calls++; return Task.FromResult(native); }, context.CancellationToken);
 
@@ -187,7 +189,8 @@ public sealed class PythonNativePublisherTests(TestContext context)
     {
         using var masks = new StringWriter();
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            PythonNativePublisher.PublishAsync(prepared, fixture.Originals, output,
+            PythonNativePublisher.PublishAsync(
+                DestinationBindings.Python(prepared), fixture.Originals, output,
                 tools ?? fixture.Tools, fixture.Platform, masks, (_, _) =>
                     throw new AssertFailedException("Unexpected native writer."),
                 context.CancellationToken));
@@ -214,7 +217,8 @@ public sealed class PythonNativePublisherTests(TestContext context)
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
         await Assert.ThrowsExactlyAsync<OperationCanceledException>(() =>
-            PythonNativePublisher.PublishAsync(fixture.Prepared, fixture.Originals, "wheel",
+            PythonNativePublisher.PublishAsync(
+                DestinationBindings.Python(fixture.Prepared), fixture.Originals, "wheel",
                 fixture.Tools, fixture.Platform, masks, (_, _) =>
                     throw new AssertFailedException("Unexpected native writer."), cancelled.Token));
 
@@ -226,7 +230,8 @@ public sealed class PythonNativePublisherTests(TestContext context)
     {
         using var fixture = new Fixture();
         using var masks = new FailedWriter();
-        PythonPublishResult result = await PythonNativePublisher.PublishAsync(fixture.Prepared,
+        PythonPublishResult result = await PythonNativePublisher.PublishAsync(
+            DestinationBindings.Python(fixture.Prepared),
             fixture.Originals, "wheel", fixture.Tools, fixture.Platform, masks, (_, _) =>
                 Task.FromResult(new NativeCommandResult(NativeTermination.Exited, 0,
                     "::add-mask::" + Secret + "\n", "", 2.5, null)), context.CancellationToken);
