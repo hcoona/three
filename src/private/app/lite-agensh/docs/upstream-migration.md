@@ -33,18 +33,37 @@ surfaces; runtime behavior still requires [validation](validation.md) evidence:
 - **SQLite (`Microsoft.Data.Sqlite`):** [Transactions][sqlite-transactions],
   [busy timeouts][sqlite-errors], and [synchronous ADO.NET execution][sqlite-async]
   provide single-writer ACID serialization and WAL reader concurrency without
-  parallel writers.
+  parallel writers. The [locked provider](../packages.lock.json) selects
+  `Microsoft.Data.Sqlite` 11.0.0 with `SQLitePCLRaw.bundle_e_sqlite3` 3.0.5;
+  Microsoft's [bundle description][sqlite-bundle] includes FTS5. SQLite
+  documents the [external-content index and query grammar][sqlite-fts5];
+  maintaining the index in the event transaction is LiteAgensh's responsibility.
+- **Git:** The [`update-ref --stdin` manual][git-ref-tx] specifies expected-old
+  OIDs, locking at `prepare`, and automatic abort on session end without an
+  explicit `commit`. The [implementation][git-ref-eof] distinguishes EOF in a
+  started/prepared transaction from the implicit transaction mode. This is
+  the basis for the ref guards in the design, not an observation of crash
+  recovery on a supported host.
 - **Copilot `.NET` SDK (`GitHub.Copilot.SDK`):** Initial ACP experimentation on
   CLI `1.0.105` failed (`--acp` rejected with `--usage-output-file`,
   [PR #1530 counterexample](https://github.com/hcoona/three/pull/1530#issuecomment-6622441256)).
-  The retained baseline [SDK v1.0.28][sdk] (`fa108e71ee3025663e0dac20f2a071055d3a6b14`,
-  [NuGet archive][sdk-package] SHA-256
-  `29A9EF27B3ABE58CB056CF47E6733B93B70F2DC58D5A02BC0344F6ED277B9E8A`) documents
-  headless `RuntimeConnection.ForUri` attachment, multiple independent sessions
-  per client, `ResumeSessionConfig` (`ContinuePendingWork = false`,
-  `AllowTranscriptRecovery = false`), `SessionLimitsConfig.MaxAiCredits` soft
-  caps, metadata readback, and cumulative `UsageGetMetricsResult` (`TotalNanoAiu / 10^9`,
-  `AiCreditsStatus.Complete`).
+  The lock moved from the earlier interface baseline `1.0.28` to `1.0.34`.
+  Rechecked the [released NuGet archive][sdk-package] (SHA-256
+  `640af39c65e5b47e67a7740ff2436d4c71068ff250a41668eb5a1bdd391e733b`),
+  particularly `lib/net10.0/GitHub.Copilot.SDK.xml`. Its nuspec identifies
+  `github/copilot-agent-runtime` commit `24d885babba905a2901e0dedd8303e139c9d0323`;
+  the public SDK source links below are the `v1.0.34` mirror at
+  `adf1da2c6db766f96ae6be36f3224e61ede010c4`, not that build commit.
+  The package exposes `RuntimeConnection.ForUri`, session create/resume,
+  [resume controls][sdk-resume] (`ContinuePendingWork`, `AllowTranscriptRecovery`),
+  [session-scoped ephemeral MCP start with caller-supplied config][sdk-mcp],
+  and [metrics on an opened session][sdk-metrics]. `GetSessionMetadataAsync`
+  is an ID lookup, not a detached meter. `SessionLimitsConfig.MaxAiCredits`
+  is a **current-window** cap; `UsageGetMetricsResult.TotalNanoAiu` is
+  **session-wide**. `AiCreditsStatus.Complete` means every observed call
+  supplied an amount (including explicit zero). These declarations do not
+  prove that cold resume is idle, that a helper registered exactly once, or
+  that an interrupted turn's last cost is observable before teardown.
 - **Installed Copilot CLI provenance:** Version/help rechecks observed CLI
   [`1.0.107`][cli107] (`841e7a57ba6ec683d710826c113f3c0cdd8f0940`, binary
   SHA-256 `cd7f9eab17576455a0f6e33315150e33215dea0482f3cb629349a3bf4e14c29f` on
@@ -73,8 +92,14 @@ as the fallback review).
 [sqlite-transactions]: https://learn.microsoft.com/dotnet/standard/data/sqlite/transactions
 [sqlite-errors]: https://learn.microsoft.com/dotnet/standard/data/sqlite/database-errors
 [sqlite-async]: https://learn.microsoft.com/dotnet/standard/data/sqlite/async
-[sdk]: https://github.com/github/copilot-sdk/blob/fa108e71ee3025663e0dac20f2a071055d3a6b14/dotnet/src/Generated/Rpc.cs
-[sdk-package]: https://api.nuget.org/v3-flatcontainer/github.copilot.sdk/1.0.28/github.copilot.sdk.1.0.28.nupkg
+[sqlite-bundle]: https://learn.microsoft.com/dotnet/standard/data/sqlite/custom-versions#bundles
+[sqlite-fts5]: https://www.sqlite.org/fts5.html
+[git-ref-tx]: https://git-scm.com/docs/git-update-ref/2.50.0
+[git-ref-eof]: https://github.com/git/git/blob/v2.51.0/builtin/update-ref.c#L716-L742
+[sdk-package]: https://api.nuget.org/v3-flatcontainer/github.copilot.sdk/1.0.34/github.copilot.sdk.1.0.34.nupkg
+[sdk-resume]: https://github.com/github/copilot-sdk/blob/adf1da2c6db766f96ae6be36f3224e61ede010c4/dotnet/src/Types.cs#L5351-L5377
+[sdk-mcp]: https://github.com/github/copilot-sdk/blob/adf1da2c6db766f96ae6be36f3224e61ede010c4/dotnet/src/Generated/Rpc.cs#L73446-L73457
+[sdk-metrics]: https://github.com/github/copilot-sdk/blob/adf1da2c6db766f96ae6be36f3224e61ede010c4/dotnet/src/Generated/Rpc.cs#L77016-L77033
 [mcp240-release]: https://github.com/modelcontextprotocol/csharp-sdk/releases/tag/v2.4.0
 [mcp240-package]: https://api.nuget.org/v3-flatcontainer/modelcontextprotocol/2.4.0/modelcontextprotocol.2.4.0.nupkg
 [mcp240-core-package]: https://api.nuget.org/v3-flatcontainer/modelcontextprotocol.core/2.4.0/modelcontextprotocol.core.2.4.0.nupkg
