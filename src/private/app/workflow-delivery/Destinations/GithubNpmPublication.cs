@@ -1,27 +1,24 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Destinations;
 
-internal static partial class GithubNpmPublication
+internal static class GithubNpmPublication
 {
-    internal static async Task<ReleasePublicationResult> PublishAsync(PreparedRelease prepared,
+    internal static NpmPublishSession Bind(PackageDestination prepared,
         string originals, string scratch, string toolchain, string credential,
-        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-        Func<PreparedRelease, string, CancellationToken, Task<ReleaseObservationResult>> observe,
-        CancellationToken token)
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute)
     {
         if (prepared.Subject.DryRun)
             throw new InvalidDataException("Unsupported live GitHub npm request.");
         _ = GithubNpmObservation.Package(prepared);
-        return await GithubNpmRuntime.PublishCoreAsync(prepared,
-            prepared.Files[0], originals, scratch, toolchain, execute,
-            cancellation => observe(prepared, credential, cancellation), ConfigureEnvironment,
+        LiveReleaseRef.RequireEligible(prepared.Subject);
+        return new(prepared.Files[0], originals, scratch, toolchain, execute, ConfigureEnvironment,
             ["--registry", GithubNpmObservation.Registry, "--tag",
-                "buddy-sha-" + prepared.Subject.Revision], 120, token,
+                "buddy-sha-" + prepared.Subject.Revision], 120,
             userConfig: "@hcoona:registry=https://npm.pkg.github.com\n"
                 + "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}\n",
             packageJson: "{\"name\":\"workflow-delivery-consumer\",\"private\":true}\n");
@@ -39,77 +36,63 @@ internal static partial class GithubNpmPublication
 
 internal sealed record GithubNpmToolSelection(string Node, string Npm);
 
-internal static partial class GithubNpmRuntime
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    RespectNullableAnnotations = true, RespectRequiredConstructorParameters = true,
+    UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow)]
+[JsonSerializable(typeof(GithubNpmToolSelection))]
+internal partial class NpmToolJson : JsonSerializerContext;
+
+internal sealed partial class NpmPublishSession(ReleaseFile original, string originals,
+    string scratch, string toolchain, Func<NativeCommand, CancellationToken,
+        Task<NativeCommandResult>> execute, Func<Dictionary<string, string?>, string>
+        configureEnvironment, string[] publishOptions, int deadlineSeconds,
+    bool closeStandardInput = false, string userConfig = "", string? packageJson = null,
+    (Version Node, Version Npm)? minimumVersions = null)
 {
-    internal static async Task<ReleasePublicationResult> PublishCoreAsync(
-        PreparedRelease prepared, ReleaseFile file, string originals, string scratch,
-        string toolchain, Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-        Func<CancellationToken, Task<ReleaseObservationResult>> observe,
-        Func<Dictionary<string, string?>, string> configureEnvironment,
-        string[] publishOptions, int deadlineSeconds, CancellationToken token,
-        bool closeStandardInput = false, string userConfig = "", string? packageJson = null,
-        (Version Node, Version Npm)? minimumVersions = null)
+    private (Dictionary<string, string?> Environment, string Secret)? runtime;
+
+    internal async Task RequireRuntimeAsync(CancellationToken cancel)
     {
-        string archive = Path.Combine(originals, file.Path);
-        if (await NpmPackageOperations.OriginalAsync(archive, token) != (file.Size, file.Sha256))
-            throw new InvalidDataException("Publication original differs from preparation.");
-        var (environment, secretToRedact) = await PrepareAsync(scratch, toolchain,
-            configureEnvironment, userConfig, packageJson, token);
+        if (runtime is not null) return;
+        var selected = await PrepareAsync(scratch, toolchain, configureEnvironment,
+            userConfig, packageJson, cancel);
         foreach (var (executable, expected) in SelectedVersions(toolchain))
         {
-            NativeCommandResult query = await execute(Command(executable, ["--version"], 20),
-                token);
+            NativeCommandResult query = await execute(Command(executable, ["--version"], 20,
+                selected.Environment), cancel);
             if (!query.Succeeded || query.Stdout.Trim() != expected)
                 throw new InvalidDataException("Unavailable qualified native publisher toolchain.");
             if (minimumVersions is { } minimum && Version.Parse(expected.TrimStart('v')) <
                 (executable == "npm" ? minimum.Npm : minimum.Node))
                 throw new InvalidDataException("Selected npm tools cannot use trusted publishing.");
         }
-        ReleaseObservationResult before = await observe(token);
-        ReleaseFileState state = ValidateObservation(prepared, file, before.Observation);
-        if (state == ReleaseFileState.Exact)
-            return new(prepared.Subject, before, [], before, []);
-        if (state != ReleaseFileState.Absent || before.Observation.Checks.Any(check =>
-                check.Status != ReleaseCheckStatus.Passed))
-            return new(prepared.Subject, before, [], before,
-                ["Current destination state does not permit native creation."]);
-        // Recheck the actual original at the write boundary. The platform owns approval.
-        if (await NpmPackageOperations.OriginalAsync(archive, token) != (file.Size, file.Sha256))
-            throw new InvalidDataException("Publication original changed before upload.");
+        runtime = selected;
+    }
+
+    internal async Task<ReleaseWriteStep> PublishAsync(ReleaseFile file, CancellationToken cancel)
+    {
+        if (file != original || runtime is not { } selected)
+            throw new InvalidDataException("Missing qualified npm publisher runtime or original.");
+        string archive = OwnedPath.ResolveWithin(originals, file.Path,
+            "Original npm directory must be absolute.", "Original npm path leaves its root.");
+        OwnedFile.Verify(archive, file.Size, file.Sha256, "Transferred npm original differs.");
+        cancel.ThrowIfCancellationRequested();
         NativeCommandResult actual = await execute(Command("npm",
             ["publish", archive, .. publishOptions, "--ignore-scripts", "--fetch-retries=0"],
-            deadlineSeconds), token);
-        ReleaseWriteStep[] steps = [ReleaseWriteStep.FromUpload(
-            new(file.Output, Sanitize(actual, secretToRedact)))];
-        // A handled abnormal native outcome permits reads, never another upload.
-        ReleaseObservationResult after = await observe(token);
-        ValidateObservation(prepared, file, after.Observation);
-        return new(prepared.Subject, before, steps, after, []);
-
-        NativeCommand Command(string executable, string[] arguments, int seconds) =>
-            new(Path.Combine(toolchain, executable), scratch, arguments, seconds,
-                environment, InheritEnvironment: false, CloseStandardInput: closeStandardInput);
+            deadlineSeconds, selected.Environment), cancel);
+        return ReleaseWriteStep.FromUpload(new(file.Output, Sanitize(actual, selected.Secret)));
     }
 
-    private static ReleaseFileState ValidateObservation(PreparedRelease prepared, ReleaseFile file,
-        ReleaseObservation observation)
-    {
-        if (observation.Subject != prepared.Subject || observation.Files is not [var observed] ||
-            observed.Output != file.Output || observed.Name != file.Name ||
-            observed.Version != file.Version)
-            throw new InvalidDataException("Mismatched native publication observation.");
-        if (observed.State == ReleaseFileState.Exact &&
-            (observed.Size != file.Size || observed.Sha256 != file.Sha256))
-            throw new InvalidDataException(
-                "Exact native publication observation differs from original.");
-        return observed.State;
-    }
+    private NativeCommand Command(string executable, string[] arguments, int seconds,
+        Dictionary<string, string?> environment) => new(Path.Combine(toolchain, executable),
+            scratch, arguments, seconds, environment, InheritEnvironment: false,
+            CloseStandardInput: closeStandardInput);
 
-    internal static (string Executable, string Expected)[] SelectedVersions(string toolchain)
+    private static (string Executable, string Expected)[] SelectedVersions(string toolchain)
     {
         var selected = JsonSerializer.Deserialize(File.ReadAllText(
             Path.Combine(toolchain, "selected-tools.json")),
-                TransferJson.Default.GithubNpmToolSelection)
+                NpmToolJson.Default.GithubNpmToolSelection)
             ?? throw new InvalidDataException("Missing selected native npm tools.");
         foreach (string version in new[] { selected.Node, selected.Npm })
             if (!Version.TryParse(version, out Version? parsed) || parsed.Build < 0 ||
@@ -147,19 +130,23 @@ internal static partial class GithubNpmRuntime
         return (environment, secretToRedact);
     }
 
-    internal static NativeCommandResult Sanitize(NativeCommandResult result, string credential) =>
-        result with
+    private NativeCommandResult Sanitize(NativeCommandResult result, string credential)
+    {
+        return result with
         {
-            Stdout = CleanValue(result.Stdout, credential),
-            Stderr = CleanValue(result.Stderr, credential),
-            Error = result.Error is null ? null : CleanValue(result.Error, credential)
+            Stdout = CleanValue(result.Stdout),
+            Stderr = CleanValue(result.Stderr),
+            Error = result.Error is null ? null : CleanValue(result.Error)
         };
 
-    private static string CleanValue(string value, string credential)
-    {
-        string sanitized = SignedUrl().Replace(value.Replace(credential, "[redacted]",
-            StringComparison.Ordinal), "[url]");
-        return sanitized.Length <= 4096 ? sanitized : sanitized[..4096] + " [truncated]";
+        string CleanValue(string value)
+        {
+            string sanitized = SignedUrl().Replace(value.Replace(credential, "[redacted]",
+                StringComparison.Ordinal), "[url]");
+            foreach (string directory in new[] { originals, scratch, toolchain })
+                sanitized = sanitized.Replace(directory, "[path]", OwnedPath.Comparison);
+            return sanitized.Length <= 4096 ? sanitized : sanitized[..4096] + " [truncated]";
+        }
     }
 
     [GeneratedRegex(@"https?://[^\s\""'<>]+", RegexOptions.IgnoreCase)]

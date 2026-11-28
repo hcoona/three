@@ -25,7 +25,7 @@ public sealed class DotNetBuildTask : ITask
     public bool Execute()
     {
         DotNetBuildRequest request = JsonSerializer.Deserialize(File.ReadAllText(RequestFile),
-            TransferJson.Default.DotNetBuildRequest)
+            DotNetNativeJson.Default.DotNetBuildRequest)
             ?? throw new InvalidDataException("Missing native build request.");
         using var collection = new ProjectCollection();
         var graph = new ProjectGraph(request.Entries.Select(entry =>
@@ -56,7 +56,7 @@ public sealed class DotNetBuildTask : ITask
         using var output = new FileStream(request.Destination, FileMode.CreateNew,
             FileAccess.Write, FileShare.None);
         JsonSerializer.Serialize(output, new DotNetBuildResponse(entries),
-            TransferJson.Default.DotNetBuildResponse);
+            DotNetNativeJson.Default.DotNetBuildResponse);
         return true;
     }
 }

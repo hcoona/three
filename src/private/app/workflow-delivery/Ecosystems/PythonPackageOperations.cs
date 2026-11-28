@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using WorkflowDelivery.Core;
 using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Ecosystems;
@@ -7,15 +9,22 @@ internal sealed record PythonPackageTools(string Checkout, string Scratch, strin
     string Interpreter, string Helper, int DeadlineSeconds,
     IReadOnlyDictionary<string, string?> Environment, bool InheritEnvironment = true);
 internal sealed record PythonDistribution(string Kind, string Path, long Length, string Sha256);
+internal sealed record PythonPackageRecipe(string Id, string ProjectDirectory, bool StaticVersion,
+    bool RuntimeClosure, string? Tests, string[] Api);
+
+[JsonSourceGenerationOptions(WriteIndented = true)]
+[JsonSerializable(typeof(string[]))]
+internal partial class PythonPackageJson : JsonSerializerContext;
 
 // Native operations for registered Python distributions; no CI planning or Release completion.
-internal sealed class PythonPackageOperations(PythonReleaseUnit unit, PythonPackageTools tools,
+internal sealed class PythonPackageOperations(PythonPackageRecipe unit, PythonPackageTools tools,
     string root)
 {
     internal const string Preset = "python/hcoona-release-smoke-python-v1";
     private string ProjectPath => Path.Combine(tools.Checkout, unit.ProjectDirectory);
 
-    private string ApiJson => JsonSerializer.Serialize(unit.Api, TransferJson.Default.StringArray);
+    private string ApiJson =>
+        JsonSerializer.Serialize(unit.Api, PythonPackageJson.Default.StringArray);
     private readonly string archives = Path.Combine(root, "archives");
     private readonly string python = Python(Path.Combine(root, "tools"));
     private readonly Dictionary<string, string?> environment = new(tools.Environment,
@@ -28,6 +37,32 @@ internal sealed class PythonPackageOperations(PythonReleaseUnit unit, PythonPack
         ["PYTHONHOME"] = null,
         ["VIRTUAL_ENV"] = null,
     };
+
+    internal async Task<QualifiedUnitOriginals?> QualifyAsync(UnitBuildSubject subject,
+        string name, string version, RecordNativeCheck check,
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token)
+    {
+        PythonDistribution[] originals = [];
+        QualifiedUnitOriginals? result = null;
+        await check(
+            "build", async () => originals = await BuildAsync(name, version, execute, token));
+        await check("contents", () => ContentsAsync(originals, name, version, execute, token));
+        await check("wheel-consumer", () => ConsumeAsync("python-wheel", originals, name,
+            version, execute, token));
+        await check("sdist-consumer", () => ConsumeAsync("python-sdist", originals, name,
+            version, execute, token));
+        if (unit.Tests is not null) await check("tests", () => TestReleaseAsync(execute, token));
+        await check("original-bytes", () =>
+        {
+            foreach (PythonDistribution original in originals) RequireOriginal(original);
+            result = subject.Complete([.. originals.Select(original => new UnitOriginal(
+                subject.ForKind(original.Kind), name, version, original.Path, original.Length,
+                original.Sha256))]);
+            return Task.CompletedTask;
+        });
+        return result;
+    }
 
     internal static void RequireGitFreeScratch(string scratch,
         string message = "Python consumers require Git-free scratch.")

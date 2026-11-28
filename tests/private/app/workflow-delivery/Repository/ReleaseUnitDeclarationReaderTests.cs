@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using WorkflowDelivery.Repository;
 using YamlDotNet.Core;
@@ -89,10 +90,43 @@ public sealed class ReleaseUnitDeclarationReaderTests
             "nested/package.json",
             [new("z-output", "primary-package", "custom-binary"),
              new("a-output", "source-package", "source-archive")]);
-        Assert.AreEqual(new ReleaseQualificationSpec(Probe: "runProbe()",
-            TestBeforeBuild: true), result.Builds[0].Qualification);
+        InventoryQualification inventory = Assert.IsInstanceOfType<InventoryQualification>(
+            result.Builds[0].Qualification);
+        Assert.AreEqual("runProbe()", Assert.ContainsSingle(inventory.Fields["probe"]));
+        Assert.AreEqual("true", Assert.ContainsSingle(inventory.Fields["test-before-build"]));
         AssertBuild(result.Builds[1], "a-build", "another/native-definition", ".",
             [new("second-output", "primary-package", "other-package")]);
+    }
+
+    [TestMethod]
+    public void ConcreteNpmQualificationSurvivesTransferWithoutOtherRecipeOptions()
+    {
+        string declaration = Declaration.Replace("native/build-v1",
+            "node/npm-package-v1, qualification: {probe: 'runProbe()', test-before-build: true}",
+            StringComparison.Ordinal);
+        ReleaseUnitDeclaration parsed = ReleaseUnitDeclarationReader.Read(declaration, Source);
+        string transfer = JsonSerializer.Serialize(
+            parsed, TransferJson.Default.ReleaseUnitDeclaration);
+        ReleaseUnitDeclaration? received = JsonSerializer.Deserialize(transfer,
+            TransferJson.Default.ReleaseUnitDeclaration);
+
+        Assert.IsNotNull(received);
+        Assert.AreEqual(new NpmQualification("runProbe()", true), received.Builds[0].Qualification);
+        Assert.DoesNotContain("staticVersion", transfer);
+    }
+
+    [TestMethod]
+    [DataRow("node/npm-package-v1", "probe: run, static-version: true")]
+    [DataRow("ruby/gem-v1", "require: no-probe")]
+    [DataRow("python/distribution-set-v1", "rspec: true")]
+    [DataRow("dotnet/nuget-package-v1", "manifest-name: extension")]
+    public void ConcreteRecipeRejectsInapplicableOrMissingQualification(string definition,
+        string fields)
+    {
+        string declaration = Declaration.Replace("native/build-v1",
+            $"{definition}, qualification: {{{fields}}}", StringComparison.Ordinal);
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            ReleaseUnitDeclarationReader.Read(declaration, Source));
     }
 
     [TestMethod]

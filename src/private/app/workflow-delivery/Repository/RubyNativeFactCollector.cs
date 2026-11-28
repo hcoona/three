@@ -64,7 +64,7 @@ internal sealed class RubyNativeFactCollector
         {
             await File.WriteAllTextAsync(request,
                 JsonSerializer.Serialize(new RubyFactRequest(operation, path, raw),
-                    TransferJson.Default.RubyFactRequest), token);
+                    RubyFactJson.Default.RubyFactRequest), token);
             var environment = new Dictionary<string, string?>(tools.Environment,
                 StringComparer.Ordinal);
             string[] arguments;

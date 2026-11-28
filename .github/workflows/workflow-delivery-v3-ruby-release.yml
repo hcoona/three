@@ -170,8 +170,16 @@ jobs:
         run: |-
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby source-config initial-observation-scratch
-          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/source-tools.json" > "$RUNNER_TEMP/observation/observation.json"
-          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-anchor "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/anchor-observation.json"
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/source-tools.json" > "$RUNNER_TEMP/observation/observation.json" || {
+            status=$?
+            if [ "$status" -ne 1 ] || [ "$DRY_RUN" = true ]; then exit "$status"; fi
+            : > "$RUNNER_TEMP/primary-observation-refused"
+          }
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-anchor "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/observation/anchor-observation.json" || {
+            status=$?
+            if [ "$status" -ne 1 ] || [ "$DRY_RUN" = true ]; then exit "$status"; fi
+            : > "$RUNNER_TEMP/anchor-observation-refused"
+          }
       - name: Expose required write and describe dry run
         run: |-
           set -Eeuo pipefail
@@ -373,6 +381,22 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
     outputs:
       publication-id: ${{ steps.retain.outputs.artifact-id }}
+  anchor-gate:
+    needs: [prepare, observe, publish-ruby-rubygems]
+    if: >-
+      always() && !cancelled() && inputs.destination == 'rubygems' && inputs.dry-run == false &&
+      needs.prepare.result == 'success' && needs.observe.result == 'success' &&
+      needs.publish-ruby-rubygems.result != 'cancelled' && needs.observe.outputs.anchor-write-needed == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/workflow-delivery-v3-anchor-gate.yml
+    with:
+      control-id: ${{ needs.prepare.outputs.control-id }}
+      preparation-id: ${{ needs.prepare.outputs.preparation-id }}
+      observation-id: ${{ needs.observe.outputs.observation-id }}
+      publication-id: ${{ needs.publish-ruby-rubygems.outputs.publication-id }}
+      dotnet: ${{ needs.prepare.outputs.dotnet }}
+      dotnet-frameworks: ${{ needs.prepare.outputs.dotnet-frameworks }}
   publish-github-anchor:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -450,11 +474,8 @@ jobs:
       - prepare
       - observe
       - publish-ruby-rubygems
-    if: >-
-      always() && !cancelled() && inputs.destination == 'rubygems' && inputs.dry-run == false &&
-      needs.prepare.result == 'success' && needs.observe.result == 'success' &&
-      needs.publish-ruby-rubygems.result != 'failure' && needs.publish-ruby-rubygems.result != 'cancelled' &&
-      needs.observe.outputs.anchor-write-needed == 'true'
+      - anchor-gate
+    if: always() && !cancelled() && needs.anchor-gate.result == 'success' && needs.anchor-gate.outputs.permitted == 'true'
     env:
       GITHUB_TOKEN: ${{ github.token }}
     outputs:
@@ -521,14 +542,21 @@ jobs:
         if:
           needs.publish-ruby-github-packages.outputs.publication-id != '' || needs.publish-ruby-rubygems.outputs.publication-id
           != ''
+        id: primary-receipt
+        continue-on-error: true
       - name: Download anchor publication by immutable artifact ID
+        id: anchor-receipt
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           artifact-ids: ${{ needs.publish-github-anchor.outputs.anchor-id }}
           path: ${{ runner.temp }}/anchor-publication
           digest-mismatch: error
         if: needs.publish-github-anchor.outputs.anchor-id != ''
+        continue-on-error: true
       - name: Verify native source original and complete final native state
+        env:
+          PRIMARY_RECEIPT_OUTCOME: ${{ steps.primary-receipt.outcome }}
+          ANCHOR_RECEIPT_OUTCOME: ${{ steps.anchor-receipt.outcome }}
         run: |-
           set -Eeuo pipefail
           "$DOTNET_EXECUTABLE" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs ruby source-config final-observation-scratch
@@ -540,14 +568,18 @@ jobs:
           mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-anchor "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" "$RUNNER_TEMP/verification/anchor-final.json" || anchor_status=$?
           if [ "$anchor_status" -gt 1 ]; then exit "$anchor_status"; fi
           publication=-
-          if [ -s "$RUNNER_TEMP/publication/publication.json" ]; then publication="$RUNNER_TEMP/publication/publication.json"; fi
+          if [ "$PRIMARY_RECEIPT_OUTCOME" = success ] && [ -s "$RUNNER_TEMP/publication/publication.json" ]; then publication="$RUNNER_TEMP/publication/publication.json"; fi
           anchor_initial=-
           if [ -s "$RUNNER_TEMP/observation/anchor-observation.json" ]; then anchor_initial="$RUNNER_TEMP/observation/anchor-observation.json"; fi
           anchor_final=-
           if [ -s "$RUNNER_TEMP/verification/anchor-final.json" ]; then anchor_final="$RUNNER_TEMP/verification/anchor-final.json"; fi
           anchor_publication=-
-          if [ -s "$RUNNER_TEMP/anchor-publication/publication.json" ]; then anchor_publication="$RUNNER_TEMP/anchor-publication/publication.json"; fi
+          if [ "$ANCHOR_RECEIPT_OUTCOME" = success ] && [ -s "$RUNNER_TEMP/anchor-publication/publication.json" ]; then anchor_publication="$RUNNER_TEMP/anchor-publication/publication.json"; fi
           mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release complete-ruby "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" "$RUNNER_TEMP/verification/final.json" "$publication" "$anchor_initial" "$anchor_final" "$anchor_publication" > "$RUNNER_TEMP/verification/outcome.json"
+          if [ "$PRIMARY_RECEIPT_OUTCOME" = failure ] || [ "$ANCHOR_RECEIPT_OUTCOME" = failure ]; then
+            printf '%s\n' 'Verification excluded failed receipt downloads.' >&2
+            exit 2
+          fi
       - name: Show actual available business result
         run: |-
           set -Eeuo pipefail

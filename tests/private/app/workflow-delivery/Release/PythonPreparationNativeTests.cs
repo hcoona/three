@@ -67,7 +67,8 @@ public sealed class PythonPreparationNativeTests(TestContext context)
                 "hcoona-release-smoke-python", Product + "/workflow-delivery.release-unit.yml",
                 "buddy", "testpypi", false);
             ReleasePreparationResult result = await PythonPreparation.PrepareAsync(new(subject,
-                checkout, scratch, MiseDataDirectory: miseData), context.CancellationToken);
+                checkout, scratch, MiseDataDirectory: miseData),
+                ExecuteAsync, context.CancellationToken);
             string retained = Directory.CreateDirectory(Path.Combine(context.TestResultsDirectory!,
                 "python-release-native", Guid.NewGuid().ToString("N"))).FullName;
             string binding = Path.Combine(retained, "preparation.json");
@@ -125,6 +126,27 @@ public sealed class PythonPreparationNativeTests(TestContext context)
                 File.SetAttributes(file, FileAttributes.Normal);
             Directory.Delete(root, true);
         }
+    }
+
+    private static Task<NativeCommandResult> ExecuteAsync(
+        NativeCommand command,
+        CancellationToken token)
+    {
+        if (command.Executable == "dotnet" && command.Arguments is ["tool", "restore"] &&
+            Environment.GetEnvironmentVariable(
+                "WORKFLOW_NATIVE_OFFLINE_CONFIG") is { Length: > 0 } config)
+            command = command with { Arguments = [.. command.Arguments, "--configfile", config] };
+        if (Path.GetFileName(command.Executable) == "uv" && Environment.GetEnvironmentVariable(
+                "WORKFLOW_NATIVE_UV_TOOL_CACHE") is { Length: > 0 } cache)
+        {
+            var environment =
+                new Dictionary<string, string?>(command.Environment!) { ["UV_OFFLINE"] = "1" };
+            // Only seed the locked build tools. Both external consumers retain their own
+            // cache and environment.
+            if (command.Arguments is ["sync", ..]) environment["UV_CACHE_DIR"] = cache;
+            command = command with { Environment = environment };
+        }
+        return NativeProcess.ExecuteAsync(command, token);
     }
 
     // The core-metadata Version of a wheel (METADATA) or sdist (PKG-INFO).

@@ -28,7 +28,7 @@ public sealed class GithubNpmObservationTests
         using var handler = new ScriptedHttpHandler((_, index) => index switch
         {
             0 => Json(Control),
-            1 => Json(Metadata("https://npm.pkg.github.com/archive")),
+            1 => Json(Metadata("https://npm.pkg.github.com/archive?token=transient-location")),
             _ => new(HttpStatusCode.OK)
             {
                 Content = new ByteArrayContent(
@@ -46,6 +46,10 @@ public sealed class GithubNpmObservationTests
         Assert.HasCount(3, handler.Requests);
         Assert.IsTrue(handler.Requests.All(request =>
             request.Headers.Authorization?.Parameter == Credential));
+        Assert.AreEqual(Convert.ToHexStringLower(SHA256.HashData(
+            "https://npm.pkg.github.com/archive?token=transient-location"u8)),
+            result.Reads.Single(read => read.Stage == "tarball-location").UrlSha256);
+        Assert.DoesNotContain("transient-location", JsonSerializer.Serialize(result));
         Assert.DoesNotContain(Credential, JsonSerializer.Serialize(result));
     }
 
@@ -148,13 +152,13 @@ public sealed class GithubNpmObservationTests
         Assert.HasCount(2, handler.Requests);
     }
 
-    private static PreparedRelease Prepared() => new(new(new('a', 40),
+    private static PackageDestination Prepared() => new(new(new('a', 40),
         "refs/heads/development", "hcoona-release-smoke-npm", "product/release.yml", "buddy",
         "github-packages-npm", false),
         [new("build", "archive", "npm-tarball", AdoptedNpmPackage.PackageName, "1.2.3",
             "original/package.tgz", Original.Length,
             Convert.ToHexStringLower(SHA256.HashData(Original)))],
-        ["consumer"], [new("consumer", ReleaseCheckStatus.Passed)]);
+        AdoptedNpmPackage.PackageName);
 
     private static string Metadata(string archive) => JsonSerializer.Serialize(new
     {

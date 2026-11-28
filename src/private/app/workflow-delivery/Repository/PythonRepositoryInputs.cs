@@ -134,6 +134,7 @@ internal static class PythonRepositoryInputs
             "tests/eng/test_browser_store_release_caller.py" or
             "tests/eng/test_general_ci_workflow.py" or
             "tests/eng/test_node_release_schedule.py" or
+            "tests/eng/test_official_anchor_gate.py" or
             "tests/eng/test_python_release_caller.py" or
             "tests/eng/test_python_runtime.py" or
             "tests/eng/test_release_batch_dispatch.py" or
@@ -161,6 +162,12 @@ internal static class PythonRepositoryInputs
         (target == "tests/eng/test_browser_store_release_caller.py" &&
             path is ".github/workflows/workflow-delivery-v3-browser-store-release.yml" or
                 "global.json") ||
+        (target == "tests/eng/test_official_anchor_gate.py" &&
+            path is ".github/workflows/workflow-delivery-v3-anchor-gate.yml" or
+                ".github/workflows/workflow-delivery-v3-npm-release.yml" or
+                ".github/workflows/workflow-delivery-v3-python-release.yml" or
+                ".github/workflows/workflow-delivery-v3-ruby-release.yml" or
+                ".github/workflows/workflow-delivery-v3-browser-store-release.yml") ||
         (target == "tests/eng/test_release_batch_dispatch.py" &&
             (path == "eng/scripts/release_batch_dispatch.py" || IsReleaseCallerWorkflow(path) ||
              IsReleaseUnitDeclaration(path))) ||

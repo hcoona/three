@@ -1,4 +1,3 @@
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -6,17 +5,17 @@ namespace WorkflowDelivery.Destinations;
 
 internal static class RubyDestinationObservation
 {
-    internal static Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
+    internal static Task<ReleaseObservationResult> ObserveAsync(PackageDestination prepared,
         RubySourceTools tools, RubyReadCredential? credential, CancellationToken token) =>
         ObserveAsync(prepared, tools, credential, NativeProcess.ExecuteAsync, token);
 
-    internal static async Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
+    internal static async Task<ReleaseObservationResult> ObserveAsync(PackageDestination prepared,
         RubySourceTools tools, RubyReadCredential? credential,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
         if (prepared.Files is not [{ Kind: "ruby-gem", Name: var name }] ||
-            name != ReleaseUnitCatalog.AdmitRuby(prepared.Subject).Id)
+            name != prepared.Package)
             throw new InvalidDataException("Native Ruby observation needs a supported original.");
         string host = (prepared.Subject.Channel, prepared.Subject.Destination) switch
         {
@@ -25,9 +24,8 @@ internal static class RubyDestinationObservation
             _ => throw new InvalidDataException("Unsupported native Ruby destination."),
         };
         ReleaseFile original = prepared.Files[0];
-        RubySourceReadResult read = await RubySourceReader.ReadAsync(host, name,
-            original.Version,
-            tools, credential, execute, token);
+        RubySourceReadResult read = await RubySourceReader.ReadAsync(
+            new(host, name, original.Version), tools, credential, execute, token);
         ReleaseFileState state = read.State switch
         {
             RubySourceState.Absent => ReleaseFileState.Absent,
@@ -47,7 +45,10 @@ internal static class RubyDestinationObservation
         return new(new(prepared.Subject,
             [new(original.Output, original.Name, original.Version, state,
                 read.Original?.Size, read.Original?.Sha256)],
-            ["native-source-original"], [new("native-source-original", status)]), [],
-            RubySource: read);
+            ["native-source-original"], [new("native-source-original", status)],
+            read.Errors.Length == 0 ? null : read.Errors),
+            [new("native-source", null, read.State.ToString(), Command: read.Command,
+                Original: read.Original is { } served ? new(served.Name, served.Version,
+                    served.Platform, served.Size, served.Sha256) : null)]);
     }
 }

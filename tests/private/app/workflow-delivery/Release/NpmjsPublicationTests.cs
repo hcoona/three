@@ -23,7 +23,9 @@ public sealed class NpmjsPublicationTests
         var commands = new List<NativeCommand>();
         int reads = 0;
 
-        ReleasePublicationResult result = await NpmjsPublication.PublishAsync(files.Prepared,
+        ReleasePublicationResult result = await ReleaseAdapters.Npm.PublishNpmjsAsync(
+            files.Preparation,
+            Observe(files.Prepared, ReleaseFileState.Absent),
             files.Originals, files.Runtime, files.Tools, Platform(),
             (command, _) =>
             {
@@ -42,7 +44,7 @@ public sealed class NpmjsPublicationTests
         if (writes == 0) return;
         NativeCommand publish = commands.Single(command => command.Arguments[0] == "publish");
         CollectionAssert.AreEqual(new[] { "publish",
-            Path.Combine(files.Originals, "original/package.tgz"), "--registry",
+            Path.Combine(files.Originals, "original", "package.tgz"), "--registry",
             "https://registry.npmjs.org/", "--access", "public", "--provenance", "--tag", "beta",
             "--ignore-scripts", "--fetch-retries=0" }, publish.Arguments);
         Assert.IsFalse(publish.InheritEnvironment);
@@ -87,7 +89,9 @@ public sealed class NpmjsPublicationTests
         };
 
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            NpmjsPublication.PublishAsync(prepared, files.Originals, files.Runtime, files.Tools,
+            ReleaseAdapters.Npm.PublishNpmjsAsync(files.Preparation with { Prepared = prepared },
+                Observe(prepared, ReleaseFileState.Absent),
+                files.Originals, files.Runtime, files.Tools,
                 Platform(), (_, _) => { native++; return Task.FromResult(Success("")); },
                 (current, _) =>
                 {
@@ -112,7 +116,8 @@ public sealed class NpmjsPublicationTests
         int reads = 0;
 
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            NpmjsPublication.PublishAsync(files.Prepared, files.Originals, files.Runtime,
+            ReleaseAdapters.Npm.PublishNpmjsAsync(files.Preparation, Observe(files.Prepared,
+                ReleaseFileState.Absent), files.Originals, files.Runtime,
                 files.Tools, platform, (command, _) => Task.FromResult(Success(
                     Path.GetFileName(command.Executable) == "node" ? "v" + node : npm)),
                 (prepared, _) =>
@@ -132,7 +137,8 @@ public sealed class NpmjsPublicationTests
         int native = 0;
 
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            NpmjsPublication.PublishAsync(files.Prepared, files.Originals, files.Runtime,
+            ReleaseAdapters.Npm.PublishNpmjsAsync(files.Preparation, Observe(files.Prepared,
+                ReleaseFileState.Absent), files.Originals, files.Runtime,
                 files.Tools, Platform(), (_, _) =>
                 {
                     native++; return Task.FromResult(
@@ -197,6 +203,7 @@ public sealed class NpmjsPublicationTests
         internal string Runtime { get; }
         internal string Tools { get; }
         internal PreparedRelease Prepared { get; }
+        internal ReleasePreparationResult Preparation => new(Prepared, [], [], []);
         internal Files(string npm = "11.19.1", string node = "24.22.0")
         {
             Originals = Directory.CreateDirectory(Path.Combine(Root, "outputs")).FullName;

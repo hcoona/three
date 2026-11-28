@@ -1,4 +1,3 @@
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -12,22 +11,20 @@ internal sealed record RubyPublishResult(ReleaseSubject Subject, ReleaseUpload U
 // reset); the application never resends.
 internal static class RubyNativePublisher
 {
-    internal static Task<RubyPublishResult> PublishAsync(ReleasePreparationResult preparation,
+    internal static Task<RubyPublishResult> PublishAsync(PackageDestination prepared,
         string originals, RubyPublisherTools tools,
         IReadOnlyDictionary<string, string?> platform, CancellationToken token) =>
-        PublishAsync(preparation, originals, tools, platform, NativeProcess.ExecuteAsync, token);
+        PublishAsync(prepared, originals, tools, platform, NativeProcess.ExecuteAsync, token);
 
     internal static async Task<RubyPublishResult> PublishAsync(
-        ReleasePreparationResult preparation,
+        PackageDestination prepared,
         string originals, RubyPublisherTools tools,
         IReadOnlyDictionary<string, string?> platform,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
-        PreparedRelease prepared = preparation.Prepared;
-        if (prepared.Subject.DryRun ||
-            ReleaseUnitCatalog.AdmitRuby(prepared.Subject).Id is not { } unit ||
-            prepared.Files is not [{ Kind: "ruby-gem", Name: var name }] || name != unit)
+        if (prepared.Subject.DryRun || prepared.Files is not [{ Kind: "ruby-gem", Name: var name }]
+            || name != prepared.Package)
             throw new InvalidDataException("Native Ruby push requires a supported request.");
         bool buddy = prepared.Subject.Channel == "buddy" &&
             prepared.Subject.Destination == "github-packages-ruby";
@@ -36,7 +33,7 @@ internal static class RubyNativePublisher
         if (!(buddy || official))
             throw new InvalidDataException("Unsupported native Ruby live channel or ref.");
         // The effect boundary repeats the request's live ref eligibility.
-        ReleasePolicy.RequireEligible(prepared.Subject);
+        LiveReleaseRef.RequireEligible(prepared.Subject);
         if (new[] { tools.Ruby, tools.Gem, tools.Scratch }.Any(path =>
                 !Path.IsPathFullyQualified(path)) || !Directory.Exists(tools.Scratch) ||
             Directory.EnumerateFileSystemEntries(tools.Scratch).Any())

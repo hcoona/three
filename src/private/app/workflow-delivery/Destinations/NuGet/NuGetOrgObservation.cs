@@ -2,7 +2,6 @@ using System.Text.Json;
 using NuGet.Packaging.Core;
 using NuGet.Protocol;
 using NuGet.Versioning;
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Destinations;
@@ -18,18 +17,17 @@ internal sealed class NuGetOrgObservation(HttpClient client, TimeProvider? clock
     internal static readonly string[] RequiredChecks = ["native-metadata-visibility"];
     private const string Host = "api.nuget.org";
 
-    internal async Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
+    internal async Task<ReleaseObservationResult> ObserveAsync(PackageDestination prepared,
         string credential, CancellationToken token)
     {
         if (prepared.Subject.Channel != "official" || prepared.Subject.Destination != "nugetorg" ||
             prepared.Files is not [{ Kind: "nuget-package" }] ||
-            prepared.Files[0].Name != ReleaseUnitCatalog.AdmitNuGet(prepared.Subject).PackageId ||
+            prepared.Files[0].Name != prepared.Package ||
             credential.Length != 0)
             throw new InvalidDataException("Unsupported nuget.org NuGet request.");
         ReleaseFile file = prepared.Files[0];
         var identity = new PackageIdentity(file.Name, NuGetVersion.Parse(file.Version));
         string packageId = identity.Id.ToLowerInvariant();
-        NuGetResources? resources = null;
         using var session = new DestinationHttpSession(client, clock,
             TimeSpan.FromSeconds(90), TimeSpan.FromSeconds(30), token, maxRequests: 2);
         try
@@ -42,8 +40,6 @@ internal sealed class NuGetOrgObservation(HttpClient client, TimeProvider? clock
             if (packageBase.AbsoluteUri.TrimEnd('/') + "/" != PackageBaseAddress ||
                 publish.AbsoluteUri.TrimEnd('/') + "/" != NuGetPublisher.NuGetOrgEndpoint)
                 throw new InvalidDataException("Different nuget.org native endpoint.");
-            resources = new(PackageBaseAddress, NuGetPublisher.NuGetOrgEndpoint);
-
             string root = PackageBaseAddress + Uri.EscapeDataString(packageId) + "/";
             (status, body) = await ReadAsync("native-versions", new(root + "index.json"));
             if (status == 404) return Result(ReleaseFileState.Absent);
@@ -74,7 +70,7 @@ internal sealed class NuGetOrgObservation(HttpClient client, TimeProvider? clock
                 [new("native-metadata-visibility",
                     state is ReleaseFileState.Available or ReleaseFileState.Absent
                         ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed)]),
-                [.. session.Reads], Resources: resources);
+                [.. session.Reads]);
 
         Task<(int, byte[])> ReadAsync(string stage, Uri uri) => session.MetadataAsync(stage, uri,
             Host, "application/json", NuGetMetadata.Limit, allowQuery: false);

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(CurrentTargetFramework)</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Repository/DotNetGraph.cs;../../Repository/DotNetConfigurationInputs.cs;../../Repository/DotNetNativeInputs.cs;../../Repository/DotNetRepositoryReader.cs;../../Repository/MsBuildResourceReader.cs;../../Repository/NbgvInputReader.cs" />
+    <Compile Include="../../CI/DotNetBuildTask.cs;../../CI/DotNetTestTask.cs;../../Platform/DotNetCli.cs" />
+    <Compile Include="../DotNetPackageArchive.cs;../DotNetPackageConsumer.cs;../DotNetPackageResults.cs" />
+    <ProjectReference Include="../../Platform/WorkflowDelivery.NativePlatform.csproj" />
+    <ProjectReference Include="../../Core/WorkflowDelivery.Core.csproj" />
+    <InternalsVisibleTo Include="WorkflowDelivery;WorkflowDelivery.Tests" />
+    <GlobalPackageReference Update="Microsoft.SourceLink.GitHub" ExcludeAssets="Runtime;Native" />
+    <PackageReference Include="Microsoft.Build;Microsoft.Build.Framework;Microsoft.Build.Utilities.Core" PrivateAssets="compile;contentfiles;analyzers;build" />
+    <PackageReference Include="NuGet.Commands;NuGet.ProjectModel;NuGet.Packaging;NuGet.Versioning;NuGet.Frameworks" PrivateAssets="compile;contentfiles;analyzers;build" />
+  </ItemGroup>
+  <Target Name="ReferenceOfficialNbgv" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="'$(NerdbankGitVersioningTasksPath)' == ''" Text="The official NBGV task path is unavailable." />
+    <ItemGroup>
+      <Reference Include="Nerdbank.GitVersioning">
+        <HintPath>$(NerdbankGitVersioningTasksPath)Nerdbank.GitVersioning.dll</HintPath>
+        <Private>true</Private>
+      </Reference>
+    </ItemGroup>
+  </Target>
+</Project>

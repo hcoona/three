@@ -1,8 +1,7 @@
 using System.Text;
 using System.Text.Json;
-using WorkflowDelivery.Release;
-
 using WorkflowDelivery.Platform;
+using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Destinations;
 
@@ -12,11 +11,12 @@ internal sealed class NpmjsObservation(HttpClient client, TimeProvider? timeProv
 {
     private const string Host = "registry.npmjs.org";
 
-    internal async Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
+    internal async Task<ReleaseObservationResult> ObserveAsync(PackageDestination prepared,
         CancellationToken token)
     {
-        if (prepared.Subject.Destination != "npmjs" || prepared.Files is not
-            [{ Kind: "npm-tarball" }])
+        if (prepared.Subject.Channel != "official" || prepared.Subject.Destination != "npmjs" ||
+            prepared.Files is not [{ Kind: "npm-tarball" } selected] ||
+            selected.Name != prepared.Package)
             throw new InvalidDataException("Unsupported complete public npmjs request.");
         ReleaseFile file = prepared.Files[0];
         using var session = new DestinationHttpSession(client, timeProvider,

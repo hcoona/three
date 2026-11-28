@@ -1,6 +1,6 @@
 using WorkflowDelivery.Platform;
 
-namespace WorkflowDelivery.Release;
+namespace WorkflowDelivery.Destinations;
 
 internal sealed record PythonIndexToolCommand(string Stage, NativeCommand Command,
     NativeCommandResult Result);

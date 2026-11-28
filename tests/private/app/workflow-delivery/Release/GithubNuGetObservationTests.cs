@@ -35,7 +35,8 @@ public sealed class GithubNuGetObservationTests
         Assert.AreEqual(Enum.Parse<ReleaseFileState>(expected),
             Assert.ContainsSingle(result.Observation.Files).State);
         Assert.AreEqual(Prepared(original).Subject, result.Observation.Subject);
-        Assert.AreEqual(Base, result.Resources!.PackageBaseAddress);
+        Assert.IsTrue(handler.Requests.Any(request =>
+            request.Uri.AbsoluteUri.StartsWith(Base, StringComparison.Ordinal)));
         Assert.HasCount(5, handler.Requests);
         Assert.IsTrue(handler.Requests.All(request => request.Headers.Authorization?.Scheme ==
             (request.Uri.Host == GithubApi.Host ? "Bearer" : "Basic")));
@@ -189,7 +190,9 @@ public sealed class GithubNuGetObservationTests
     {
         using var client = new HttpClient(handler, disposeHandler: false);
         return await new GithubNuGetObservation(client)
-            .ObserveAsync(Prepared(original ?? Archive()), Credential, CancellationToken.None);
+            .ObserveAsync(
+                DestinationBindings.NuGet(Prepared(original ?? Archive())),
+                Credential, CancellationToken.None);
     }
 
     private static HttpResponseMessage Response(int step, byte[] archive) => step switch

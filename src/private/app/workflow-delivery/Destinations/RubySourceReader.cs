@@ -1,13 +1,12 @@
 using System.Text;
 using System.Text.Json;
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
-using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Destinations;
 
 internal sealed record RubySourceTools(string Ruby, string Helper, string Scratch);
 internal sealed record RubyReadCredential(string User, string Token);
+internal sealed record RubySourceCoordinate(string Host, string Name, string Version);
 internal sealed record RubySourceOriginal(string Path, string Name, string Version,
     string Platform, long Size, string Sha256);
 internal enum RubySourceState { Absent, Present, Unknown }
@@ -18,20 +17,20 @@ internal sealed record RubySourceReadResult(RubySourceState State, RubySourceOri
 // command outcome cross this boundary; no credential-bearing native diagnostic does.
 internal static class RubySourceReader
 {
-    internal static Task<RubySourceReadResult> ReadAsync(string host, string name,
-        string version, RubySourceTools tools, RubyReadCredential? credential,
+    internal static Task<RubySourceReadResult> ReadAsync(RubySourceCoordinate coordinate,
+        RubySourceTools tools, RubyReadCredential? credential,
         CancellationToken token) =>
-        ReadAsync(host, name, version, tools, credential, NativeProcess.ExecuteAsync, token);
+        ReadAsync(coordinate, tools, credential, NativeProcess.ExecuteAsync, token);
 
-    internal static async Task<RubySourceReadResult> ReadAsync(string host, string name,
-        string version,
+    internal static async Task<RubySourceReadResult> ReadAsync(RubySourceCoordinate coordinate,
         RubySourceTools tools, RubyReadCredential? credential,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
+        (string host, string name, string version) = coordinate;
         bool buddy = host == "https://rubygems.pkg.github.com/hcoona";
         if (!(buddy || host == "https://rubygems.org") ||
-            !ReleaseUnitCatalog.IsRubyRegistered(name) ||
+            string.IsNullOrWhiteSpace(name) ||
             string.IsNullOrWhiteSpace(version) ||
             new[] { tools.Ruby, tools.Helper, tools.Scratch }.Any(path =>
                 !Path.IsPathFullyQualified(path)) || !Directory.Exists(tools.Scratch) ||
@@ -47,7 +46,7 @@ internal static class RubySourceReader
         string input = Path.Combine(scratch, "request.json");
         await File.WriteAllTextAsync(input, JsonSerializer.Serialize(new RubySourceRequest(host,
             name, version, download),
-                RubyFactJson.Default.RubySourceRequest), token);
+                RubySourceJson.Default.RubySourceRequest), token);
         var environment = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (string key in new[] { "SystemRoot", "WINDIR", "PATHEXT" })
             environment[key] = Environment.GetEnvironmentVariable(key);
@@ -81,7 +80,7 @@ internal static class RubySourceReader
             if (Encoding.UTF8.GetByteCount(reached.Stdout) > 256 * 1024)
                 return Unknown("Native Ruby source answer exceeds its result limit.");
             RubySourceAnswer value = JsonSerializer.Deserialize(reached.Stdout,
-                RubyFactJson.Default.RubySourceAnswer)
+                RubySourceJson.Default.RubySourceAnswer)
                 ?? throw new JsonException("Missing native Ruby source answer.");
             switch (value.State)
             {

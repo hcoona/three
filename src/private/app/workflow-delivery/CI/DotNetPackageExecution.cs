@@ -1,6 +1,5 @@
 using System.Text.Json;
 using System.Xml;
-using Microsoft.Build.Evaluation;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
@@ -68,7 +67,7 @@ internal static class DotNetPackageExecution
                                 "archives")).FullName;
                             string response = Path.Combine(root, "pack.json");
                             var storage = new Dictionary<string, string>(StringComparer.Ordinal)
-                            { ["PackageOutputPath"] = ProjectCollection.Escape(destination) };
+                            { ["PackageOutputPath"] = DotNetTaskHost.Escape(destination) };
                             var (node, expected) = facts[check.Key];
                             await RunAsync(DotNetPackageChecks.Query(node, checkout, response,
                                 "Pack,_GetOutputItemsFromPack", "Pack,_GetOutputItemsFromPack",

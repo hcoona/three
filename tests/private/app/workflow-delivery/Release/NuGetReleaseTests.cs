@@ -20,10 +20,18 @@ public sealed class NuGetReleaseTests(TestContext context)
         int reads = 0;
 
         ReleasePublicationResult publication = await ReleaseAdapters.NuGet.PublishAsync(
-            fixture.Preparation, fixture.Root, "controlled-capability",
-            (_, _, _) => Task.FromResult(reads++ == 0 ? initial : exact),
-            (prepared, originals, endpoint, credential, token) => NuGetPublisher.PushAsync(
-                prepared, originals, endpoint, credential, token, transport),
+            fixture.Preparation, initial, fixture.Root, "controlled-read", "controlled-capability",
+            (_, credential, _) =>
+            {
+                Assert.AreEqual("controlled-read", credential);
+                return Task.FromResult(reads++ == 0 ? initial : exact);
+            },
+            (prepared, originals, endpoint, credential, token) =>
+            {
+                Assert.AreEqual("controlled-capability", credential);
+                return NuGetPublisher.PushAsync(DestinationBindings.NuGet(prepared), originals,
+                    endpoint, credential, token, transport);
+            },
             context.CancellationToken);
         ReleaseCompletionResult result = ReleaseEngine.Complete(ReleaseAdapters.NuGet,
             fixture.Preparation, initial,
@@ -47,7 +55,7 @@ public sealed class NuGetReleaseTests(TestContext context)
         int pushes = 0;
 
         ReleasePublicationResult publication = await ReleaseAdapters.NuGet.PublishAsync(
-            fixture.Preparation, fixture.Root, "controlled-capability",
+            fixture.Preparation, initial, fixture.Root, "controlled-read", "controlled-capability",
             (_, _, _) => Task.FromResult(fresh), (_, _, _, _, _) =>
             { pushes++; throw new AssertFailedException("Exact state must not invoke upload."); },
             context.CancellationToken);
@@ -64,6 +72,53 @@ public sealed class NuGetReleaseTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow(false, "Exact", "Satisfied")]
+    [DataRow(true, "Available", "Satisfied")]
+    [DataRow(true, "Unknown", "Unknown")]
+    [DataRow(false, "Absent", "Unsatisfied")]
+    public async Task UnreadablePublisherRefreshStopsPushWithoutPrejudgingVerifier(bool official,
+        string finalState, string expectedState)
+    {
+        using var fixture = new NuGetReleaseTestFixture();
+        ReleasePreparationResult preparation = official
+            ? WriteOfficialOriginal(fixture, Official()) : fixture.Preparation;
+        ReleaseObservationResult Observe(ReleaseFileState state) => official
+            ? OfficialObservation(preparation.Prepared, state) : fixture.Observe(state);
+        using var client = new HttpClient(new ScriptedHttpHandler((_, _) =>
+            new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)));
+        Task<ReleaseObservationResult> Read(PreparedRelease prepared, string credential,
+            CancellationToken token)
+        {
+            var destination = DestinationBindings.NuGet(prepared);
+            return official ? new NuGetOrgObservation(client).ObserveAsync(destination, "", token) :
+                new GithubNuGetObservation(client).ObserveAsync(destination, credential, token);
+        }
+        var initial = Observe(ReleaseFileState.Absent);
+        var publication = await ReleaseAdapters.NuGet.PublishAsync(
+            preparation, initial, fixture.Root,
+            "controlled-read", "controlled-capability", Read,
+            (_, _, _, _, _) =>
+                throw new AssertFailedException("Unknown refresh cannot issue a push."),
+            context.CancellationToken);
+
+        ReleaseFileState state = Enum.Parse<ReleaseFileState>(finalState);
+        var final = state == ReleaseFileState.Unknown
+            ? await Read(preparation.Prepared, "controlled-read", context.CancellationToken)
+            : Observe(state);
+        var completion = ReleaseEngine.Complete(
+            ReleaseAdapters.NuGet, preparation, initial, final, publication);
+
+        Assert.IsEmpty(publication.Steps);
+        Assert.IsFalse(completion.MutationAttempted);
+        Assert.IsNotEmpty(publication.Errors);
+        CollectionAssert.AreEqual(publication.Errors, completion.Publication!.Errors);
+        Assert.Contains(503, completion.Publication.Before.Reads.Select(read => read.Status));
+        Assert.IsFalse(
+            ReleaseEngine.AnchorAllowed(ReleaseAdapters.NuGet, preparation, initial, publication));
+        Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(expectedState), completion.Outcome.State);
+    }
+
+    [TestMethod]
     [DataRow("Conflict", "Passed")]
     [DataRow("Absent", "Missing")]
     public async Task PublishAsyncUnknownOrConflictBlocksMutation(string stateName,
@@ -76,7 +131,8 @@ public sealed class NuGetReleaseTests(TestContext context)
         int pushes = 0;
 
         ReleasePublicationResult result = await ReleaseAdapters.NuGet.PublishAsync(
-            fixture.Preparation, fixture.Root, "controlled-capability",
+            fixture.Preparation, fixture.Observe(ReleaseFileState.Absent),
+            fixture.Root, "controlled-read", "controlled-capability",
             (_, _, _) => Task.FromResult(blocked), (_, _, _, _, _) =>
             { pushes++; throw new AssertFailedException("Blocked state must not invoke upload."); },
             context.CancellationToken);
@@ -97,9 +153,11 @@ public sealed class NuGetReleaseTests(TestContext context)
         int pushes = 0;
 
         ReleasePublicationResult result = await ReleaseAdapters.NuGet.PublishAsync(
-            fixture.Preparation, fixture.Root, "controlled-capability",
-            new GithubNuGetObservation(client).ObserveAsync, (_, _, _, _, _) =>
-            { pushes++; return Task.FromResult(new NuGetPushResult(true, false, null, 1)); },
+            fixture.Preparation, fixture.Observe(ReleaseFileState.Absent),
+            fixture.Root, "controlled-read", "controlled-capability",
+            (prepared, credential, token) => new GithubNuGetObservation(client).ObserveAsync(
+                DestinationBindings.NuGet(prepared), credential, token), (_, _, _, _, _) =>
+            { pushes++; return Task.FromResult(new NativeLibraryResult(true, false, null, 1)); },
             context.CancellationToken);
 
         Assert.AreEqual(1, pushes);
@@ -139,18 +197,18 @@ public sealed class NuGetReleaseTests(TestContext context)
         ReleaseObservationResult absent = fixture.Observe(ReleaseFileState.Absent);
         ReleaseObservationResult final = fixture.Observe(
             Enum.Parse<ReleaseFileState>(finalStateName));
-        NuGetPushResult? captured = null;
+        NativeLibraryResult? captured = null;
         int reads = 0;
         int invocations = 0;
 
         ReleasePublicationResult publication = await ReleaseAdapters.NuGet.PublishAsync(
-            fixture.Preparation, fixture.Root, "controlled-capability",
+            fixture.Preparation, absent, fixture.Root, "controlled-read", "controlled-capability",
             (_, _, _) => Task.FromResult(reads++ == 0 ? absent : final),
             async (prepared, originals, endpoint, credential, token) =>
             {
                 invocations++;
-                captured = await NuGetPublisher.PushAsync(prepared, originals, endpoint,
-                    credential, token, transport);
+                captured = await NuGetPublisher.PushAsync(DestinationBindings.NuGet(prepared),
+                    originals, endpoint, credential, token, transport);
                 return captured;
             }, context.CancellationToken);
         ReleaseCompletionResult result = ReleaseEngine.Complete(ReleaseAdapters.NuGet,
@@ -206,7 +264,7 @@ public sealed class NuGetReleaseTests(TestContext context)
             ReleaseFileState.Available);
         ReleaseObservationResult initial = preExisting ? available
             : OfficialObservation(prepared, ReleaseFileState.Absent);
-        var invocation = new NuGetPushResult(true, false, null, 1);
+        var invocation = new NativeLibraryResult(true, false, null, 1);
         ReleasePublicationResult? published = preExisting ? null
             : new(prepared.Subject, initial, [ReleaseWriteStep.FromPush(
                 prepared.Files[0].Output, invocation)], available, []);
@@ -268,6 +326,9 @@ public sealed class NuGetReleaseTests(TestContext context)
         ReleasePreparationResult preparation = WriteOfficialOriginal(fixture, Official());
         string transfer = fixture.Write("official.json", preparation,
             TransferJson.Default.ReleasePreparationResult);
+        string initial = fixture.Write("initial.json",
+            OfficialObservation(preparation.Prepared, ReleaseFileState.Absent),
+            TransferJson.Default.ReleaseObservationResult);
         File.AppendAllText(Path.Combine(fixture.Root, preparation.Prepared.Files[0].Path),
             "substituted bytes");
         using var output = new StringWriter();
@@ -276,7 +337,8 @@ public sealed class NuGetReleaseTests(TestContext context)
         try
         {
             Environment.SetEnvironmentVariable("NUGET_API_KEY", "controlled-key");
-            Assert.AreEqual(2, Program.Run(["release", "publish-nuget", transfer, fixture.Root],
+            Assert.AreEqual(
+                2, Program.Run(["release", "publish-nuget", transfer, fixture.Root, initial],
                 output, error));
         }
         finally
@@ -300,7 +362,7 @@ public sealed class NuGetReleaseTests(TestContext context)
         PreparedRelease prepared = Official();
         ReleasePreparationResult preparation = WriteOfficialOriginal(fixture, prepared);
         ReleaseObservationResult absent = OfficialObservation(prepared, ReleaseFileState.Absent);
-        var invocation = new NuGetPushResult(true, false, null, 1);
+        var invocation = new NativeLibraryResult(true, false, null, 1);
         int reads = 0;
         ReleaseObservationResult final = await ReleaseEngine.SettleAsync(prepared,
             async (_, token) =>
@@ -339,7 +401,8 @@ public sealed class NuGetReleaseTests(TestContext context)
         using var fixture = new NuGetReleaseTestFixture();
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             ReleaseAdapters.NuGet.PublishAsync(
-            fixture.Preparation, fixture.Root, "controlled-capability",
+            fixture.Preparation, fixture.Observe(ReleaseFileState.Absent),
+                fixture.Root, "controlled-read", "controlled-capability",
             (_, _, _) => Task.FromResult(fixture.Observe(ReleaseFileState.Available)),
             (_, _, _, _, _) => throw new AssertFailedException("Available must not upload."),
             context.CancellationToken));
@@ -390,8 +453,7 @@ public sealed class NuGetReleaseTests(TestContext context)
             [new(file.Output, file.Name, file.Version, state, null, null)],
             NuGetOrgObservation.RequiredChecks,
             [new("native-metadata-visibility", ReleaseCheckStatus.Passed)]),
-            [], Resources: new(NuGetOrgObservation.PackageBaseAddress,
-                NuGetPublisher.NuGetOrgEndpoint));
+            []);
     }
 
     private static ReleaseCompletionResult CompleteOfficial(NuGetReleaseTestFixture fixture,
@@ -459,7 +521,8 @@ public sealed class NuGetReleaseTests(TestContext context)
 
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             ReleaseAdapters.NuGet.PublishAsync(
-            fixture.Preparation, fixture.Root, "controlled-capability", (_, _, _) =>
+            fixture.Preparation, fixture.Observe(ReleaseFileState.Absent), fixture.Root,
+            "controlled-read", "controlled-capability", (_, _, _) =>
             {
                 reads++;
                 File.AppendAllText(fixture.Archive, "substituted");
@@ -479,7 +542,8 @@ public sealed class NuGetReleaseTests(TestContext context)
         int calls = 0;
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
             ReleaseAdapters.NuGet.PublishAsync(
-            fixture.Preparation, fixture.Root, "controlled-capability", (_, _, _) =>
+            fixture.Preparation, fixture.Observe(ReleaseFileState.Absent), fixture.Root,
+            "controlled-read", "controlled-capability", (_, _, _) =>
             { calls++; throw new AssertFailedException("Dry-run publication cannot observe."); },
             (_, _, _, _, _) =>
             { calls++; throw new AssertFailedException("Dry run cannot upload."); },
@@ -526,7 +590,8 @@ public sealed class NuGetReleaseTests(TestContext context)
         string initial = Observation(fixture, "initial.json", ReleaseFileState.Absent);
         string final = Observation(fixture, "final.json", ReleaseFileState.Exact);
         using var transport = new NuGetReleaseTestFixture.UploadTransport(HttpStatusCode.Created);
-        NuGetPushResult invocation = await NuGetPublisher.PushAsync(fixture.Prepared, fixture.Root,
+        NativeLibraryResult invocation = await NuGetPublisher.PushAsync(
+            DestinationBindings.NuGet(fixture.Prepared), fixture.Root,
             NuGetPublisher.GithubEndpoint, "controlled-capability", context.CancellationToken,
             transport);
         string publisher = fixture.Write("publisher.json", new ReleasePublicationResult(
@@ -629,7 +694,7 @@ public sealed class NuGetReleaseTests(TestContext context)
         using var error = new StringWriter();
 
         Assert.AreEqual(2, Program.Run(["release", "publish-nuget", preparation,
-            fixture.Root], output, error));
+            fixture.Root, "unread-initial"], output, error));
 
         Assert.AreEqual("", output.ToString());
         Assert.Contains("Duplicate", error.ToString());

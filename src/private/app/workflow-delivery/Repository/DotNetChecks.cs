@@ -1,6 +1,4 @@
 using System.Text.Json;
-using System.Xml;
-using Microsoft.Build.Utilities;
 using WorkflowDelivery.CI;
 
 namespace WorkflowDelivery.Repository;
@@ -28,7 +26,7 @@ internal static class DotNetChecks
             ["globals"] = JsonSerializer.Serialize(node.Identity.Globals,
                 TransferJson.Default.DictionaryStringString),
             ["msbuild"] = JsonSerializer.Serialize(node.Dimension,
-                TransferJson.Default.MsBuildDimension),
+                DotNetNativeJson.Default.MsBuildDimension),
             ["test-capability"] = node.TestCapability,
             [DotNetTools.Dimension] = DotNetTools.Serialize(DotNetTools.Planned(
                 node.RequiredTools ?? [], versions ?? new Dictionary<string, string>())),
@@ -53,11 +51,11 @@ internal static class DotNetChecks
             originalGlobals, TransferJson.Default.DictionaryStringString)
             ?? throw new InvalidDataException("Missing original native globals.");
         MsBuildDimension dimension = JsonSerializer.Deserialize(nativeDimension,
-            TransferJson.Default.MsBuildDimension)
+            DotNetNativeJson.Default.MsBuildDimension)
             ?? throw new InvalidDataException("Missing native MSBuild dimension.");
         var node = new DotNetGraphNode(new(Path.GetFullPath(Path.Combine(checkout,
                 check.Key.Target)), globals), false, dimension, "", "", [], capability,
-            RequiredTools: DotNetTools.Names(tools.Keys));
+            RequiredTools: DotNetRequiredTools.Names(tools.Keys));
         if (tools.Count != 0 && capability == "None")
             throw new InvalidDataException("Only test projects declare required tools.");
         CheckSpec[] expected = Expand(check.Key.Target, node, tools);
@@ -69,28 +67,6 @@ internal static class DotNetChecks
         return node;
     }
 
-    internal static string[] Properties(Dictionary<string, string> globals)
-    {
-        var arguments = new List<string>();
-        foreach ((string name, string value) in globals.OrderBy(pair => pair.Key,
-                     StringComparer.Ordinal))
-        {
-            try { XmlConvert.VerifyNCName(name); }
-            catch (XmlException exception)
-            {
-                throw new InvalidDataException("Unsupported native global name: " + name,
-                    exception);
-            }
-            if (value is null || value.Contains('\0') ||
-                (name.Equals("RestoreSources", StringComparison.OrdinalIgnoreCase) &&
-                    (value.Contains(';') || value.Contains("://", StringComparison.Ordinal))))
-                throw new InvalidDataException("Unsupported native global transport: " + name);
-            // GlobalProperties already contains native escaped strings. Quote only
-            // the value using the selected SDK; never escape those strings again.
-            var builder = new CommandLineBuilder();
-            builder.AppendSwitchIfNotNull("-property:" + name + "=", value);
-            arguments.Add(builder.ToString());
-        }
-        return arguments.ToArray();
-    }
+    internal static string[] Properties(Dictionary<string, string> globals) =>
+        DotNetTaskHost.Properties(globals);
 }

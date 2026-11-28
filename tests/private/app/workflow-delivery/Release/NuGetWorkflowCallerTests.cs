@@ -10,14 +10,17 @@ namespace WorkflowDelivery.Tests.Release;
 [TestClass]
 public sealed class NuGetWorkflowCallerTests(TestContext context)
 {
-    // The step treats the state generically; ReleaseJobInputsTests maps Absent and Exact.
     [TestMethod]
     [DataRow("Absent", "true")]
+    [DataRow("Exact", "false")]
     public async Task ActualStateStepConsumesSerializedObservation(string state, string needed)
     {
         var fixture = new NuGetReleaseTestFixture();
         await FixtureCleanup.RunAsync(async () =>
         {
+            Directory.CreateDirectory(Path.Combine(fixture.Root, "prepared"));
+            fixture.Write("prepared/preparation.json", fixture.Preparation,
+                TransferJson.Default.ReleasePreparationResult);
             Directory.CreateDirectory(Path.Combine(fixture.Root, "observation"));
             fixture.Write("observation/observation.json", fixture.Observe(
                 Enum.Parse<ReleaseFileState>(state)),
@@ -103,6 +106,97 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow(false, "Conflict", "Exact", "Unsatisfied")]
+    [DataRow(true, "Unknown", "Available", "Unknown")]
+    public async Task ActualPowerShellPreflightRoutesTypedRefusalToReadOnlyCompletion(bool official,
+        string initialState, string finalState, string expectedState)
+    {
+        var fixture = new NuGetReleaseTestFixture(official: official);
+        await FixtureCleanup.RunAsync(async () =>
+        {
+            var environment = Environment(fixture);
+            environment["CONTROLLED_OBSERVATION"] = fixture.Write("controlled-initial.json",
+                fixture.Observe(Enum.Parse<ReleaseFileState>(initialState)),
+                TransferJson.Default.ReleaseObservationResult);
+            environment["CONTROLLED_OBSERVATION_EXIT"] = "1";
+            NativeCommandResult observed = await ObserveInitial(fixture, environment);
+            Assert.IsTrue(observed.Succeeded, observed.Stderr);
+            Assert.AreEqual(File.ReadAllText(environment["CONTROLLED_OBSERVATION"]!).Trim(),
+                File.ReadAllText(Path.Combine(fixture.Root, "observation/observation.json"))
+                    .Trim());
+            NativeCommandResult state = await Step(fixture, "observe",
+                "Describe native state and dry-run writes", environment);
+            Assert.IsTrue(state.Succeeded, state.Stderr);
+            Assert.AreEqual("write-needed=false\n",
+                File.ReadAllText(environment["GITHUB_OUTPUT"]!));
+
+            environment["CONTROLLED_OBSERVATION"] = fixture.Write("controlled-final.json",
+                fixture.Observe(Enum.Parse<ReleaseFileState>(finalState)),
+                TransferJson.Default.ReleaseObservationResult);
+            environment["CONTROLLED_OBSERVATION_EXIT"] = "0";
+            NativeCommandResult received = await Step(fixture, "verify-result",
+                "Receive transferred preparation", environment);
+            Assert.IsTrue(received.Succeeded, received.Stderr);
+            NativeCommandResult result = await Step(fixture, "verify-result",
+                "Verify registry coordinate and original bytes", environment);
+
+            Assert.AreEqual(1, result.ExitCode, result.Stderr);
+            ReleaseCompletionResult report = ReleaseCli.Read(
+                Path.Combine(fixture.Root, "verification/outcome.json"),
+                TransferJson.Default.ReleaseCompletionResult);
+            Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(expectedState), report.Outcome.State);
+            Assert.AreEqual(false, report.MutationAttempted);
+            Assert.IsNull(report.Publication);
+        }, fixture.Dispose);
+    }
+
+    [TestMethod]
+    [DataRow("2", false, true)]
+    [DataRow("1", false, false)]
+    [DataRow("1", false, true)]
+    [DataRow("1", true, true)]
+    public async Task ActualPowerShellPreflightDoesNotRouteInvalidOrDryObservation(
+        string exit, bool dryRun, bool hasObservation)
+    {
+        var fixture = new NuGetReleaseTestFixture(dryRun: dryRun);
+        await FixtureCleanup.RunAsync(async () =>
+        {
+            var environment = Environment(fixture);
+            environment["CONTROLLED_OBSERVATION"] = hasObservation
+                ? fixture.Write("controlled-initial.json", fixture.Observe(dryRun
+                    ? ReleaseFileState.Conflict : ReleaseFileState.Absent),
+                    TransferJson.Default.ReleaseObservationResult)
+                : Path.Combine(fixture.Root, "missing-initial.json");
+            environment["CONTROLLED_OBSERVATION_EXIT"] = exit;
+
+            NativeCommandResult observed = await ObserveInitial(fixture, environment);
+
+            Assert.AreEqual(exit == "2" ? 2 : dryRun ? 1 : 0, observed.ExitCode, observed.Stderr);
+            if (observed.Succeeded)
+            {
+                NativeCommandResult state = await Step(fixture, "observe",
+                    "Describe native state and dry-run writes", environment);
+                Assert.AreEqual(2, state.ExitCode, state.Stderr);
+            }
+            Assert.IsFalse(File.Exists(environment["GITHUB_OUTPUT"]!));
+            Assert.IsFalse(Directory.Exists(Path.Combine(fixture.Root, "verification")));
+        }, fixture.Dispose);
+    }
+
+    private async Task<NativeCommandResult> ObserveInitial(NuGetReleaseTestFixture fixture,
+        Dictionary<string, string?> environment)
+    {
+        Directory.CreateDirectory(Path.Combine(fixture.Root, "prepared"));
+        fixture.Write("prepared/preparation.json", fixture.Preparation,
+            TransferJson.Default.ReleasePreparationResult);
+        NativeCommandResult received = await Step(fixture, "observe",
+            "Receive transferred preparation", environment);
+        Assert.IsTrue(received.Succeeded, received.Stderr);
+        return await Step(fixture, "observe", "Observe native destination and original bytes",
+            environment);
+    }
+
+    [TestMethod]
     public async Task BodyAndCleanupFailuresRetainOriginalExceptionsAndStacks()
     {
         var bodyFailure = new AssertFailedException("Original body assertion.");
@@ -154,13 +248,15 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
     private static Dictionary<string, string?> Environment(NuGetReleaseTestFixture fixture) => new()
     {
         ["RUNNER_TEMP"] = fixture.Root,
-        ["DESTINATION"] = "github-packages",
+        ["DESTINATION"] = fixture.Prepared.Subject.Destination == "nugetorg"
+            ? "nugetorg" : "github-packages",
         ["UNIT"] = fixture.Prepared.Subject.Unit,
-        ["DRY_RUN"] = "false",
+        ["DRY_RUN"] = fixture.Prepared.Subject.DryRun ? "true" : "false",
         ["GITHUB_SHA"] = fixture.Prepared.Subject.Revision,
         ["GITHUB_REF"] = fixture.Prepared.Subject.SelectedRef,
         ["GITHUB_RUN_ID"] = "123",
         ["GITHUB_RUN_ATTEMPT"] = "1",
+        ["GITHUB_OUTPUT"] = Path.Combine(fixture.Root, "output"),
         ["WORKFLOW_APP"] = typeof(Program).Assembly.Location,
         ["WORKFLOW_DOTNET"] = System.Environment.GetEnvironmentVariable("DOTNET_HOST_PATH")
             ?? "dotnet",
@@ -180,7 +276,9 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
                 'observe-nuget' {
                   $observed = "$env:RUNNER_TEMP/observation/observation.json"
                   if ($env:CONTROLLED_OBSERVATION) { $observed = $env:CONTROLLED_OBSERVATION }
-                  Get-Content -LiteralPath $observed -Raw
+                  if (Test-Path -LiteralPath $observed -PathType Leaf) {
+                    Get-Content -LiteralPath $observed -Raw
+                  }
                   $global:LASTEXITCODE = 0
                   if ($env:CONTROLLED_OBSERVATION_EXIT) {
                     $global:LASTEXITCODE = [int]$env:CONTROLLED_OBSERVATION_EXIT
@@ -210,7 +308,8 @@ public sealed class NuGetWorkflowCallerTests(TestContext context)
         var steps = (YamlSequenceNode)selected.Children["steps"];
         YamlMappingNode step = steps.Children.Cast<YamlMappingNode>().Single(value =>
             value.Children.TryGetValue("name", out YamlNode? label) && label.ToString() == name);
-        string script = shim + "\n" + step.Children["run"];
+        string script = shim + "\n" + step.Children["run"]
+            + "\nif ((Test-Path -LiteralPath variable:\\LASTEXITCODE)) { exit $LASTEXITCODE }";
         NativeCommandResult result = await NativeProcess.ExecuteAsync(new("pwsh", fixture.Root,
             ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
                 Convert.ToBase64String(Encoding.Unicode.GetBytes(script))], 30, environment),

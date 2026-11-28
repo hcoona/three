@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using WorkflowDelivery.Core;
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
@@ -76,9 +77,17 @@ internal static class ReleaseJobInputs
             ? environment("UNIT") is { Length: > 0 } u ? u
                 : BrowserStorePreparation.DefaultUnit.Id
             : Env("UNIT");
+        SubmissionClearance clearance = selectedDestination == BrowserStorePreparation.EdgeAddons
+            ? environment("EDGE_CLEARANCE") switch
+            {
+                null or "" or "unresolved" => SubmissionClearance.Unresolved,
+                "first" => SubmissionClearance.First,
+                "owner-checked" => SubmissionClearance.OwnerChecked,
+                _ => throw new InvalidDataException("Unsupported Edge submission clearance."),
+            } : SubmissionClearance.Unresolved;
         var subject = new ReleaseSubject(Env("GITHUB_SHA"), Env("GITHUB_REF"), unit,
             route.Declaration(unit), buddy ? "buddy" : "official", selectedDestination,
-            dry == "true");
+            dry == "true", clearance);
         route.Admit?.Invoke(subject);
         BrowserStoreTarget? store = ecosystem == "browser-store" ? new(destination,
             Env("STORE_ITEM"), destination == BrowserStorePreparation.ChromeWebStore
@@ -114,6 +123,8 @@ internal static class ReleaseJobInputs
                 Path.Combine(prepared, "preparation.json"),
                 TransferJson.Default.ReleasePreparationResult);
             Same(preparation.Prepared.Subject);
+            if (store is not null && preparation.Target != store)
+                throw new InvalidDataException("Transferred store target mismatch.");
             return preparation;
         }
 
@@ -154,63 +165,74 @@ internal static class ReleaseJobInputs
                 if (phase == "anchor-publication" && transferred.Prepared.Anchor is null)
                     throw new InvalidDataException(
                         "Release preparation carries no GitHub Release anchor.");
-                if (store is not null && transferred.Target != store)
-                    throw new InvalidDataException("Transferred store target mismatch.");
                 Fresh(phase);
                 break;
             case ["state"]:
+                ReleasePreparationResult statePrep = Preparation();
                 ReleaseObservationResult observed = Read(At("observation/observation.json"),
                     TransferJson.Default.ReleaseObservationResult);
-                Same(observed.Observation.Subject);
-                ReleasePreparationResult? statePrep = File.Exists(
-                    Path.Combine(prepared, "preparation.json")) ? Preparation() : null;
-                if (store is not null)
-                    route.Adapter.ValidateObservation(statePrep ?? Preparation(), observed);
-                bool needed = ReleaseEngine.WriteNeeded(observed.Observation);
-                string outputLines = "write-needed=" + (needed ? "true" : "false") + "\n";
                 string anchorObsPath = At("observation/anchor-observation.json");
-                if (statePrep?.Prepared.Anchor is not null)
-                {
-                    ReleaseObservationResult anchorObserved = Read(anchorObsPath,
-                        TransferJson.Default.ReleaseObservationResult);
-                    Same(anchorObserved.Observation.Subject);
-                    ReleaseAdapters.GithubAnchor.ValidateObservation(
-                        ReleaseAdapters.AnchorPreparation(statePrep), anchorObserved);
-                    bool anchorNeeded = ReleaseEngine.WriteNeeded(anchorObserved.Observation);
-                    outputLines += "anchor-write-needed=" +
-                        (anchorNeeded ? "true" : "false") + "\n";
-                }
-                else if (File.Exists(anchorObsPath))
+                ReleaseObservationResult? anchorObserved = statePrep.Prepared.Anchor is null
+                    ? null : Read(anchorObsPath, TransferJson.Default.ReleaseObservationResult);
+                if (anchorObserved is null && File.Exists(anchorObsPath))
                     throw new InvalidDataException(
                         "Unexpected GitHub Release anchor observation.");
+                ReleaseDryRun? simulation = subject.DryRun
+                    ? ReleaseEngine.Describe(route.Adapter, statePrep, observed, anchorObserved)
+                    : null;
+                bool needed = simulation is not null ? simulation.HypotheticalWrites.Length != 0
+                    : ReleaseEngine.MayEnterPublisher(route.Adapter, statePrep, observed);
+                // A typed refusal is valid verifier input, not a successful write preflight.
+                bool primaryProceeds = ReleaseEngine.ObservationProceeds(
+                    route.Adapter.Profile(subject), observed.Observation);
+                bool anchorProceeds = anchorObserved is null ||
+                    ReleaseEngine.AnchorObservationProceeds(subject, anchorObserved);
+                if ((primaryProceeds && File.Exists(At("primary-observation-refused"))) ||
+                    (anchorProceeds && File.Exists(At("anchor-observation-refused"))))
+                    throw new InvalidDataException(
+                        "Observation exit status 1 contradicts its result.");
+                bool preflightProceeds = simulation is not null ||
+                    (primaryProceeds && anchorProceeds);
+                string outputLines =
+                    "write-needed=" + (needed && preflightProceeds ? "true" : "false") + "\n";
+                if (anchorObserved is not null)
+                {
+                    bool anchorNeeded = simulation is not null
+                        ? simulation.HypotheticalAnchorWrites is { Length: > 0 }
+                        : ReleaseEngine.MayEnterPublisher(ReleaseAdapters.GithubAnchor,
+                            ReleaseAdapters.AnchorPreparation(statePrep), anchorObserved);
+                    outputLines += "anchor-write-needed=" +
+                        (anchorNeeded && preflightProceeds ? "true" : "false") + "\n";
+                }
                 File.AppendAllText(Env("GITHUB_OUTPUT"), outputLines);
                 break;
             case ["source-config", var directory] when ecosystem == "ruby":
                 Write(At("source-tools.json"), new RubySourceTools(Env("RUBY_EXECUTABLE"),
                     Path.Combine(control, "source.rb"), Fresh(directory)),
-                    TransferJson.Default.RubySourceTools);
+                    DestinationToolJson.Default.RubySourceTools);
                 break;
             case ["publisher-config", var directory] when ecosystem == "ruby":
                 Write(At("publisher-tools.json"), new RubyPublisherTools(Env("RUBY_EXECUTABLE"),
                     Env("GEM_EXECUTABLE"), Fresh(directory)),
-                    TransferJson.Default.RubyPublisherTools);
+                    DestinationToolJson.Default.RubyPublisherTools);
                 break;
             case ["tool-request"] when ecosystem == "python":
                 Write(At("index-tool-request.json"), new PythonIndexToolRequest(
                     Env("UV_EXECUTABLE"), Env("PYTHON_EXECUTABLE"),
                     Path.Combine(control, "index-requirements.txt"),
-                    Fresh("index-tool-scratch")), TransferJson.Default.PythonIndexToolRequest);
+                    Fresh("index-tool-scratch")),
+                    DestinationToolJson.Default.PythonIndexToolRequest);
                 break;
             case ["index-config", var directory] when ecosystem == "python":
                 Write(At("index-tools.json"), new PythonIndexTools(Read(
                     At("index-tool-result.json"),
-                    TransferJson.Default.PythonIndexToolResult).Interpreter,
+                    DestinationToolJson.Default.PythonIndexToolResult).Interpreter,
                     Path.Combine(control, "packages.py"), Fresh(directory)),
-                    TransferJson.Default.PythonIndexTools);
+                    DestinationToolJson.Default.PythonIndexTools);
                 break;
             case ["publisher-config"] when ecosystem == "python":
                 Write(At("publisher-tools.json"), new PythonPublisherTools(Env("UV_EXECUTABLE"),
-                    Fresh("publisher-scratch")), TransferJson.Default.PythonPublisherTools);
+                    Fresh("publisher-scratch")), DestinationToolJson.Default.PythonPublisherTools);
                 break;
             default:
                 throw new InvalidDataException("Unsupported ordinary Release caller operation.");

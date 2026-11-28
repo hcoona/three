@@ -37,11 +37,13 @@ public sealed class RubyDestinationObservationTests(TestContext context)
             Success(fixture.Present(command, bytes)), context.CancellationToken);
         AssertObservation(fixture.Prepared, result, Enum.Parse<ReleaseFileState>(state),
             matches ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed);
-        RubySourceReadResult read = result.RubySource!;
-        Assert.AreEqual(RubySourceState.Present, read.State);
-        Assert.IsNotNull(read.Original);
-        Assert.AreEqual((long)bytes.Length, read.Original.Size);
+        DestinationRead read = Assert.ContainsSingle(result.Reads);
+        Assert.AreEqual("Present", read.Detail);
+        Assert.AreEqual(new NativeOriginalEvidence(unit, fixture.Prepared.Files[0].Version, "ruby",
+            bytes.Length, Hash(bytes)), read.Original);
+        Assert.AreEqual((long)bytes.Length, result.Observation.Files[0].Size);
         Assert.AreEqual(Hash(bytes), result.Observation.Files[0].Sha256);
+        Assert.DoesNotContain(fixture.Tools.Scratch, JsonSerializer.Serialize(result));
         AssertSanitized(result, Success(""));
     }
 
@@ -55,8 +57,8 @@ public sealed class RubyDestinationObservationTests(TestContext context)
             Success("""{"state":"absent"}"""), context.CancellationToken);
         AssertObservation(fixture.Prepared, result, ReleaseFileState.Absent,
             ReleaseCheckStatus.Passed);
-        Assert.AreEqual(RubySourceState.Absent, result.RubySource!.State);
-        Assert.IsNull(result.RubySource!.Original);
+        Assert.AreEqual("Absent", Assert.ContainsSingle(result.Reads).Detail);
+        Assert.IsNull(result.Observation.Files[0].Size);
         Assert.IsNull(result.Observation.Files[0].Sha256);
     }
 
@@ -173,7 +175,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
             context.CancellationToken);
         AssertObservation(fixture.Prepared, result, ReleaseFileState.Absent,
             ReleaseCheckStatus.Passed);
-        Assert.IsEmpty(result.RubySource!.Errors);
+        Assert.IsNull(result.Observation.Reasons);
         AssertSanitized(result, Success(bounded));
     }
 
@@ -289,7 +291,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
             ? new(user, token) : null;
         int calls = 0;
         ReleaseObservationResult result = await RubyDestinationObservation.ObserveAsync(
-            fixture.Prepared,
+            DestinationBindings.Ruby(fixture.Prepared),
             fixture.Tools, credential, (_, _) =>
             {
                 calls++;
@@ -297,7 +299,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
             }, context.CancellationToken);
         Assert.AreEqual(0, calls);
         AssertUnknown(fixture, result, ReleaseCheckStatus.Failed);
-        Assert.IsNull(result.RubySource!.Command);
+        Assert.IsNull(Assert.ContainsSingle(result.Reads).Command);
         Assert.IsEmpty(Directory.EnumerateFileSystemEntries(fixture.Tools.Scratch));
         AssertNoSecrets(JsonSerializer.Serialize(result));
     }
@@ -308,18 +310,21 @@ public sealed class RubyDestinationObservationTests(TestContext context)
     [DataRow("buddy", "rubygems", null, "ruby-gem")]
     [DataRow("buddy", "github-packages-ruby", "unrelated-package", "ruby-gem")]
     [DataRow("buddy", "github-packages-ruby", null, "python-wheel")]
+    [DataRow("buddy", "github-packages-ruby", "another-package", "ruby-gem", "another-package")]
     public async Task UnsupportedPreparationDoesNotRead(string channel, string destination,
-        string? name, string kind)
+        string? name, string kind, string unit = "hcoona-release-smoke-ruby")
     {
         using var fixture = new Fixture(channel, destination);
         PreparedRelease prepared = fixture.Prepared with
         {
+            Subject = fixture.Prepared.Subject with { Unit = unit },
             Files = [fixture.Prepared.Files[0] with { Name = name ?? "hcoona-release-smoke-ruby",
             Kind = kind }]
         };
         int calls = 0;
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            RubyDestinationObservation.ObserveAsync(prepared, fixture.Tools, Credential, (_, _) =>
+            RubyDestinationObservation.ObserveAsync(
+                DestinationBindings.Ruby(prepared), fixture.Tools, Credential, (_, _) =>
             {
                 calls++;
                 return Task.FromResult(Success("{\"state\":\"absent\"}"));
@@ -330,7 +335,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
 
     [TestMethod]
     [DataRow("https://unselected.invalid", "hcoona-release-smoke-ruby", "1.2.3")]
-    [DataRow("https://rubygems.org", "another-package", "1.2.3")]
+    [DataRow("https://rubygems.org", "", "1.2.3")]
     [DataRow("https://rubygems.org", "hcoona-release-smoke-ruby", " ")]
     public async Task UnsupportedSourceCoordinateCannotRead(string host, string name,
         string version)
@@ -366,7 +371,7 @@ public sealed class RubyDestinationObservationTests(TestContext context)
         string host = "https://rubygems.org", string name = "hcoona-release-smoke-ruby",
         string version = "1.2.3") =>
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() => RubySourceReader.ReadAsync(
-            host, name, version, tools, null, (_, _) => throw new AssertFailedException(
+            new(host, name, version), tools, null, (_, _) => throw new AssertFailedException(
                 "Unsafe read request reached the native executor."), context.CancellationToken));
 
     [TestMethod]
@@ -406,17 +411,16 @@ public sealed class RubyDestinationObservationTests(TestContext context)
         ReleaseCheckStatus status)
     {
         AssertObservation(fixture.Prepared, result, ReleaseFileState.Unknown, status);
-        Assert.AreEqual(RubySourceState.Unknown, result.RubySource!.State);
-        Assert.IsNull(result.RubySource!.Original);
+        Assert.AreEqual("Unknown", Assert.ContainsSingle(result.Reads).Detail);
         Assert.IsNull(result.Observation.Files[0].Size);
         Assert.IsNull(result.Observation.Files[0].Sha256);
-        Assert.IsNotEmpty(result.RubySource!.Errors);
+        Assert.IsNotEmpty(result.Observation.Reasons!);
     }
 
     private static void AssertSanitized(ReleaseObservationResult result,
         NativeCommandResult reached)
     {
-        NativeCommandResult? command = result.RubySource!.Command;
+        NativeCommandResult? command = Assert.ContainsSingle(result.Reads).Command;
         Assert.IsNotNull(command);
         Assert.AreEqual(reached.Termination, command.Termination);
         Assert.AreEqual(reached.ExitCode, command.ExitCode);
@@ -468,7 +472,8 @@ public sealed class RubyDestinationObservationTests(TestContext context)
 
         internal Task<ReleaseObservationResult> ObserveAsync(Func<NativeCommand,
             NativeCommandResult> execute,
-            CancellationToken token) => RubyDestinationObservation.ObserveAsync(Prepared, Tools,
+            CancellationToken token) => RubyDestinationObservation.ObserveAsync(
+                DestinationBindings.Ruby(Prepared), Tools,
                 Credential,
                 (command, reachedToken) =>
                 {

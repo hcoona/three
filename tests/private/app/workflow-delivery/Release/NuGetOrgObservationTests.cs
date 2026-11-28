@@ -56,7 +56,7 @@ public sealed class NuGetOrgObservationTests(TestContext context)
         using var client = new HttpClient(handler);
 
         ReleaseObservationResult result = await new NuGetOrgObservation(client).ObserveAsync(
-            Prepared(), "", context.CancellationToken);
+            DestinationBindings.NuGet(Prepared()), "", context.CancellationToken);
 
         ReleaseFileObservation file = Assert.ContainsSingle(result.Observation.Files);
         Assert.AreEqual(Enum.Parse<ReleaseFileState>(expected), file.State);
@@ -64,9 +64,6 @@ public sealed class NuGetOrgObservationTests(TestContext context)
         Assert.IsNull(file.Sha256);
         Assert.IsTrue(handler.Requests.All(request => request.Headers.Authorization is null &&
             !request.Uri.AbsolutePath.EndsWith(".nupkg", StringComparison.Ordinal)));
-        if (expected == "Available")
-            Assert.AreEqual(NuGetOrgObservation.PackageBaseAddress,
-                result.Resources!.PackageBaseAddress);
         Assert.AreEqual(expected is "Available" or "Absent" ? ReleaseCheckStatus.Passed
             : ReleaseCheckStatus.Failed, Assert.ContainsSingle(result.Observation.Checks).Status);
     }
@@ -91,7 +88,7 @@ public sealed class NuGetOrgObservationTests(TestContext context)
         using var client = new HttpClient(handler);
 
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            new NuGetOrgObservation(client).ObserveAsync(prepared,
+            new NuGetOrgObservation(client).ObserveAsync(DestinationBindings.NuGet(prepared),
                 change == "credential" ? "secret" : "", context.CancellationToken));
         Assert.IsEmpty(handler.Requests);
     }

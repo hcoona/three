@@ -45,27 +45,6 @@ for when a grant is needed and how it ends.
   `records:check`, HK conformance, and `Validate` CI, and delete this entry
   atomically in the final remodel pull request.
 
-### Align Workflow Delivery V3 with its component and port contracts
-
-- **Work carrier:** [Issue #1947](https://github.com/hcoona/three/issues/1947)
-  and its linked implementation pull requests.
-- **Accepted inputs:** the Workflow Delivery [requirements](../src/private/app/workflow-delivery/docs/requirements.md),
-  [native contracts](../src/private/app/workflow-delivery/docs/middle-level-design.md#integration-mapping),
-  [business decisions](../src/private/app/workflow-delivery/docs/design/business-semantics.md),
-  and [component and port contracts](../src/private/app/workflow-delivery/docs/design/component-contracts.md).
-- **Advancement and outcome:** complete the model-aligned CI and Release
-  redesign in #1947, including the decision core, shared engine, ecosystem
-  and destination ports, and static CLI composition. Preserve contributor and
-  operator journeys, native approvals, and privilege boundaries. Align the
-  build, selection, design records and bounded TLC verification with the
-  production paths; compare actual decisions and operations to the independent
-  specification, including cases the specification rejects.
-- **Exclusions and closure:** ordinary credential-free local and PR validation
-  only. No release dispatch, publication, live proving, credential, access or
-  product-scope change. Retain independent review and `GOV-011`; remove this
-  entry with the final accepted implementation and its verification, or on an
-  explicit owner stop.
-
 ### Reconcile Workflow V1, V2 and V3 documentation
 
 - **Work carrier:** [Issue #1406](https://github.com/hcoona/three/issues/1406)

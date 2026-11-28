@@ -1,4 +1,3 @@
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -17,13 +16,13 @@ internal static class PythonNativePublisher
     private static readonly string[] StateVariables = ["HOME", "USERPROFILE", "XDG_CONFIG_HOME",
         "XDG_CACHE_HOME", "UV_CACHE_DIR", "TMPDIR", "TMP", "TEMP"];
 
-    internal static Task<PythonPublishResult> PublishAsync(PreparedRelease prepared,
+    internal static Task<PythonPublishResult> PublishAsync(PackageDestination prepared,
         string originals, string output, PythonPublisherTools tools,
         IReadOnlyDictionary<string, string?> platform, TextWriter masking,
         CancellationToken token) => PublishAsync(prepared, originals, output, tools, platform,
             masking, NativeProcess.ExecuteAsync, token);
 
-    internal static async Task<PythonPublishResult> PublishAsync(PreparedRelease prepared,
+    internal static async Task<PythonPublishResult> PublishAsync(PackageDestination prepared,
         string originals, string output, PythonPublisherTools tools,
         IReadOnlyDictionary<string, string?> platform, TextWriter masking,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
@@ -35,15 +34,14 @@ internal static class PythonNativePublisher
             ("official", "pypi") => "https://upload.pypi.org/legacy/",
             _ => throw new InvalidDataException("Unsupported native Python publication."),
         };
-        string package = ReleaseUnitCatalog.AdmitPython(prepared.Subject).Id;
         if (prepared.Subject.DryRun ||
             prepared.Files.Length != 2 ||
             prepared.Files.Count(file => file.Kind == "python-wheel") != 1 ||
             prepared.Files.Count(file => file.Kind == "python-sdist") != 1 ||
-            prepared.Files.Any(file => file.Name != package))
+            prepared.Files.Any(file => file.Name != prepared.Package))
             throw new InvalidDataException("Unsupported Python publication.");
         // The effect boundary repeats the request's live ref eligibility.
-        ReleasePolicy.RequireEligible(prepared.Subject);
+        LiveReleaseRef.RequireEligible(prepared.Subject);
         string root = Absolute(originals), scratch = Absolute(tools.Scratch);
         if (!Directory.Exists(root) || !Directory.Exists(scratch) ||
             Directory.EnumerateFileSystemEntries(scratch).Any() ||
@@ -59,7 +57,8 @@ internal static class PythonNativePublisher
             string path = Path.GetFullPath(Path.Combine(root, file.Path));
             if (!OwnedPath.Within(path, root) || path == root)
                 throw new InvalidDataException("Original Python path leaves its root.");
-            PythonPackageOperations.RequireOriginal(new(file.Kind, path, file.Size, file.Sha256));
+            OwnedFile.Verify(path, file.Size, file.Sha256,
+                "Original Python distribution bytes changed.");
         }
         var environment = new Dictionary<string, string?>(StringComparer.Ordinal)
         {

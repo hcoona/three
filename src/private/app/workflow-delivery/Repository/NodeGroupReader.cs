@@ -12,8 +12,7 @@ internal sealed record NodeGroupReadback(CiPlan Adopted, RetainedNodeSelection[]
 // One concrete root-CI caller joins native consumption and endpoint responsibility.
 internal static class NodeGroupReader
 {
-    internal const string ControlProject =
-        "src/private/app/workflow-delivery/WorkflowDelivery.csproj";
+    internal const string ControlProject = DotNetTaskHost.ControlProject;
     internal const string FixtureName = NodeRepositoryReader.FixtureName;
     internal static readonly string[] CallerSources = [".github/workflows/ci.yml",
         "src/private/app/workflow-delivery/CI/Callers/NodeCiCaller.cs",

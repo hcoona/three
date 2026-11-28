@@ -24,14 +24,18 @@ one group per store and product, never cancelled.
 | `prepare`               | `contents: read`                                               | Build control first, install frozen dependencies with `--ignore-scripts`, run `release prepare-browser-store` once and retain the selected store's originals                                             |
 | `observe`               | `contents: read`, `id-token: write` (live CWS read-only token) | `observe-browser-store`, Official `observe-github-anchor`, `job-inputs browser-store state` and, on dry run, `describe-browser-store`                                                                    |
 | `publish`               | Environment `workflow-delivery-v3-<store>`; store credentials  | Fresh observation, the store's native upload/submit operations and, for AMO and Edge, the post-submission observation                                                                                    |
+| `anchor-gate`           | `contents: read`                                               | Evaluate the retained primary receipt and reviewed repository anchor before scheduling its writer                                                                                                        |
 | `publish-github-anchor` | `contents: write`                                              | Serialized by unit (`workflow-delivery-github-release-<unit>`, `queue: max`) after store submission is satisfied; creates or adopts `release/<unit>/v<npmVersion>` and uploads selected store archive(s) |
 | `verify-result`         | `contents: read`, `id-token: write` (CWS read-only token)      | Final CWS `observe-browser-store`, Official `observe-github-anchor`, then `complete-browser-store` for every store                                                                                       |
 
-The publisher runs only for a live request whose observation needs a write.
-A live CWS request that is already satisfied completes without entering the
-gate ([WD-REL-007](../requirements.md#release-delivery)). AMO version reads
-and Edge operation-status reads need the publish credentials,
-so a live AMO or Edge request always enters the gate.
+Only live requests can enter the publisher. A CWS request that is already
+satisfied completes without entering the gate
+([WD-REL-007](../requirements.md#release-delivery)). AMO version reads
+need the publish credentials, so a live AMO request can enter the gate and
+perform just one read: a disabled version is a confirmed conflict; an
+unreadable version is unknown. Neither permits a write to AMO or to the
+repository anchor. Edge has no version lookup: a live request without
+`first` or `owner-checked` clearance does not enter the gate.
 
 A dry run, from any ref and either channel, acquires no store credential, not
 even the CWS read-only token: that token comes from the one write-capable
@@ -98,15 +102,20 @@ resubmits on its own: an upload or submission whose operation fails or does
 not finish leaves the request unknown or conflicting and returns it to the
 owner, and a rerun of the same request is rejected (WD-OPS-002 and WD-OPS-003
 in [Observation, Retry, and Recovery](../requirements.md#observation-retry-and-recovery)).
-Before dispatching a new live Edge request after an unknown outcome, the owner
-checks the product in Partner Center and dispatches only if the version was not
-received.
+For a first live Edge submission, the operator selects `edge-clearance=first`.
+After an unknown outcome, the owner checks the product in Partner Center and
+selects `owner-checked` only if that version was not received. Omitting the
+input or selecting `unresolved` keeps the request out of the store Environment:
+the version remains unknown and this request did not attempt submission. A
+dry run needs no clearance. The declaration is part of this request, not
+stored release history or an alternative to the native approval.
 
-The store adapters live in [`Destinations/`](../../Destinations)
-(`ChromeWebStore`, `FirefoxAmo`, `EdgeAddons`, the shared bounded `StoreHttp`
-and [`BrowserStoreDestinationAdapter`](../../Destinations/ReleaseAdapters.cs)),
-while [`ReleaseEngine`](../../Release/ReleaseEngine.cs) owns the shared
-describe, publish and complete protocol across all destinations. Scenario tests
+The [destination library](../../Destinations/WorkflowDelivery.Destinations.csproj)
+owns `ChromeWebStore`, `FirefoxAmo`, `EdgeAddons` and their native stages.
+Polling handles never leave the publisher. The host binds one submission
+operation to the [shared publication window](../../Engine/Release/PublicationWindow.cs);
+the returned receipt retains each actual upload and submission outcome.
+Scenario tests
 use HTTP fakes in
 [`BrowserStoreReleaseTests`](../../../../../../tests/private/app/workflow-delivery/Release/BrowserStoreReleaseTests.cs)
 and fake native builds in

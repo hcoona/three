@@ -1,26 +1,64 @@
 using WorkflowDelivery.CI;
+using WorkflowDelivery.Core;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Ecosystems;
 
 internal sealed record RubyGemArchive(string Path, long Length, string Sha256);
+internal sealed record RubyPackageRecipe(string Id, string Require, bool NbgvEnv, bool LockedBundle,
+    string[] Dependencies, string Probe, bool RSpec);
 
 // RubyGems and Bundler own package semantics; callers own plans and command/result recording.
-internal sealed class RubyPackageOperations(RubyReleaseUnit unit, RubyFactTools tools, string gem,
+internal sealed class RubyPackageOperations(RubyPackageRecipe unit, RubyFactTools tools, string gem,
     string nbgv, string state)
 {
     // Bundle installation and the whole suite each stay within preparation's overall cap.
     private const int SuiteDeadlineSeconds = 600;
 
-    internal async Task<RubyGemArchive> BuildAsync(GitMaterialization checkout, string directory,
-        string entryPoint, string version,
+    internal async Task<QualifiedUnitOriginals?> QualifyAsync(UnitBuildSubject subject,
+        GitMaterialization checkout, string directory, string entryPoint, string version,
+        Func<RubyRSpecRequest, Task> runSuite, RecordNativeCheck check,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
-        RubySourceGemFacts source = await RubySourceCollector.ReadSourceAsync(checkout,
-            entryPoint, tools, nbgv, execute, token);
-        if (source.Gem.Name != unit.Id || source.Gem.Version != version ||
+        string project = Path.Combine(checkout.Root, directory);
+        RubyGemArchive? original = null;
+        QualifiedUnitOriginals? result = null;
+        await check("build", async () =>
+        {
+            RubySourceLocation source = RubyRepositoryInventory.Discover(checkout.Revision).Sources
+                .Single(item => item.Gemspec == entryPoint);
+            RubySourceGemFacts facts =
+                await RubySourceFacts.ReadAsync(checkout, source, tools, nbgv,
+                execute, token);
+            original =
+                await BuildAsync(checkout, directory, entryPoint, version, facts, execute, token);
+        });
+        await check("contents", async () => _ = await InspectAsync(checkout, directory, original!,
+            version, release: true, execute, token));
+        await check("consumer", () => ConsumeAsync(project, original!, version, release: true,
+            execute, token));
+        if (unit.RSpec) await check("tests", async () => await runSuite(
+            await PrepareSuiteAsync(checkout.Root, project, execute, token)));
+        await check("original-bytes", () =>
+        {
+            RequireOriginal(original!);
+            result = subject.Complete(new UnitOriginal(subject.ForKind("ruby-gem"), unit.Id,
+                version, original!.Path, original.Length, original.Sha256));
+            return Task.CompletedTask;
+        });
+        return result;
+    }
+
+    internal async Task<RubyGemArchive> BuildAsync(GitMaterialization checkout, string directory,
+        string entryPoint, string version, RubySourceGemFacts source,
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
+        CancellationToken token)
+    {
+        string gemspec = Path.GetFullPath(entryPoint, checkout.Root);
+        if (!gemspec.Equals(source.Gemspec, OwnedPath.Comparison) ||
+            source.Gem.Name != unit.Id || source.Gem.Version != version ||
             source.Gem.Platform != "ruby")
             throw new InvalidDataException("Native gem source identity differs.");
         IReadOnlyDictionary<string, string?> environment = unit.NbgvEnv
@@ -29,7 +67,7 @@ internal sealed class RubyPackageOperations(RubyReleaseUnit unit, RubyFactTools 
             : tools.Environment;
         string archive = Path.Combine(state, "original.gem");
         await RunAsync(new(tools.Ruby, Path.Combine(checkout.Root, directory),
-            [gem, "build", "--norc", Path.Combine(checkout.Root, entryPoint), "--output", archive],
+            [gem, "build", "--norc", gemspec, "--output", archive],
             tools.DeadlineSeconds, environment, InheritEnvironment: false,
             CloseStandardInput: true), execute, token);
         (long length, string sha256) = await OwnedFile.MeasureAsync(archive, token,
@@ -157,25 +195,19 @@ internal sealed class RubyPackageOperations(RubyReleaseUnit unit, RubyFactTools 
     }
 
     // The adopted ruby/rspec-v1 suite runs from the exact checkout with its locked bundle.
-    internal async Task TestReleaseAsync(GitMaterialization checkout, string directory,
+    internal async Task<RubyRSpecRequest> PrepareSuiteAsync(
+        string checkout,
         string projectDirectory,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
-        if (unit.Preset != RubyPackageChecks.RSpecPreset)
+        if (!unit.RSpec)
             throw new InvalidDataException("Ruby Release unit has no adopted suite.");
         string tests = Directory.CreateDirectory(Path.Combine(state, "tests")).FullName;
         (Dictionary<string, string?> environment, string bundler) = await InstallLockedAsync(
             projectDirectory, tests, null, execute, token);
-        RubyRSpecRun run = await RubyRSpecExecution.RunAsync(
-            new(directory, RubyProjectChecks.RSpec, "default"),
-            new(checkout.Root, tools.Ruby, Path.Combine(tests, "gems", "bin", "bundle"), bundler,
-                Path.Combine(projectDirectory, "Gemfile"), tests, SuiteDeadlineSeconds,
-                environment),
-            execute, token);
-        if (run.Status != CheckStatus.Passed)
-            throw new InvalidDataException(run.ReportError ?? "Native RSpec suite did not " +
-                "pass: " + run.Status + ". " + NativeDiagnostic.Describe(run.Result));
+        return new(checkout, tools.Ruby, Path.Combine(tests, "gems", "bin", "bundle"), bundler,
+            Path.Combine(projectDirectory, "Gemfile"), tests, SuiteDeadlineSeconds, environment);
     }
 
     // Bundler owns frozen resolution from the committed lock into owned gem state.

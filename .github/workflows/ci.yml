@@ -1287,7 +1287,7 @@ jobs:
           dotnet "$RUNNER_TEMP/native-control/control/WorkflowDelivery.dll" ci native-preparation-plan "$GITHUB_WORKSPACE" \
             "$RUNNER_TEMP/native-scope/ci-scope.json" "$RUNNER_TEMP/native-preparation"
       - name: Setup selected native tools
-        if: steps.plan.outputs.python == 'true' || steps.plan.outputs.ruby == 'true' || steps.plan.outputs.node == 'true' || steps.plan.outputs.browser == 'true'
+        if: steps.plan.outputs.python == 'true' || steps.plan.outputs.ruby == 'true' || steps.plan.outputs.node == 'true' || steps.plan.outputs.browser == 'true' || steps.plan.outputs.models != 'none'
         uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
           version: '2026.11.14'
@@ -1297,6 +1297,20 @@ jobs:
             ${{ steps.plan.outputs.python == 'true' && 'python uv' || '' }}
             ${{ steps.plan.outputs.ruby == 'true' && 'ruby' || '' }}
             ${{ (steps.plan.outputs.node == 'true' || steps.plan.outputs.browser == 'true') && 'node pnpm' || '' }}
+            ${{ steps.plan.outputs.models != 'none' && 'java github:tlaplus/tlaplus' || '' }}
+      - name: Verify bounded Workflow Delivery models
+        if: steps.plan.outputs.models != 'none'
+        timeout-minutes: 25
+        env:
+          JAVA_TOOL_OPTIONS: -Xmx768m
+          MODEL_CHECKS: ${{ steps.plan.outputs.models }}
+        run: |
+          case "$MODEL_CHECKS" in
+            full) args=() ;;
+            callers) args=(--conformance-only) ;;
+            *) exit 2 ;;
+          esac
+          mise exec --locked dotnet java github:tlaplus/tlaplus -- python eng/scripts/check_workflow_delivery_models.py "${args[@]}"
       - name: Execute required original Python preparation scenario
         if: steps.plan.outputs.python == 'true'
         run: |

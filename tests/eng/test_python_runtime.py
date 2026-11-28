@@ -392,7 +392,16 @@ def test_standalone_delivery_workflows_provision_framework_provider():
             resolve(prepare["outputs"]["dotnet-frameworks"], bindings)
             == provider
         ), path
-        for job_name, job in workflow["jobs"].items():
+        for job_name, declared in workflow["jobs"].items():
+            job = declared
+            if "uses" in declared:
+                gate = workflows_dir / "workflow-delivery-v3-anchor-gate.yml"
+                assert job["uses"] == f"./.github/workflows/{gate.name}"
+                for tool in ("dotnet", "dotnet-frameworks"):
+                    bindings[f"inputs.{tool}"] = resolve(
+                        job["with"][tool], bindings
+                    )
+                job = yaml.safe_load(gate.read_text())["jobs"]["evaluate"]
             mise_actions = action_steps(job, "jdx/mise-action")
             assert len(mise_actions) == 1, (path, job_name)
             install_args = mise_actions[0].get("with", {}).get("install_args")

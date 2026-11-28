@@ -27,21 +27,20 @@ internal static class RubyFactsAssembler
                 "A Ruby bundle has no Ruby producer or quality owner.");
         if (changedPaths.Distinct(StringComparer.Ordinal).Count() != changedPaths.Length)
             throw new InvalidDataException("Duplicate Ruby changed coordinate.");
-        var downstream = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-        var owners = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        var relations = new ProducerImpact();
         foreach (var (endpoint, index) in endpoints)
         {
             foreach (RubyProjectDependencies producer in endpoint.Native.Graph.Projects)
                 foreach (string dependency in producer.Ordinary)
-                    Add(downstream, dependency, producer.Directory);
+                    relations.AddConsumption(dependency, producer.Directory);
             foreach (ProjectFacts owner in endpoint.Owners)
             {
-                Add(owners, owner.Directory, owner.Id);
+                relations.BindOwner(owner.Directory, owner.Id);
                 foreach (RubyBundleConsumption bundle in endpoint.Native.Graph.Bundles.Where(
                              bundle => Governs(owner.Directory, bundle.Directory,
                                  index.NativeDirectories)))
                     foreach (string producer in bundle.Producers)
-                        Add(downstream, producer, owner.Directory);
+                        relations.AddConsumption(producer, owner.Directory);
             }
         }
         var reasons = new HashSet<SelectionReason>();
@@ -70,15 +69,7 @@ internal static class RubyFactsAssembler
                     !index.Operations.Contains(path) && targets.Count == 0 &&
                     !index.BundleInputs.Contains(path))
                     throw new InvalidDataException($"Unresolved Ruby input: {path}");
-                var pending = new Queue<string>(producers);
-                while (pending.TryDequeue(out string? producer))
-                {
-                    if (owners.TryGetValue(producer, out HashSet<string>? actual))
-                        targets.UnionWith(actual);
-                    if (downstream.TryGetValue(producer, out HashSet<string>? consumers))
-                        foreach (string consumer in consumers)
-                            if (producers.Add(consumer)) pending.Enqueue(consumer);
-                }
+                relations.IncludeOwners(producers, targets);
                 foreach (string owner in targets)
                     reasons.Add(new(path, endpoint.Revision.Commit, owner));
                 affected |= targets.Count != 0;
@@ -199,10 +190,4 @@ internal static class RubyFactsAssembler
         IEnumerable<string> paths) => paths.Where(entries.ContainsKey)
             .Order(StringComparer.Ordinal).ToArray();
 
-    private static void Add(Dictionary<string, HashSet<string>> graph, string from, string to)
-    {
-        if (!graph.TryGetValue(from, out HashSet<string>? values))
-            graph.Add(from, values = new(StringComparer.Ordinal));
-        values.Add(to);
-    }
 }
