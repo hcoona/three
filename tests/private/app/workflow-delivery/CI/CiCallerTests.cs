@@ -348,6 +348,9 @@ public sealed class CiCallerTests(TestContext context)
         Put("node24", second);
         Assert.IsTrue(Join(0).Satisfied);
         Assert.HasCount(4, files.Read("results.json", TransferJson.Default.CheckResultArray));
+        Put("node22", first with { Results = [.. first.Results, first.Results[0]] });
+        Assert.Contains(first.Results[0].Key.ToString(), Assert.ContainsSingle(Join(1).Errors));
+        Put("node22", first);
         foreach (CheckStatus status in new[] { CheckStatus.Failed, CheckStatus.Cancelled,
                      CheckStatus.Skipped, CheckStatus.TimedOut })
         {

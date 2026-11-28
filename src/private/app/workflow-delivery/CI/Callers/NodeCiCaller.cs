@@ -167,7 +167,15 @@ internal static class NodeCiCaller
                     InvalidDataException("Node runtime result has a different original subject.");
         }
         CheckResult[] results = sets.SelectMany(result => result.Results).ToArray();
-        return (results, ResultCollector.Collect(group.Adopted, results));
+        CiOutcome outcome = ResultCollector.Collect(group.Adopted, results);
+        string[] repeats = [.. results.CountBy(result => result.Key)
+            .Where(pair => pair.Value > 1)
+            .Select(pair => $"Node runtime reported repeated check: {pair.Key}.")];
+        return (results, repeats.Length == 0 ? outcome : outcome with
+        {
+            Satisfied = false,
+            Errors = [.. outcome.Errors, .. repeats],
+        });
     }
 
     internal static string[] RetainedMembers(NodeGroupReadback group, string key)
