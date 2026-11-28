@@ -120,9 +120,9 @@ public sealed class GithubReleaseTests(TestContext context)
             ["release", "publish-github-release", preparation, originals.Root, initialPath],
             TransferJson.Default.ReleasePublicationResult);
         Assert.IsEmpty(publication.Errors);
-        Assert.IsTrue(publication.Steps.SingleOrDefault(step =>
-            step.Kind == "container")?.Command!.Succeeded);
-        Assert.HasCount(2, publication.Uploads);
+        Assert.IsTrue(publication.Steps is
+            [{ Kind: "container", Acknowledged: true }, { Kind: "upload", Target: "installer" },
+            { Kind: "upload", Target: "portable" }]);
         Assert.AreEqual(Revision, github.TagCommit);
         Assert.AreEqual((official ? "release/" : "buddy/") + "image-occlusion-editor/v" +
             Version, github.Release!.Tag);
@@ -449,6 +449,23 @@ public sealed class GithubReleaseTests(TestContext context)
         Assert.AreEqual(ReleaseBusinessState.Unsatisfied, lostPrimary.Outcome.State);
         Assert.IsNull(lostPrimary.MutationAttempted);
 
+        // The Firefox review allowed both uploads to the shared release, not its recreation.
+        github.DeleteRelease();
+        int writesBefore = github.Requests.Count(request => request.Method != HttpMethod.Get);
+        ReleasePublicationResult stopped = RunJson(["release", "publish-github-anchor",
+            firefoxPrepPath, root.Root, firefoxInitialPath, firefoxAnchorInitialPath,
+            firefoxPubPath], TransferJson.Default.ReleasePublicationResult, expectedExit: 1);
+        Assert.IsEmpty(stopped.Steps);
+        Assert.Contains("enlarge", Assert.ContainsSingle(stopped.Errors));
+        Assert.AreEqual(writesBefore, github.Requests.Count(request =>
+            request.Method != HttpMethod.Get));
+        string unreviewedCreate = root.Save("firefox-unreviewed-create.json",
+            stopped with { Steps = [chromeAnchorPub.Steps[0]] },
+            TransferJson.Default.ReleasePublicationResult);
+        Assert.ThrowsExactly<InvalidDataException>(() => RunCli(
+            ["release", "complete-browser-store", firefoxPrepPath, firefoxInitialPath, "-",
+                firefoxPubPath, firefoxAnchorInitialPath, "-", unreviewedCreate]));
+
         static ReleaseFile StoreFile(string output, string kind, string version, string path,
             byte[] bytes) =>
             new("browser-extensions", output, kind, "steam-account-history-to-csv", version, path,
@@ -687,6 +704,66 @@ public sealed class GithubReleaseTests(TestContext context)
     }
 
     [TestMethod]
+    public async Task DisappearingReleaseCannotEnlargeReviewedUploads()
+    {
+        using var github = new FakeGithub();
+        using var originals = new Originals();
+        ReleasePreparationResult preparation = Preparation(false);
+        GithubReleaseDestination destination = github.Destination();
+        github.Publish(Revision, prerelease: true);
+        ReleaseObservationResult initial = await destination.ObserveAsync(preparation.Prepared,
+            context.CancellationToken);
+        github.DeleteRelease();
+
+        ReleasePublicationResult publication = await Publish(preparation, originals, initial,
+            destination);
+
+        Assert.IsEmpty(github.Requests.Where(request => request.Method != HttpMethod.Get));
+        Assert.IsEmpty(publication.Steps);
+        Assert.Contains("enlarge", Assert.ContainsSingle(publication.Errors));
+        ReleaseObservationResult final = await destination.ObserveAsync(preparation.Prepared,
+            context.CancellationToken);
+        ReleaseCompletionResult result = ReleaseEngine.Complete(ReleaseAdapters.GithubRelease,
+            preparation, initial, final, publication);
+        Assert.IsFalse(result.MutationAttempted);
+        Assert.AreEqual(ReleaseBusinessState.Unsatisfied, result.Outcome.State);
+    }
+
+    [TestMethod]
+    public async Task CompletionRejectsStepsOutsideTheReviewedReleaseCreationSequence()
+    {
+        using var github = new FakeGithub();
+        using var originals = new Originals();
+        ReleasePreparationResult preparation = Preparation(false);
+        GithubReleaseDestination destination = github.Destination();
+        Task<ReleaseObservationResult> Observe() =>
+            destination.ObserveAsync(preparation.Prepared, context.CancellationToken);
+
+        github.Publish(Revision, prerelease: true);
+        ReleaseObservationResult uploadsOnly = await Observe();
+        github.AddAsset(Name("portable-zip"), "uploaded", Portable);
+        ReleaseObservationResult installerOnly = await Observe();
+        github.DeleteRelease();
+        ReleaseObservationResult absent = await Observe();
+        ReleasePublicationResult publication = await Publish(preparation, originals, absent,
+            destination);
+        ReleaseObservationResult final = await Observe();
+        ReleaseWriteStep create = publication.Steps[0];
+        ReleaseWriteStep installer = publication.Steps[1];
+
+        Reject(uploadsOnly, absent, [create]);
+        Reject(installerOnly, uploadsOnly, [installer]);
+        Reject(absent, absent, [installer]);
+        Reject(absent, absent, [installer, create]);
+
+        void Reject(ReleaseObservationResult reviewed, ReleaseObservationResult fresh,
+            ReleaseWriteStep[] steps) =>
+            Assert.ThrowsExactly<InvalidDataException>(() => ReleaseEngine.Complete(
+                ReleaseAdapters.GithubRelease, preparation, reviewed, final,
+                publication with { Before = fresh, Steps = steps }));
+    }
+
+    [TestMethod]
     [DataRow(0)]
     [DataRow(-1)]
     public async Task InvalidCreatedReleaseIdPreventsAssetUploads(int id)
@@ -860,6 +937,12 @@ public sealed class GithubReleaseTests(TestContext context)
         }
 
         internal void DeleteTag() => tags.Remove(Release!.Tag);
+
+        internal void DeleteRelease()
+        {
+            releases.Remove(Release!.Tag);
+            Release = null;
+        }
 
         internal void MarkFullRelease() =>
             Release = releases[Release!.Tag] = Release with { Prerelease = false };
