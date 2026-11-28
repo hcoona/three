@@ -4,18 +4,15 @@ using System.Net.Http.Headers;
 using System.Text;
 using NuGet.Common;
 using NuGet.Configuration;
+using NuGet.Packaging;
 using NuGet.Packaging.Core;
 using NuGet.Protocol;
 using NuGet.Protocol.Core.Types;
 using NuGet.Versioning;
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Destinations;
-
-internal sealed record NuGetPushResult(bool ReturnedSuccessfully, bool Cancelled,
-    string? FailureType, double DurationSeconds);
 
 // Official NuGet owns upload construction and its bounded retries. This component
 // constrains the selected original and connects cancellation to the actual transport.
@@ -27,7 +24,7 @@ internal static class NuGetPublisher
 
     // The GitHub credential is the job token; the nuget.org credential is the short-lived API
     // key that the official NuGet login action exchanged for the job's OIDC token.
-    internal static async Task<NuGetPushResult> PushAsync(PreparedRelease prepared,
+    internal static async Task<NativeLibraryResult> PushAsync(PackageDestination prepared,
         string originals, string endpoint, string credential, CancellationToken cancellation,
         HttpMessageHandler? controlledTransport = null)
     {
@@ -50,15 +47,17 @@ internal static class NuGetPublisher
         if (!OwnedPath.Within(path, root) ||
             !File.Exists(path) || !path.EndsWith(".nupkg", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Original NuGet package is missing or not a file.");
-        ReleasePolicy.RequireEligible(prepared.Subject);
-        var identity = new PackageIdentity(
-            ReleaseUnitCatalog.AdmitNuGet(prepared.Subject).PackageId,
-            NuGetVersion.Parse(file.Version));
-        if (!PackageIdentityComparer.Default.Equals(identity,
-                new PackageIdentity(file.Name, NuGetVersion.Parse(file.Version))) ||
-            !OwnedFile.Matches(path, file.Size, file.Sha256) ||
-            !DotNetPackageArchive.MatchesIdentity(path, identity.Id, file.Version))
+        LiveReleaseRef.RequireEligible(prepared.Subject);
+        var identity = new PackageIdentity(prepared.Package, NuGetVersion.Parse(file.Version));
+        if (!StringComparer.OrdinalIgnoreCase.Equals(file.Name, prepared.Package) ||
+            !OwnedFile.Matches(path, file.Size, file.Sha256))
             throw new InvalidDataException("Original NuGet package identity or bytes changed.");
+        using (var original = new PackageArchiveReader(path))
+        {
+            OwnedPath.RequireArchiveNames(original.GetFiles());
+            if (!PackageIdentityComparer.Default.Equals(identity, original.GetIdentity()))
+                throw new InvalidDataException("Original NuGet package identity or bytes changed.");
+        }
         cancellation.ThrowIfCancellationRequested();
         using var standard = new HttpClientHandler
         {
@@ -82,8 +81,7 @@ internal static class NuGetPublisher
                 disableBuffering: false, getApiKey: _ => credential, getSymbolApiKey: _ => "",
                 noServiceEndpoint: true, skipDuplicate: false, allowSnupkg: false,
                 allowInsecureConnections: false, log: NullLogger.Instance);
-            return new(true, cancellation.IsCancellationRequested, null,
-                elapsed.Elapsed.TotalSeconds);
+            return new(true, false, null, elapsed.Elapsed.TotalSeconds);
         }
         // The client raises TimeoutException when its request timeout elapses (TimeoutUtility);
         // that is a handled upload abnormality like the transport failures beside it.

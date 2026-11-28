@@ -148,7 +148,8 @@ public sealed class RubyNativePublisherContractTests(TestContext context)
                 : "https://rubygems.org";
             string loopback = "https://127.0.0.1:" + host.Port + (buddy ? "/hcoona" : "");
 
-            RubyPublishResult result = await RubyNativePublisher.PublishAsync(preparation,
+            RubyPublishResult result = await RubyNativePublisher.PublishAsync(
+                DestinationBindings.Ruby(preparation.Prepared),
                 originals, new(ruby, gem, scratch), platform, (command, cancellation) =>
                 {
                     // The production command, retargeted to the loopback host only.

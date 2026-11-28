@@ -65,11 +65,27 @@ public sealed class NativePreparationQualificationTests
     }
 
     [TestMethod]
+    [DataRow(
+        "src/private/app/workflow-delivery/docs/design/models/ReleaseRefinementAssets.cfg", "Full")]
+    [DataRow("src/private/app/workflow-delivery/Engine/Release/PublicationWindow.cs", "Callers")]
+    [DataRow("tests/private/app/workflow-delivery/Release/PythonReleaseTests.cs", "Callers")]
+    [DataRow("global.json", "Callers")]
+    [DataRow("src/private/app/workflow-delivery/docs/design/release.md", "None")]
+    [DataRow("src/public/lib/another-product/Model.tla", "None")]
+    public void ModelVerificationUsesItsOwnInputs(string path, string selected)
+    {
+        NativePreparationSelection plan = NativePreparationQualification.Select(
+            new("basis", "candidate", false), [path]);
+        Assert.AreEqual(Enum.Parse<ModelChecks>(selected), plan.Models);
+    }
+
+    [TestMethod]
     public void ExplicitFullSelectsBothNativeObligationsWithoutChangingSource()
     {
         NativePreparationSelection result = NativePreparationQualification.Select(
             new("candidate", "candidate", true), []);
         Assert.IsTrue(result.Python && result.Ruby && result.Node && result.Browser);
+        Assert.AreEqual(ModelChecks.Full, result.Models);
         Assert.ThrowsExactly<InvalidDataException>(() => NativePreparationQualification.Select(
             new("basis", "candidate", true), []));
     }

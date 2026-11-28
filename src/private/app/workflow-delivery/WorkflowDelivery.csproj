@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <DefaultItemExcludes>$(DefaultItemExcludes);Core/**;Engine/**;Ecosystems/DotNet/**;Ecosystems/Node/**;Ecosystems/Python/**;Ecosystems/Ruby/**;Platform/**;docs/**;README.md</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Destinations/**;Release/Ports/**</DefaultItemExcludes>
     <DefaultItemExcludes>$(DefaultItemExcludes);Repository/GitReader.cs;Repository/GitMaterialization.cs;Repository/DotNetGraph.cs;Repository/DotNetConfigurationInputs.cs;Repository/DotNetNativeInputs.cs;Repository/DotNetRepositoryReader.cs;Repository/MsBuildResourceReader.cs;Repository/NbgvInputReader.cs;CI/DotNetBuildTask.cs;CI/DotNetTestTask.cs;Ecosystems/DotNetPackage*.cs</DefaultItemExcludes>
     <DefaultItemExcludes>$(DefaultItemExcludes);Repository/Pnpm*Reader.cs;Ecosystems/AdoptedNpmPackage.cs;Ecosystems/NodePackageArchive.cs;Ecosystems/NpmPackageOperations.cs;Ecosystems/BrowserExtensionArchive.cs</DefaultItemExcludes>
     <DefaultItemExcludes>$(DefaultItemExcludes);Repository/PythonNativeGraphReader.cs;Repository/PythonDependencyProjection.cs;Repository/PythonMetadataReader.cs;Repository/PythonPassiveReader.cs;Repository/PythonPytestConfigurationReader.cs;Ecosystems/PythonPackageOperations.cs</DefaultItemExcludes>
@@ -14,6 +15,11 @@
   <ItemGroup>
     <ProjectReference Include="Core/WorkflowDelivery.Core.csproj" />
     <ProjectReference Include="Engine/WorkflowDelivery.Engine.csproj" />
+    <ProjectReference Include="Release/Ports/WorkflowDelivery.Release.Ports.csproj" />
+    <ProjectReference Include="Destinations/Http/WorkflowDelivery.Destinations.Http.csproj" />
+    <ProjectReference Include="Destinations/WorkflowDelivery.Destinations.csproj" />
+    <ProjectReference Include="Destinations/NuGet/WorkflowDelivery.Destinations.NuGet.csproj" />
+    <Compile Include="Destinations/ReleaseAdapters.cs;Destinations/PublicationBinding.cs" />
     <ProjectReference Include="Ecosystems/DotNet/WorkflowDelivery.DotNet.csproj;Ecosystems/Node/WorkflowDelivery.Node.csproj;Ecosystems/Python/WorkflowDelivery.Python.csproj;Ecosystems/Ruby/WorkflowDelivery.Ruby.csproj;Platform/WorkflowDelivery.NativePlatform.csproj" />
     <Compile Include="Platform/GitHubComparison.cs;Platform/RunnerLog.cs" />
     <InternalsVisibleTo Include="WorkflowDelivery.Tests" />
@@ -30,11 +36,5 @@
                       LogicalName="ReleaseManifest:tests/private/app/workflow-delivery/fixtures/products/$([System.String]::Copy('%(RecursiveDir)').Replace('\', '/'))%(Filename)%(Extension)" />
     <PackageReference Include="YamlDotNet" />
     <PackageReference Include="Microsoft.Extensions.FileSystemGlobbing" />
-    <PackageReference Include="NuGet.Protocol" />
-    <PackageReference Include="Newtonsoft.Json" />
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" />
-    <PackageReference Include="NuGet.Configuration" />
-    <PackageReference Include="NuGet.Packaging" />
-    <PackageReference Include="NuGet.Versioning" />
   </ItemGroup>
 </Project>

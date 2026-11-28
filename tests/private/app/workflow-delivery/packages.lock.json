@@ -286,6 +286,42 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.FileSystemGlobbing": "[10.0.14, )",
+          "WorkflowDelivery.Core": "[1.0.0, )",
+          "WorkflowDelivery.Destinations": "[1.0.0, )",
+          "WorkflowDelivery.Destinations.Http": "[1.0.0, )",
+          "WorkflowDelivery.Destinations.NuGet": "[1.0.0, )",
+          "WorkflowDelivery.DotNet": "[1.0.0, )",
+          "WorkflowDelivery.Engine": "[1.0.0, )",
+          "WorkflowDelivery.NativePlatform": "[1.0.0, )",
+          "WorkflowDelivery.Node": "[1.0.0, )",
+          "WorkflowDelivery.Python": "[1.0.0, )",
+          "WorkflowDelivery.Release.Ports": "[1.0.0, )",
+          "WorkflowDelivery.Ruby": "[1.0.0, )",
+          "YamlDotNet": "[18.1.0, )"
+        }
+      },
+      "workflowdelivery.core": {
+        "type": "Project"
+      },
+      "workflowdelivery.destinations": {
+        "type": "Project",
+        "dependencies": {
+          "WorkflowDelivery.Core": "[1.0.0, )",
+          "WorkflowDelivery.Destinations.Http": "[1.0.0, )",
+          "WorkflowDelivery.NativePlatform": "[1.0.0, )",
+          "WorkflowDelivery.Release.Ports": "[1.0.0, )"
+        }
+      },
+      "workflowdelivery.destinations.http": {
+        "type": "Project",
+        "dependencies": {
+          "WorkflowDelivery.NativePlatform": "[1.0.0, )",
+          "WorkflowDelivery.Release.Ports": "[1.0.0, )"
+        }
+      },
+      "workflowdelivery.destinations.nuget": {
+        "type": "Project",
+        "dependencies": {
           "Newtonsoft.Json": "[13.0.4, )",
           "NuGet.Configuration": "[8.0.0, )",
           "NuGet.Packaging": "[8.0.0, )",
@@ -293,17 +329,10 @@
           "NuGet.Versioning": "[8.0.0, )",
           "System.Security.Cryptography.ProtectedData": "[10.0.14, )",
           "WorkflowDelivery.Core": "[1.0.0, )",
-          "WorkflowDelivery.DotNet": "[1.0.0, )",
-          "WorkflowDelivery.Engine": "[1.0.0, )",
+          "WorkflowDelivery.Destinations.Http": "[1.0.0, )",
           "WorkflowDelivery.NativePlatform": "[1.0.0, )",
-          "WorkflowDelivery.Node": "[1.0.0, )",
-          "WorkflowDelivery.Python": "[1.0.0, )",
-          "WorkflowDelivery.Ruby": "[1.0.0, )",
-          "YamlDotNet": "[18.1.0, )"
+          "WorkflowDelivery.Release.Ports": "[1.0.0, )"
         }
-      },
-      "workflowdelivery.core": {
-        "type": "Project"
       },
       "workflowdelivery.dotnet": {
         "type": "Project",
@@ -337,6 +366,13 @@
         }
       },
       "workflowdelivery.python": {
+        "type": "Project",
+        "dependencies": {
+          "WorkflowDelivery.Core": "[1.0.0, )",
+          "WorkflowDelivery.NativePlatform": "[1.0.0, )"
+        }
+      },
+      "workflowdelivery.release.ports": {
         "type": "Project",
         "dependencies": {
           "WorkflowDelivery.Core": "[1.0.0, )",

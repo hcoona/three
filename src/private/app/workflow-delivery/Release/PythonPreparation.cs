@@ -102,8 +102,7 @@ internal static class PythonPreparation
                 qualification.CheckAsync, ExecuteAsync, token));
         PreparedGithubAnchor? anchor = releaseNotes is not null &&
             qualification.Errors.Length == 0 && files.Length > 0
-                ? new([.. files.Select(file => file with { Name = Path.GetFileName(file.Path) })],
-                    releaseNotes)
+                ? DestinationBindings.GithubAnchor(request.Subject, files, releaseNotes)
                 : null;
         return new(new(request.Subject, [.. files], required.ToArray(), qualification.Checks,
                 Anchor: anchor),

@@ -39,9 +39,16 @@ def test_dispatch_selects_an_official_store_or_a_dry_buddy_request(workflow):
     assert set(inputs["store"]["options"]) == set(STORES)
     assert set(inputs["channel"]["options"]) == {"official", "buddy"}
     assert inputs["dry-run"]["default"] is True
+    assert inputs["edge-clearance"]["default"] == "unresolved"
+    assert set(inputs["edge-clearance"]["options"]) == {
+        "first",
+        "owner-checked",
+        "unresolved",
+    }
     env = workflow["env"]
     assert env["DESTINATION"] == "${{ inputs.store }}"
     assert env["CHANNEL"] == "${{ inputs.channel }}"
+    assert env["EDGE_CLEARANCE"] == "${{ inputs.edge-clearance }}"
     for variable in (
         "WORKFLOW_DELIVERY_CWS_EXTENSION_ID",
         "WORKFLOW_DELIVERY_AMO_ADDON_ID",
@@ -162,19 +169,19 @@ def test_publisher_gate_excludes_dry_runs_and_satisfied_stores(
     [
         (("official", False, "success", True), True),
         (("official", False, "skipped", True), True),
-        (("official", False, "failure", True), False),
+        (("official", False, "failure", True), True),
         (("official", False, "cancelled", True), False),
         (("official", False, "success", False), False),
         (("official", True, "skipped", True), False),
         (("buddy", False, "success", True), False),
     ],
 )
-def test_anchor_gate_requires_official_store_submission_or_satisfaction(
+def test_read_only_gate_can_inspect_official_store_receipts(
     workflow, case, allowed
 ):
-    """Anchor publisher runs only for Official non-dry store success or skip."""
+    """Inspect Official receipts without entering the anchor publisher."""
     channel, dry, publish, anchor_needed = case
-    job = workflow["jobs"]["publish-github-anchor"]
+    job = workflow["jobs"]["anchor-gate"]
     assert {"prepare", "observe", "publish"} <= set(dependencies(job))
     assert (
         condition(
@@ -265,7 +272,7 @@ def test_preparation_builds_once_without_product_install_scripts(workflow):
 def test_actions_are_pinned_and_artifacts_are_immutable(workflow):
     """Every action is pinned; transfers use immutable digest-checked IDs."""
     for job in workflow["jobs"].values():
-        for step in job["steps"]:
+        for step in job.get("steps", []):
             if "uses" in step:
                 assert re.fullmatch(r"[\w./-]+@[0-9a-f]{40}", step["uses"])
     assert_release_transfers(workflow)

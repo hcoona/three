@@ -7,7 +7,10 @@ internal static class BrowserExtensionPackage
 {
     // WXT's Firefox script emits both the extension and the source archive.
     private static readonly (
-        UnitOutput Output, string Script, string Suffix, int Manifest)[] Targets =
+        UnitOutput Output,
+        string Script,
+        string Suffix,
+        int Manifest)[] Targets =
     [
         (new("chrome-zip", "primary-package", "chrome-extension-zip"), "zip", "chrome", 3),
         (new("firefox-zip", "primary-package", "firefox-extension-zip"),
@@ -17,6 +20,13 @@ internal static class BrowserExtensionPackage
     ];
 
     internal static IEnumerable<UnitOutput> Outputs => Targets.Select(target => target.Output);
+
+    internal static IEnumerable<(UnitOutput Output, string Name)> Archives(
+        string unit, string version) =>
+        Targets.Select(target => (target.Output, ArchiveName(unit, version, target.Suffix)));
+
+    private static string ArchiveName(string unit, string version, string suffix) =>
+        $"{unit}-{version}-{suffix}.zip";
 
     internal static async Task<QualifiedUnitOriginals?> QualifyAsync(UnitBuildSubject unit,
         string checkout, string scratch, string productDirectory,
@@ -72,6 +82,6 @@ internal static class BrowserExtensionPackage
         });
         return result;
 
-        string Name(string suffix) => $"{unit.Unit}-{version.Label}-{suffix}.zip";
+        string Name(string suffix) => ArchiveName(unit.Unit, version.Label, suffix);
     }
 }

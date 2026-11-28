@@ -9,6 +9,8 @@
     <GlobalPackageReference Update="Microsoft.SourceLink.GitHub" ExcludeAssets="Runtime;Native" />
     <InternalsVisibleTo Include="WorkflowDelivery" />
     <InternalsVisibleTo Include="WorkflowDelivery.Engine" />
+    <InternalsVisibleTo Include="WorkflowDelivery.Release.Ports" />
+    <InternalsVisibleTo Include="WorkflowDelivery.Destinations" />
     <InternalsVisibleTo Include="WorkflowDelivery.Tests" />
     <InternalsVisibleTo Include="WorkflowDelivery.DotNet;WorkflowDelivery.Node;WorkflowDelivery.Python;WorkflowDelivery.Ruby" />
   </ItemGroup>

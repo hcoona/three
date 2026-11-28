@@ -11,5 +11,6 @@
     <Compile Include="../Repository/GitReader.cs;../Repository/GitMaterialization.cs" />
     <GlobalPackageReference Update="Microsoft.SourceLink.GitHub" ExcludeAssets="Runtime;Native" />
     <InternalsVisibleTo Include="WorkflowDelivery;WorkflowDelivery.DotNet;WorkflowDelivery.Node;WorkflowDelivery.Python;WorkflowDelivery.Ruby;WorkflowDelivery.Tests" />
+    <InternalsVisibleTo Include="WorkflowDelivery.Release.Ports;WorkflowDelivery.Destinations.Http;WorkflowDelivery.Destinations;WorkflowDelivery.Destinations.NuGet" />
   </ItemGroup>
 </Project>

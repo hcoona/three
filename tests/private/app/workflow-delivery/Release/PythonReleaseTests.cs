@@ -17,6 +17,63 @@ public sealed class PythonReleaseTests(TestContext context)
     private static readonly string[] Outputs = ["wheel", "sdist"];
 
     [TestMethod]
+    [TestCategory("DeliveryTlcConformance")]
+    public void PythonCallerAgreesWithPublicationWindow()
+    {
+        foreach (string[] row in DeliveryModelOracle.Rows("PublicationWindowOracle"))
+        {
+            if (row is not [var name, var before, var refreshed, var response, var delivery,
+                    var verified, var issued, var returned, var verdict, var attempted])
+                throw new AssertFailedException("Incomplete PublicationWindow observation.");
+            using var f = new Fixture(unit: "nbgv-python", official: true);
+            ReleaseObservationResult Read(string cells) =>
+                f.Observe(Cell(cells[0]), Cell(cells[1]));
+            ReleaseObservationResult initial = Read(before);
+            ReleasePublicationResult? publication = null;
+            var writes = new List<string>();
+            if (ReleaseEngine.MayEnterPublisher(ReleaseAdapters.Python, f.Preparation, initial))
+            {
+                using var publisherOutput = new StringWriter();
+                int? code = ReleaseCli.Run(f.PublishArgs(initial), publisherOutput, new(
+                    ObservePython: (_, _, _) => Task.FromResult(Read(refreshed)),
+                    PublishPython: (_, _, selected, _, _) =>
+                    {
+                        writes.Add(selected);
+                        return Task.FromResult(response == "timeout" && selected == "wheel"
+                            ? new PythonPublishResult(new(selected, new(NativeTermination.TimedOut,
+                                null, "", "", 1, "Timeout")), false, "controlled timeout")
+                            : SuccessfulUpload(selected));
+                    }));
+                Assert.IsTrue(code is 0 or 1, name);
+                publication = Fixture.Parse(
+                    publisherOutput, TransferJson.Default.ReleasePublicationResult);
+            }
+            if (delivery == "drop") publication = null;
+            ReleaseCompletionResult result = f.Complete(initial, Read(verified), publication,
+                verdict == "satisfied" ? 0 : 1);
+            Assert.AreEqual(issued, string.Join(',', writes), name);
+            Assert.AreEqual(
+                returned, string.Join(',', result.Outcome.Uploads.Select(u => u.Output)), name);
+            Assert.AreEqual(verdict, result.Outcome.State.ToString().ToLowerInvariant(), name);
+            Assert.AreEqual(attempted, result.MutationAttempted switch
+            {
+                true => "yes",
+                false => "no",
+                null => "unknown",
+            }, name);
+        }
+
+        static ReleaseFileState Cell(char symbol) => symbol switch
+        {
+            'm' => Absent,
+            'e' => Exact,
+            'u' => ReleaseFileState.Unknown,
+            'c' => ReleaseFileState.Conflict,
+            _ => throw new AssertFailedException("Unknown model cell."),
+        };
+    }
+
+    [TestMethod]
     [DataRow(false, true, false, true, "sdist")]
     [DataRow(true, false, true, false, "wheel")]
     [DataRow(true, true, true, false, "wheel")]
@@ -106,7 +163,7 @@ public sealed class PythonReleaseTests(TestContext context)
     [DataRow("Exact", "Passed", "Unknown")]
     [DataRow("Conflict", "Passed", "Unsatisfied")]
     [DataRow("Absent", "Missing", "Unsatisfied")]
-    public void CompleteRecognizesLagOnlyForAcknowledgedUploads(string wheelName,
+    public void CompleteRecognizesAcknowledgedUploadsMissingFromQualifiedIndex(string wheelName,
         string qualification, string expectedName)
     {
         using var f = new Fixture();
@@ -132,6 +189,33 @@ public sealed class PythonReleaseTests(TestContext context)
         }
         else
             Assert.DoesNotContain("not yet visible", string.Join(";", result.Outcome.Reasons));
+    }
+
+    [TestMethod]
+    [DataRow("Absent", "Absent", "Unknown")]
+    [DataRow("Exact", "Absent", "Unsatisfied")]
+    [DataRow("Absent", "Conflict", "Unsatisfied")]
+    public void CompleteAfterAmbiguousWheelDistinguishesIssuedFromUnattemptedMissingFiles(
+        string finalWheel, string finalSdist, string expectedState)
+    {
+        using var f = new Fixture();
+        ReleaseObservationResult initial = f.Observe();
+        var timeout = new NativeCommandResult(NativeTermination.TimedOut, null,
+            "partial", "diagnostic", 1, "controlled timeout");
+        var writes = new List<string>();
+        ReleasePublicationResult publication = f.Publish(initial, initial, publish: output =>
+        {
+            writes.Add(output);
+            return new(new(output, timeout), false, "Controlled diagnostics only.");
+        });
+
+        ReleaseCompletionResult result = f.Complete(initial,
+            f.Observe(ParseState(finalWheel), ParseState(finalSdist)), publication, 1);
+
+        Assert.AreEqual("wheel", Assert.ContainsSingle(writes));
+        Assert.AreEqual(timeout, Assert.ContainsSingle(result.Outcome.Uploads).Command);
+        Assert.IsTrue(result.MutationAttempted);
+        Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(expectedState), result.Outcome.State);
     }
 
     [TestMethod]
@@ -352,6 +436,34 @@ public sealed class PythonReleaseTests(TestContext context)
     }
 
     [TestMethod]
+    public void WholeRefreshMustFitReviewEvenIfTheReceiptOnlyClaimsAReviewedWrite()
+    {
+        using var f = new Fixture();
+        ReleaseObservationResult reviewed = f.Observe(Absent, Exact);
+        ReleaseObservationResult enlarged = f.Observe(Absent, Absent);
+        var claimed = new ReleasePublicationResult(f.Prepared.Subject, enlarged,
+            [WriteStep(SuccessfulUpload("wheel"))], null, []);
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            ReleaseEngine.Complete(
+                ReleaseAdapters.Python, f.Preparation, reviewed, f.Exact(), claimed));
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            ReleaseEngine.AnchorAllowed(ReleaseAdapters.Python, f.Preparation, reviewed, claimed));
+    }
+
+    [TestMethod]
+    public void AcknowledgedPrefixWithoutInterruptionIsNotACompletedWindow()
+    {
+        using var f = new Fixture();
+        ReleaseObservationResult bothMissing = f.Observe(Absent, Absent);
+        var prefix = new ReleasePublicationResult(f.Prepared.Subject, bothMissing,
+            [WriteStep(SuccessfulUpload("wheel"))], null, []);
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            ReleaseEngine.Complete(
+                ReleaseAdapters.Python, f.Preparation, bothMissing, f.Exact(), prefix));
+    }
+
+    [TestMethod]
     [DataRow(false, false)]
     [DataRow(true, false)]
     [DataRow(true, true)]
@@ -446,7 +558,7 @@ public sealed class PythonReleaseTests(TestContext context)
         var request = new PythonIndexToolRequest(f.PublisherTools.Uv, f.IndexTools.Interpreter,
             f.Root, f.Root);
         RejectEditedTransfer(["release", "prepare-python-index-tools",
-            f.Save(request, TransferJson.Default.PythonIndexToolRequest)],
+            f.Save(request, DestinationToolJson.Default.PythonIndexToolRequest)],
             input => input.Remove("requirements"),
             "requirements");
     }
@@ -690,9 +802,8 @@ public sealed class PythonReleaseTests(TestContext context)
         Func<PreparedRelease, CancellationToken, Task<ReleaseObservationResult>> observe,
         Func<PreparedRelease, string, string, CancellationToken, Task<PythonPublishResult>> publish,
         CancellationToken token) =>
-        ReleaseEngine.PublishAsync(ReleaseAdapters.Python, preparation, originals, initial, new(
-            ObserveAsync: observe,
-            WriteOutputAsync: async (file, cancel) =>
+        ReleaseEngine.PublishAsync(ReleaseAdapters.Python, preparation, originals, initial,
+            DestinationPublishPlan.Files(preparation.Prepared, observe, async (file, cancel) =>
                 WriteStep(await publish(preparation.Prepared, originals, file.Output, cancel))),
             token);
 
@@ -825,12 +936,12 @@ public sealed class PythonReleaseTests(TestContext context)
             ["release", "describe-python", PreparationPath(), ObservationPath(observation)];
         internal string[] ObserveArgs() => ["release", "observe-python", PreparationPath(),
             Root, Save(IndexTools,
-            TransferJson.Default.PythonIndexTools)];
+            DestinationToolJson.Default.PythonIndexTools)];
         internal string[] PublishArgs(ReleaseObservationResult initial,
             string? originals = null) => ["release", "publish-python", PreparationPath(),
             originals ?? Root, ObservationPath(initial), Save(IndexTools,
-            TransferJson.Default.PythonIndexTools), Save(PublisherTools,
-            TransferJson.Default.PythonPublisherTools)];
+            DestinationToolJson.Default.PythonIndexTools), Save(PublisherTools,
+            DestinationToolJson.Default.PythonPublisherTools)];
         internal string[] CompleteArgs(ReleaseObservationResult initial,
             ReleaseObservationResult final, ReleasePublicationResult? publication = null) =>
             ["release", "complete-python", PreparationPath(), ObservationPath(initial),

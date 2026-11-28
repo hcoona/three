@@ -35,7 +35,7 @@ public sealed class PythonIndexObservationTests(TestContext context)
         NativeCommand? command = null;
 
         ReleaseObservationResult result = await new PythonIndexObservation(client,
-            fixture.Tools).ObserveAsync(fixture.Prepared, (value, _) =>
+            fixture.Tools).ObserveAsync(DestinationBindings.Python(fixture.Prepared), (value, _) =>
             {
                 command = value;
                 Assert.AreEqual("{}", File.ReadAllText(value.Arguments[4]));
@@ -77,7 +77,7 @@ public sealed class PythonIndexObservationTests(TestContext context)
         using var handler = new ScriptedHttpHandler((_, _) => Response(status, []));
         using var client = new HttpClient(handler);
         ReleaseObservationResult result = await new PythonIndexObservation(client,
-            fixture.Tools).ObserveAsync(fixture.Prepared, (_, _) =>
+            fixture.Tools).ObserveAsync(DestinationBindings.Python(fixture.Prepared), (_, _) =>
                 throw new AssertFailedException("Unavailable index reached native parsing."),
             context.CancellationToken);
         Assert.HasCount(2, result.Observation.Files);
@@ -99,7 +99,9 @@ public sealed class PythonIndexObservationTests(TestContext context)
         string facts = Facts(fixture.Prepared, "test-files.pythonhosted.org",
             wheelPresent ? 1 : 0);
         ReleaseObservationResult result = await new PythonIndexObservation(client,
-            fixture.Tools).ObserveAsync(fixture.Prepared, (_, _) => Task.FromResult(Native(facts)),
+            fixture.Tools).ObserveAsync(
+                DestinationBindings.Python(fixture.Prepared),
+                (_, _) => Task.FromResult(Native(facts)),
             context.CancellationToken);
         Assert.AreEqual(wheelPresent ? ReleaseFileState.Exact : ReleaseFileState.Absent,
             result.Observation.Files[0].State);
@@ -145,7 +147,7 @@ public sealed class PythonIndexObservationTests(TestContext context)
             "test-files.pythonhosted.org"))!.AsObject();
         change(facts);
         ReleaseObservationResult result = await new PythonIndexObservation(client,
-            fixture.Tools).ObserveAsync(fixture.Prepared,
+            fixture.Tools).ObserveAsync(DestinationBindings.Python(fixture.Prepared),
                 (_, _) => Task.FromResult(Native(facts.ToJsonString())),
                 context.CancellationToken);
         Assert.Contains(ReleaseFileState.Conflict,
@@ -164,7 +166,9 @@ public sealed class PythonIndexObservationTests(TestContext context)
         using var client = new HttpClient(handler);
         string facts = Facts(fixture.Prepared, "test-files.pythonhosted.org", url: url);
         ReleaseObservationResult result = await new PythonIndexObservation(client,
-            fixture.Tools).ObserveAsync(fixture.Prepared, (_, _) => Task.FromResult(Native(facts)),
+            fixture.Tools).ObserveAsync(
+                DestinationBindings.Python(fixture.Prepared),
+                (_, _) => Task.FromResult(Native(facts)),
             context.CancellationToken);
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[0].State);
         Assert.HasCount(1, handler.Requests);
@@ -180,7 +184,8 @@ public sealed class PythonIndexObservationTests(TestContext context)
             Response(200, n == 0 ? "{}"u8.ToArray() : [7, 8, 9]));
         using var client = new HttpClient(handler);
         ReleaseObservationResult result = await new PythonIndexObservation(client,
-            fixture.Tools).ObserveAsync(fixture.Prepared, (_, _) => Task.FromResult(Native(
+            fixture.Tools).ObserveAsync(
+                DestinationBindings.Python(fixture.Prepared), (_, _) => Task.FromResult(Native(
                 Facts(fixture.Prepared, "test-files.pythonhosted.org"))),
             context.CancellationToken);
         Assert.IsTrue(result.Observation.Files.All(file =>
@@ -200,7 +205,8 @@ public sealed class PythonIndexObservationTests(TestContext context)
         using var handler = new ScriptedHttpHandler((_, _) => Response(200, [123, 125]));
         using var client = new HttpClient(handler);
         ReleaseObservationResult result = await new PythonIndexObservation(client,
-            fixture.Tools).ObserveAsync(fixture.Prepared, (_, _) => Task.FromResult(
+            fixture.Tools).ObserveAsync(
+                DestinationBindings.Python(fixture.Prepared), (_, _) => Task.FromResult(
                 new NativeCommandResult(Enum.Parse<NativeTermination>(termination), 1,
                     Facts(fixture.Prepared, "test-files.pythonhosted.org"),
                     "unsafe native output", 1, "unsafe native error")),
@@ -223,7 +229,9 @@ public sealed class PythonIndexObservationTests(TestContext context)
         using var handler = new ScriptedHttpHandler((_, _) => Response(200, [123, 125]));
         using var client = new HttpClient(handler);
         ReleaseObservationResult result = await new PythonIndexObservation(client,
-            fixture.Tools).ObserveAsync(fixture.Prepared, (_, _) => Task.FromResult(Native(facts)),
+            fixture.Tools).ObserveAsync(
+                DestinationBindings.Python(fixture.Prepared),
+                (_, _) => Task.FromResult(Native(facts)),
             context.CancellationToken);
         Assert.HasCount(2, result.Observation.Files);
         Assert.IsTrue(result.Observation.Files.All(file => file.State == ReleaseFileState.Unknown));
@@ -245,7 +253,8 @@ public sealed class PythonIndexObservationTests(TestContext context)
             throw new AssertFailedException("Unqualified request reached a public destination."));
         using var client = new HttpClient(handler);
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            new PythonIndexObservation(client, fixture.Tools).ObserveAsync(prepared,
+            new PythonIndexObservation(client, fixture.Tools)
+                .ObserveAsync(DestinationBindings.Python(prepared),
                 (_, _) => throw new AssertFailedException(
                     "Unqualified request reached native facts."),
                 context.CancellationToken));
@@ -261,7 +270,8 @@ public sealed class PythonIndexObservationTests(TestContext context)
         using var handler = new ScriptedHttpHandler((_, _) => Response(200, [123, 125]));
         using var client = new HttpClient(handler);
         ReleaseObservationResult result = await new PythonIndexObservation(client,
-            fixture.Tools, clock).ObserveAsync(fixture.Prepared, (_, _) =>
+            fixture.Tools, clock).ObserveAsync(
+                DestinationBindings.Python(fixture.Prepared), (_, _) =>
             {
                 clock.Advance(TimeSpan.FromSeconds(91));
                 return Task.FromResult(Native(Facts(fixture.Prepared,
@@ -287,7 +297,8 @@ public sealed class PythonIndexObservationTests(TestContext context)
             { Content = new StreamContent(new CancelledBody(cancellation)) });
         using var client = new HttpClient(handler);
         ReleaseObservationResult result = await new PythonIndexObservation(client,
-            fixture.Tools).ObserveAsync(fixture.Prepared, (_, _) => Task.FromResult(Native(
+            fixture.Tools).ObserveAsync(
+                DestinationBindings.Python(fixture.Prepared), (_, _) => Task.FromResult(Native(
                 Facts(fixture.Prepared, "test-files.pythonhosted.org"))), cancellation.Token);
         Assert.AreEqual(ReleaseFileState.Exact, result.Observation.Files[0].State);
         Assert.AreEqual(ReleaseFileState.Unknown, result.Observation.Files[1].State);

@@ -31,7 +31,8 @@ public sealed class NuGetPublisherTests(TestContext context)
             body = await request.Content.ReadAsByteArrayAsync(token);
             return new(HttpStatusCode.Created) { Content = new ByteArrayContent([]) };
         });
-        NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
+        NativeLibraryResult result = await NuGetPublisher.PushAsync(
+            DestinationBindings.NuGet(fixture.Prepared),
             fixture.Root, NuGetPublisher.GithubEndpoint, Credential, context.CancellationToken,
             handler);
 
@@ -62,7 +63,8 @@ public sealed class NuGetPublisherTests(TestContext context)
             body = await request.Content!.ReadAsByteArrayAsync(token);
             return new(HttpStatusCode.Created) { Content = new ByteArrayContent([]) };
         });
-        NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
+        NativeLibraryResult result = await NuGetPublisher.PushAsync(
+            DestinationBindings.NuGet(fixture.Prepared),
             fixture.Root, NuGetPublisher.NuGetOrgEndpoint, Credential,
             context.CancellationToken, handler);
 
@@ -96,7 +98,8 @@ public sealed class NuGetPublisherTests(TestContext context)
         using var handler = new Handler((_, _) => Task.FromResult(new HttpResponseMessage(
             HttpStatusCode.Conflict)
         { Content = new ByteArrayContent([]) }));
-        NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
+        NativeLibraryResult result = await NuGetPublisher.PushAsync(
+            DestinationBindings.NuGet(fixture.Prepared),
             fixture.Root, NuGetPublisher.GithubEndpoint, Credential, context.CancellationToken,
             handler);
 
@@ -118,7 +121,8 @@ public sealed class NuGetPublisherTests(TestContext context)
         using var handler = new Handler((_, _) => Task.FromResult(new HttpResponseMessage(
             status)
         { Content = new ByteArrayContent([]) }));
-        NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
+        NativeLibraryResult result = await NuGetPublisher.PushAsync(
+            DestinationBindings.NuGet(fixture.Prepared),
             fixture.Root, NuGetPublisher.GithubEndpoint, Credential, context.CancellationToken,
             handler);
 
@@ -140,7 +144,8 @@ public sealed class NuGetPublisherTests(TestContext context)
             finally { finished = true; }
             return new(HttpStatusCode.Created);
         });
-        NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
+        NativeLibraryResult result = await NuGetPublisher.PushAsync(
+            DestinationBindings.NuGet(fixture.Prepared),
             fixture.Root, NuGetPublisher.GithubEndpoint, Credential, parent.Token, handler);
 
         Assert.IsFalse(result.ReturnedSuccessfully);
@@ -162,7 +167,8 @@ public sealed class NuGetPublisherTests(TestContext context)
         using var handler = new Handler((_, _) => Task.FromResult(new HttpResponseMessage(
             status)
         { Content = new ByteArrayContent([]) }));
-        NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
+        NativeLibraryResult result = await NuGetPublisher.PushAsync(
+            DestinationBindings.NuGet(fixture.Prepared),
             fixture.Root, NuGetPublisher.GithubEndpoint, Credential, context.CancellationToken,
             handler);
 
@@ -195,7 +201,8 @@ public sealed class NuGetPublisherTests(TestContext context)
     {
         using var fixture = new Fixture();
         using var handler = new Handler((_, _) => throw createException());
-        NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
+        NativeLibraryResult result = await NuGetPublisher.PushAsync(
+            DestinationBindings.NuGet(fixture.Prepared),
             fixture.Root, NuGetPublisher.GithubEndpoint, Credential, context.CancellationToken,
             handler);
 
@@ -214,7 +221,8 @@ public sealed class NuGetPublisherTests(TestContext context)
         using var handler = new Handler((_, _) => Task.FromResult(new HttpResponseMessage(
             HttpStatusCode.Created)
         { Content = new CancellingContent(parent) }));
-        NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
+        NativeLibraryResult result = await NuGetPublisher.PushAsync(
+            DestinationBindings.NuGet(fixture.Prepared),
             fixture.Root, NuGetPublisher.GithubEndpoint, Credential, parent.Token, handler);
 
         Assert.IsFalse(result.ReturnedSuccessfully);
@@ -233,7 +241,8 @@ public sealed class NuGetPublisherTests(TestContext context)
             response.Headers.Location = new("https://objects.githubusercontent.com/package");
             return Task.FromResult(response);
         });
-        NuGetPushResult result = await NuGetPublisher.PushAsync(fixture.Prepared,
+        NativeLibraryResult result = await NuGetPublisher.PushAsync(
+            DestinationBindings.NuGet(fixture.Prepared),
             fixture.Root, NuGetPublisher.GithubEndpoint, Credential, context.CancellationToken,
             handler);
 
@@ -265,6 +274,24 @@ public sealed class NuGetPublisherTests(TestContext context)
         await AssertNoNativeSendAsync(fixture, fixture.Prepared);
     }
 
+    [TestMethod]
+    public async Task MatchingHashDoesNotQualifyAmbiguousNativeArchiveMembers()
+    {
+        using var fixture = new Fixture();
+        using (var archive = ZipFile.Open(fixture.Path, ZipArchiveMode.Update))
+        {
+            archive.CreateEntry("docs/LICENSE.txt");
+            archive.CreateEntry("docs/license.txt");
+        }
+        byte[] bytes = File.ReadAllBytes(fixture.Path);
+        ReleaseFile file = Assert.ContainsSingle(fixture.Prepared.Files);
+        await AssertNoNativeSendAsync(fixture, fixture.Prepared with
+        {
+            Files = [file with { Size = bytes.LongLength,
+                Sha256 = Convert.ToHexStringLower(SHA256.HashData(bytes)) }],
+        });
+    }
+
     private async Task AssertNoNativeSendAsync(Fixture fixture, PreparedRelease prepared,
         string endpoint = NuGetPublisher.GithubEndpoint)
     {
@@ -272,7 +299,8 @@ public sealed class NuGetPublisherTests(TestContext context)
             throw new AssertFailedException("Rejected uploads must not send."));
 
         await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
-            NuGetPublisher.PushAsync(prepared, fixture.Root, endpoint, Credential,
+            NuGetPublisher.PushAsync(
+                DestinationBindings.NuGet(prepared), fixture.Root, endpoint, Credential,
                 context.CancellationToken, handler));
         Assert.AreEqual(0, handler.Sends);
     }

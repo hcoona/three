@@ -299,95 +299,6 @@ public sealed class ReleaseJobInputsTests
     }
 
     [TestMethod]
-    [DataRow("ruby")]
-    [DataRow("python")]
-    [DataRow("npm")]
-    [DataRow("nuget")]
-    [DataRow("github-release")]
-    public void WriteNeededUsesActualObservationAndRejectsSubjectSubstitution(string ecosystem)
-    {
-        using var fixture = new Caller(ecosystem);
-        fixture.Run("request");
-        ReleaseSubject subject = fixture.Subject();
-        Directory.CreateDirectory(fixture.At("observation"));
-        RunState("true", ReleaseFileState.Absent);
-        if (ecosystem is "python" or "github-release")
-            RunState("true", ReleaseFileState.Exact, ReleaseFileState.Absent);
-        if (ecosystem != "npm") return;
-        RunState("false", ReleaseFileState.Exact);
-        fixture.Env["GITHUB_SHA"] = new string('b', 40);
-        Assert.ThrowsExactly<InvalidDataException>(() => fixture.Run("state"));
-        Assert.AreEqual("write-needed=false\n", File.ReadAllText(fixture.At("output")));
-
-        void RunState(string expected, params ReleaseFileState[] states)
-        {
-            var observation = new ReleaseObservation(subject, states.Select((state, index) =>
-                new ReleaseFileObservation("output-" + index, "fixture", "1.0", state,
-                    null, null)).ToArray(), ["check"], [new("check", ReleaseCheckStatus.Passed)]);
-            string json = JsonSerializer.Serialize(new ReleaseObservationResult(observation, [],
-                RubySource: ecosystem == "ruby"
-                    ? new(RubySourceState.Absent, null, null, []) : null),
-                TransferJson.Default.ReleaseObservationResult);
-            File.WriteAllText(fixture.At("observation/observation.json"), json);
-            File.WriteAllText(fixture.At("output"), "");
-            fixture.Run("state");
-            Assert.AreEqual($"write-needed={expected}\n", File.ReadAllText(fixture.At("output")));
-        }
-    }
-
-    [TestMethod]
-    [DataRow("python", "pypi", "Absent", "true")]
-    [DataRow("python", "pypi", "Exact", "false")]
-    [DataRow("npm", "npmjs", "Absent", "true")]
-    [DataRow("ruby", "rubygems", "Exact", "false")]
-    public void AnchorWriteNeededReflectsObservedOfficialAnchorState(string ecosystem,
-        string destination, string anchorState, string expectedAnchorNeeded)
-    {
-        using var fixture = new Caller(ecosystem, destination);
-        fixture.Env["UNIT"] = ecosystem switch
-        {
-            "python" => "nbgv-python",
-            "npm" => "hexo-renderer-asciidoc",
-            _ => "asciidoctor-latexmath",
-        };
-        fixture.Env["DRY_RUN"] = "false";
-        fixture.Env["GITHUB_RUN_ATTEMPT"] = "1";
-        fixture.Env["GITHUB_REF"] = "refs/heads/main";
-        fixture.Run("request");
-        ReleaseSubject subject = fixture.Subject();
-        var anchorFile = new ReleaseFile("build", "output-0", "kind", "fixture.bin", "1.0.0",
-            "fixture.bin", 4, new string('0', 64));
-        var prep = new ReleasePreparationResult(new(subject, [anchorFile], ["check"],
-            [new("check", ReleaseCheckStatus.Passed)], Anchor: new([anchorFile], "### Notes")),
-            new(StringComparer.Ordinal), [], []);
-        File.WriteAllText(fixture.At("prepared/preparation.json"),
-            JsonSerializer.Serialize(prep, TransferJson.Default.ReleasePreparationResult));
-        Directory.CreateDirectory(fixture.At("observation"));
-        WriteObs("observation/observation.json", "check", ReleaseFileState.Exact);
-        WriteObs("observation/anchor-observation.json", GithubReleaseDestination.Check,
-            Enum.Parse<ReleaseFileState>(anchorState));
-        fixture.Run("state");
-        Assert.AreEqual($"write-needed=false\nanchor-write-needed={expectedAnchorNeeded}\n",
-            File.ReadAllText(fixture.At("output")));
-
-        void WriteObs(string path, string check, ReleaseFileState state)
-        {
-            var observation = new ReleaseObservation(subject,
-                [new("output-0", "fixture.bin", "1.0.0", state,
-                    state == ReleaseFileState.Exact ? 4 : null,
-                    state == ReleaseFileState.Exact ? new string('0', 64) : null)],
-                [check], [new(check, ReleaseCheckStatus.Passed)]);
-            File.WriteAllText(fixture.At(path), JsonSerializer.Serialize(
-                new ReleaseObservationResult(observation, [],
-                    ReleaseId: check == GithubReleaseDestination.Check &&
-                        state == ReleaseFileState.Exact ? 42 : null,
-                    RubySource: ecosystem == "ruby" && check == "check"
-                        ? new(RubySourceState.Present, null, null, []) : null),
-                TransferJson.Default.ReleaseObservationResult));
-        }
-    }
-
-    [TestMethod]
     [DataRow("github-release", "refs/heads/feature", "image-occlusion-editor")]
     [DataRow("github-release-prerelease", "refs/tags/v1", "image-occlusion-editor")]
     [DataRow("github-release-prerelease", "refs/heads/feature", "another-app")]
@@ -471,7 +382,9 @@ public sealed class ReleaseJobInputsTests
             ReleaseCheckStatus status = ReleaseCheckStatus.Passed)
         {
             var prepared = new PreparedRelease(subject, [new("build", "output",
-                ecosystem == "npm" ? "npm-tarball" : "package", "fixture", "1.0",
+                ecosystem == "npm" ? "npm-tarball" : "package",
+                ecosystem == "npm" ? ReleaseUnitCatalog.Npm(subject.Unit).PackageName(subject)
+                    : "fixture", "1.0",
                 path, 5, new string('a', 64))], ["check"], [new("check", status)]);
             string json = JsonSerializer.Serialize(new ReleasePreparationResult(prepared,
                 new(StringComparer.Ordinal), [], []),

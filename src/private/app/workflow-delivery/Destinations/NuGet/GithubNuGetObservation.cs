@@ -6,14 +6,10 @@ using NuGet.Packaging;
 using NuGet.Packaging.Core;
 using NuGet.Protocol;
 using NuGet.Versioning;
-using WorkflowDelivery.Ecosystems;
+using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
-using WorkflowDelivery.Platform;
-
 namespace WorkflowDelivery.Destinations;
-
-internal sealed record NuGetResources(string PackageBaseAddress, string PackagePublish);
 
 // NuGet owns service-index, version and archive interpretation. The application
 // constrains its request and compares qualified originals with selected native state.
@@ -24,13 +20,13 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
         ["native-package-control", "native-metadata-visibility"];
     private const string Host = "nuget.pkg.github.com";
 
-    internal async Task<ReleaseObservationResult> ObserveAsync(PreparedRelease prepared,
+    internal async Task<ReleaseObservationResult> ObserveAsync(PackageDestination prepared,
         string credential, CancellationToken token)
     {
         if (prepared.Subject.Channel != "buddy" ||
             prepared.Subject.Destination != "github-packages-nuget" || prepared.Files is not
                 [{ Kind: "nuget-package" }] ||
-            prepared.Files[0].Name != ReleaseUnitCatalog.AdmitNuGet(prepared.Subject).PackageId ||
+            prepared.Files[0].Name != prepared.Package ||
             string.IsNullOrEmpty(credential) || credential.Any(c => c is '\r' or '\n' or '\0'))
             throw new InvalidDataException("Unsupported GitHub NuGet request.");
         ReleaseFile file = prepared.Files[0];
@@ -38,7 +34,6 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
         string packageId = identity.Id.ToLowerInvariant();
         string version = identity.Version.ToNormalizedString().ToLowerInvariant();
         Uri api = GithubApi.UserPackage("nuget", packageId);
-        NuGetResources? resources = null;
         ReleaseCheckStatus control = ReleaseCheckStatus.Missing;
         using var session = new DestinationHttpSession(client, clock,
             TimeSpan.FromSeconds(90), TimeSpan.FromSeconds(30), token, maxRequests: 80);
@@ -54,10 +49,10 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
             Uri publish = Endpoint(index, "PackagePublish/2.0.0");
             // The live index lists the push resource without a trailing slash; the client
             // pushes to it with one, which is the endpoint the publisher admits.
-            resources = new(packageBase.AbsoluteUri.TrimEnd('/') + "/",
-                publish.AbsoluteUri.TrimEnd('/') + "/");
-
-            string root = resources.PackageBaseAddress + Uri.EscapeDataString(packageId) + "/";
+            if (publish.AbsoluteUri.TrimEnd('/') + "/" != NuGetPublisher.GithubEndpoint)
+                throw new InvalidDataException("Different GitHub Packages publish endpoint.");
+            string root = packageBase.AbsoluteUri.TrimEnd('/') + "/" +
+                Uri.EscapeDataString(packageId) + "/";
             ReleaseFileState ownership = await github.CheckPackageAsync("package-control", "nuget",
                 packageId, name => StringComparer.OrdinalIgnoreCase.Equals(name, identity.Id),
                 allowAbsent: true);
@@ -127,7 +122,7 @@ internal sealed class GithubNuGetObservation(HttpClient client, TimeProvider? cl
                 [new("native-package-control", control), new("native-metadata-visibility",
                     state is ReleaseFileState.Exact or ReleaseFileState.Absent
                         ? ReleaseCheckStatus.Passed : ReleaseCheckStatus.Failed)]),
-                [.. session.Reads], Resources: resources);
+                [.. session.Reads]);
 
         Task<(int, byte[])> ReadAsync(string stage, Uri uri) => session.MetadataAsync(stage, uri,
             Host, "application/json", NuGetMetadata.Limit, authorization);

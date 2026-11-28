@@ -154,7 +154,11 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
-          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-release "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/observation/observation.json"
+          mise exec "dotnet@$DOTNET_VERSION" -- dotnet "$RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-github-release "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/prepared" > "$RUNNER_TEMP/observation/observation.json" || {
+            status=$?
+            if [ "$status" -ne 1 ] || [ "$DRY_RUN" = true ]; then exit "$status"; fi
+            : > "$RUNNER_TEMP/primary-observation-refused"
+          }
       - name: Expose required writes and describe dry run
         id: state
         run: |

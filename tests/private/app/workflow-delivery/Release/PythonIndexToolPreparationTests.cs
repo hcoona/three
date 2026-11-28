@@ -1,5 +1,5 @@
+using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Platform;
-using WorkflowDelivery.Release;
 
 namespace WorkflowDelivery.Tests.Release;
 

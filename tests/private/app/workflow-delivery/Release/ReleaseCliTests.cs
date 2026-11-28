@@ -16,8 +16,8 @@ public sealed class ReleaseCliTests
     public void ActualCompletionBindsTheRegistryTransfer(string registry, string initialState,
         string finalState, int expectedExit, string expectedState)
     {
-        using var files = new Files();
         bool github = registry == "github-npm";
+        using var files = new Files(github);
         PreparedRelease prepared = files.Prepared with
         {
             Subject = files.Prepared.Subject with
@@ -65,8 +65,8 @@ public sealed class ReleaseCliTests
     [DataRow("github-npm")]
     public void CompleteNpmValidatesPublicationBeforeAndRetainsRefusalDiagnostics(string registry)
     {
-        using var files = new Files();
         bool github = registry == "github-npm";
+        using var files = new Files(github);
         PreparedRelease prepared = files.Prepared with
         {
             Subject = files.Prepared.Subject with
@@ -200,7 +200,7 @@ public sealed class ReleaseCliTests
         using var error = new StringWriter();
 
         Assert.AreEqual(2, Program.Run(["release", command, files.Preparation, files.Root,
-            "unused-scratch", "unused-toolchain"], output, error));
+            "unused-observation", "unused-scratch", "unused-toolchain"], output, error));
 
         Assert.AreEqual("", output.ToString());
         Assert.Contains("Transferred original differs from preparation.", error.ToString());
@@ -333,7 +333,8 @@ public sealed class ReleaseCliTests
                 "src/public/lib/hexo-renderer-asciidoc/workflow-delivery.release-unit.yml",
                 github ? "buddy" : "official",
                 github ? "github-packages-npm" : "npmjs", true),
-                [new("build", "archive", "npm-tarball", "@example/package", "1.2.3",
+                [new("build", "archive", "npm-tarball",
+                    github ? "@hcoona/hexo-renderer-asciidoc" : "hexo-renderer-asciidoc", "1.2.3",
                     "original/package.tgz", bytes.Length,
                     Convert.ToHexStringLower(SHA256.HashData(bytes)))],
                 ["consumer"], [new("consumer", ReleaseCheckStatus.Passed)]);

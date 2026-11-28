@@ -1,5 +1,5 @@
 {
   "commandLineOptions": {
-    "filter": "TestCategory!=NuGetNativeScenarios&TestCategory!=NuGetNativePreparation&TestCategory!=GithubReleaseNativePreparation&TestCategory!=PythonNativePreparation&TestCategory!=PythonNativeContract&TestCategory!=RubyNativePreparation&TestCategory!=RubyNativeContract&TestCategory!=PnpmNativeContract&TestCategory!=BrowserStoreNativePreparation"
+    "filter": "TestCategory!=NuGetNativeScenarios&TestCategory!=NuGetNativePreparation&TestCategory!=GithubReleaseNativePreparation&TestCategory!=PythonNativePreparation&TestCategory!=PythonNativeContract&TestCategory!=RubyNativePreparation&TestCategory!=RubyNativeContract&TestCategory!=PnpmNativeContract&TestCategory!=BrowserStoreNativePreparation&TestCategory!=DeliveryTlcConformance"
   }
 }

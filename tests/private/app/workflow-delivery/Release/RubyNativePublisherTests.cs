@@ -331,7 +331,8 @@ public sealed class RubyNativePublisherTests(TestContext context)
 
         internal Task<RubyPublishResult> RunAsync(
             Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-            CancellationToken token) => RubyNativePublisher.PublishAsync(Preparation, Originals,
+            CancellationToken token) => RubyNativePublisher.PublishAsync(
+                DestinationBindings.Ruby(Preparation.Prepared), Originals,
                 Tools, KeyLookup is null ? Platform : new KeySelection(Platform, KeyLookup),
                 execute, token);
 

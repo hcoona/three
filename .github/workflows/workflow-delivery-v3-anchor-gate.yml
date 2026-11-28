@@ -1,0 +1,84 @@
+name: Workflow Delivery v3 Official Anchor Gate
+'on':
+  workflow_call:
+    inputs:
+      control-id:
+        type: string
+        required: true
+      preparation-id:
+        type: string
+        required: true
+      observation-id:
+        type: string
+        required: true
+      publication-id:
+        type: string
+        required: true
+      dotnet:
+        type: string
+        required: true
+      dotnet-frameworks:
+        type: string
+        required: true
+    outputs:
+      permitted:
+        value: ${{ jobs.evaluate.outputs.permitted }}
+permissions: {}
+jobs:
+  evaluate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      permitted: ${{ steps.gate.outputs.permitted }}
+    steps:
+      - name: Receive the selected control
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ inputs.control-id }}
+          path: ${{ runner.temp }}/control
+          digest-mismatch: error
+      - name: Receive the qualified preparation
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ inputs.preparation-id }}
+          path: ${{ runner.temp }}/prepared
+          digest-mismatch: error
+      - name: Receive the reviewed observations
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ inputs.observation-id }}
+          path: ${{ runner.temp }}/observation
+          digest-mismatch: error
+      - name: Receive the primary publisher's receipt when retained
+        if: inputs.publication-id != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ inputs.publication-id }}
+          path: ${{ runner.temp }}/publication
+          digest-mismatch: error
+      - name: Prepare the selected runtime without checking out the product
+        uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca
+        with:
+          version: 2026.11.14
+          install: false
+          working_directory: ${{ runner.temp }}
+      - name: Evaluate the primary proof before granting repository write access
+        id: gate
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        env:
+          DOTNET_VERSION: ${{ inputs.dotnet }}
+          DOTNET_FRAMEWORKS_VERSION: ${{ inputs.dotnet-frameworks }}
+          PUBLICATION_ID: ${{ inputs.publication-id }}
+        run: |
+          set -Eeuo pipefail
+          mise install --jobs 1 --yes "dotnet@$DOTNET_VERSION" "dotnet@$DOTNET_FRAMEWORKS_VERSION"
+          publication=-
+          if [[ -n "$PUBLICATION_ID" ]]; then publication="$RUNNER_TEMP/publication/publication.json"; fi
+          dotnet=$(mise which --tool "dotnet@$DOTNET_VERSION" dotnet)
+          permitted=$("$dotnet" "$RUNNER_TEMP/control/WorkflowDelivery.dll" release may-publish-github-anchor \
+            "$RUNNER_TEMP/prepared/preparation.json" "$RUNNER_TEMP/observation/observation.json" \
+            "$RUNNER_TEMP/observation/anchor-observation.json" "$publication")
+          printf 'permitted=%s\n' "$permitted" >> "$GITHUB_OUTPUT"

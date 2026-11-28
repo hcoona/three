@@ -39,6 +39,16 @@ internal static class OwnedPath
         return relative;
     }
 
+    internal static HashSet<string> RequireArchiveNames(IEnumerable<string> decodedNames)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string name in decodedNames)
+            if (name.Contains('\\') || name.Contains(':') || name.Contains('\0') ||
+                name.Split('/').Any(part => part is "" or "." or "..") || !names.Add(name))
+                throw new InvalidDataException("Unsafe or ambiguous native-decoded package name.");
+        return names;
+    }
+
     internal static (string Checkout, string Scratch) RequireFreshExternalScratch(
         string checkout, string scratch, string message, string? pathMessage = null)
     {

@@ -34,6 +34,7 @@ internal static partial class CiScope
     internal const string RenovateConfiguration = "renovate.json";
     // Every CI .NET test job runs this report after its tests.
     internal const string SkippedTestSummary = "eng/scripts/Write-SkippedTestSummary.ps1";
+    private const string ModelRunner = "eng/scripts/check_workflow_delivery_models.py";
     private const string RenovateWorkflow = ".github/workflows/renovate.yml";
     private const string Azure = "src/private/app/azureauth-credprovider";
     private const string Scholarly = "src/private/lib/scholarly-publication";
@@ -212,6 +213,9 @@ internal static partial class CiScope
             if (jobs.Contains("renovate"))
                 Add("renovate", ".github/workflows/ci.yml#renovate-compat",
                     "retained-special-job-input", ".github/workflows/ci.yml", path);
+            if (DeliveryModelInput(path) != ModelChecks.None && Regular(ModelRunner))
+                Add("delivery-models", ".github/workflows/ci.yml#native-preparation-tests",
+                    "bounded-model-verification", ModelRunner, ".github/workflows/ci.yml");
             // Record-task scripts, and the matcher the checker imports, run under their mise
             // tasks ('uv run --script'), not as Python group targets.
             RecordTaskOwner[] recordTasks = tasks.Where(task => task.Script == path ||
@@ -405,6 +409,19 @@ internal static partial class CiScope
         path == "eng/scripts/locked_tool_versions.py" ||
         Under(path, ".github/renovate") || Under(path, ".github/actions/setup-renovate") ||
         Under(path, "eng/renovate");
+
+    internal static ModelChecks DeliveryModelInput(string path)
+    {
+        if (path is ModelRunner or "eng/scripts/tla.py" or ".github/workflows/ci.yml" or
+                "mise.toml" or "mise.lock" ||
+            Under(path, "src/private/app/workflow-delivery/docs/design/models") &&
+                (path.EndsWith(".cfg", StringComparison.Ordinal) ||
+                path.EndsWith(".tla", StringComparison.Ordinal)))
+            return ModelChecks.Full;
+        return !ControlInputs.InertDocument(path) &&
+            DotNetInheritedInputs.Consumes(path, ManagedControlRoots)
+            ? ModelChecks.Callers : ModelChecks.None;
+    }
 
     // A complete repository-path token in committed tooling configuration: the characters
     // around it are not path characters, so 'PklProject' does not match

@@ -2,8 +2,9 @@
 <!-- Please sort the items in each group in alphabetical order. -->
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
-    <WorkflowDeliveryDotNetSdk Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery.DotNet' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'">true</WorkflowDeliveryDotNetSdk>
-    <WorkflowDeliveryNuGet Condition="'$(WorkflowDeliveryDotNetSdk)' == 'true' or '$(MSBuildProjectName)' == 'WorkflowDelivery'">true</WorkflowDeliveryNuGet>
+    <!-- The host resolves the providers' runtime assets even though it does not compile against their SDKs. -->
+    <WorkflowDeliveryDotNetSdk Condition="'$(MSBuildProjectName)' == 'WorkflowDelivery.DotNet' or '$(MSBuildProjectName)' == 'WorkflowDelivery' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Tests'">true</WorkflowDeliveryDotNetSdk>
+    <WorkflowDeliveryNuGet Condition="'$(WorkflowDeliveryDotNetSdk)' == 'true' or '$(MSBuildProjectName)' == 'WorkflowDelivery.Destinations.NuGet'">true</WorkflowDeliveryNuGet>
   </PropertyGroup>
   <ItemGroup Label="Direct">
     <PackageVersion Include="Azure.AI.Translation.Document" Version="3.0.0" />

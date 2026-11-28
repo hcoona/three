@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using WorkflowDelivery.CI;
 using WorkflowDelivery.CI.Callers;
+using WorkflowDelivery.Core;
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
@@ -15,7 +16,8 @@ namespace WorkflowDelivery;
     Converters = new[] { typeof(CheckStatusJsonConverter), typeof(NativeTerminationJsonConverter),
         typeof(CheckOriginJsonConverter), typeof(ReleaseCheckStatusJsonConverter),
         typeof(ReleaseFileStateJsonConverter), typeof(ReleaseBusinessStateJsonConverter),
-        typeof(RubySourceStateJsonConverter), typeof(StoreStateJsonConverter) },
+        typeof(ContainerPresenceJsonConverter), typeof(StoreStateJsonConverter),
+        typeof(SubmissionClearanceJsonConverter) },
     WriteIndented = true,
     RespectNullableAnnotations = true,
     RespectRequiredConstructorParameters = true,
@@ -32,7 +34,6 @@ namespace WorkflowDelivery;
 [JsonSerializable(typeof(NodeCiCallerContext))]
 [JsonSerializable(typeof(PythonCiCallerReadback))]
 [JsonSerializable(typeof(RubyCiCallerReadback))]
-[JsonSerializable(typeof(GithubNpmToolSelection))]
 [JsonSerializable(typeof(PreparedGithubAnchor))]
 [JsonSerializable(typeof(ReleasePreparationRequest))]
 [JsonSerializable(typeof(ReleasePreparationResult))]
@@ -41,12 +42,6 @@ namespace WorkflowDelivery;
 [JsonSerializable(typeof(ReleaseCompletionResult))]
 [JsonSerializable(typeof(ReleaseDryRun))]
 [JsonSerializable(typeof(ReleaseOutcome))]
-[JsonSerializable(typeof(PythonIndexTools))]
-[JsonSerializable(typeof(PythonIndexToolRequest))]
-[JsonSerializable(typeof(PythonIndexToolResult))]
-[JsonSerializable(typeof(PythonPublisherTools))]
-[JsonSerializable(typeof(RubySourceTools))]
-[JsonSerializable(typeof(RubyPublisherTools))]
 [JsonSerializable(typeof(ControlTestInputRequest))]
 [JsonSerializable(typeof(DotNetRunRequest))]
 [JsonSerializable(typeof(DotNetRunResult))]
@@ -102,11 +97,15 @@ internal sealed class ReleaseCheckStatusJsonConverter()
 internal sealed class ReleaseFileStateJsonConverter()
     : JsonStringEnumConverter<ReleaseFileState>(allowIntegerValues: false);
 
+internal sealed class SubmissionClearanceJsonConverter()
+    : JsonStringEnumConverter<SubmissionClearance>(
+        JsonNamingPolicy.KebabCaseLower, allowIntegerValues: false);
+
 internal sealed class ReleaseBusinessStateJsonConverter()
     : JsonStringEnumConverter<ReleaseBusinessState>(allowIntegerValues: false);
 
-internal sealed class RubySourceStateJsonConverter()
-    : JsonStringEnumConverter<RubySourceState>(allowIntegerValues: false);
+internal sealed class ContainerPresenceJsonConverter()
+    : JsonStringEnumConverter<ContainerPresence>(allowIntegerValues: false);
 
 internal sealed class StoreStateJsonConverter()
     : JsonStringEnumConverter<StoreState>(allowIntegerValues: false);

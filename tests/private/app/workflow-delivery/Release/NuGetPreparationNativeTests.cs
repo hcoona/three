@@ -154,7 +154,8 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
         using var absentFeed = Feed(first.Result.Prepared.Files[0].Version, null);
         using var absentClient = new HttpClient(absentFeed);
         ReleaseObservationResult absent = await new GithubNuGetObservation(absentClient)
-            .ObserveAsync(first.Result.Prepared, "controlled-read", context.CancellationToken);
+            .ObserveAsync(DestinationBindings.NuGet(first.Result.Prepared),
+                "controlled-read", context.CancellationToken);
         Assert.AreEqual(ReleaseFileState.Absent, absent.Observation.Files[0].State);
         ReleaseCompletionResult missing = ReleaseEngine.Complete(ReleaseAdapters.NuGet,
             first.Result,
@@ -195,8 +196,13 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
             int writes = 0;
             try
             {
+                var reviewed = await new GithubNuGetObservation(absentClient).ObserveAsync(
+                    DestinationBindings.NuGet(fresh.Result.Prepared), "controlled-read",
+                    context.CancellationToken);
                 ReleasePublicationResult publication = await ReleaseAdapters.NuGet.PublishAsync(
-                    fresh.Result, fresh.Scratch, "controlled-read", observer.ObserveAsync,
+                    fresh.Result, reviewed, fresh.Scratch, "controlled-read", "controlled-write",
+                    (prepared, credential, cancel) => observer.ObserveAsync(
+                        DestinationBindings.NuGet(prepared), credential, cancel),
                     (_, _, _, _, _) =>
                     {
                         writes++;
@@ -209,9 +215,10 @@ public sealed class NuGetPreparationNativeTests(TestContext context)
                     publication.Before.Observation.Files[0].State);
                 // Completion is the independent registry readback of the served original bytes.
                 ReleaseObservationResult final = await observer.ObserveAsync(
-                    fresh.Result.Prepared, "controlled-read", context.CancellationToken);
+                    DestinationBindings.NuGet(fresh.Result.Prepared),
+                    "controlled-read", context.CancellationToken);
                 ReleaseCompletionResult complete = ReleaseEngine.Complete(ReleaseAdapters.NuGet,
-                    fresh.Result, absent, final, publication);
+                    fresh.Result, reviewed, final, publication);
                 fixture.Attach(label + "-fresh-completion.json", complete);
                 Assert.AreEqual(conflict ? ReleaseBusinessState.Unsatisfied :
                     ReleaseBusinessState.Satisfied, complete.Outcome.State);

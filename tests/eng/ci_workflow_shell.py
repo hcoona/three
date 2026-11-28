@@ -91,7 +91,7 @@ def action_steps(job: dict[str, Any], action: str) -> list[dict[str, Any]]:
     """Find an action by its repository, not its pin or step title."""
     return [
         step
-        for step in job["steps"]
+        for step in job.get("steps", [])
         if step.get("uses", "").startswith(action + "@")
     ]
 
@@ -154,7 +154,13 @@ def assert_release_transfers(workflow: dict[str, Any]) -> None:
                 & download.keys()
             )
             assert download["digest-mismatch"] == "error"
-            assert not step.get("continue-on-error", False)
+            optional_receipt = job_name == "verify-result" and download[
+                "path"
+            ] in {
+                "${{ runner.temp }}/publication",
+                "${{ runner.temp }}/anchor-publication",
+            }
+            assert step.get("continue-on-error", False) is optional_receipt
             source = re.fullmatch(
                 r"\$\{\{\s*needs\.([\w-]+)\.outputs\.([\w-]+)\s*\}\}",
                 download["artifact-ids"],

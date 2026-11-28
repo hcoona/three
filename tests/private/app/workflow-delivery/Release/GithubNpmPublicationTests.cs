@@ -21,7 +21,9 @@ public sealed class GithubNpmPublicationTests
         var commands = new List<NativeCommand>();
         int reads = 0;
 
-        ReleasePublicationResult result = await GithubNpmPublication.PublishAsync(files.Prepared,
+        ReleasePublicationResult result = await ReleaseAdapters.Npm.PublishGithubAsync(
+            files.Preparation,
+            Observe(files.Prepared, ReleaseFileState.Absent),
             files.Originals, files.Runtime, files.Tools, Files.Credential,
             (command, _) =>
             {
@@ -68,7 +70,9 @@ public sealed class GithubNpmPublicationTests
         int reads = 0;
         int writes = 0;
 
-        ReleasePublicationResult result = await GithubNpmPublication.PublishAsync(files.Prepared,
+        ReleasePublicationResult result = await ReleaseAdapters.Npm.PublishGithubAsync(
+            files.Preparation,
+            Observe(files.Prepared, ReleaseFileState.Absent),
             files.Originals, files.Runtime, files.Tools, Files.Credential,
             (command, _) =>
             {
@@ -76,9 +80,10 @@ public sealed class GithubNpmPublicationTests
                     Path.GetFileName(command.Executable) == "node" ? "v24.19.0" : "11.17.0"));
                 writes++;
                 return Task.FromResult(new NativeCommandResult(Enum.Parse<NativeTermination>(
-                    termination), 1, "failure " + Files.Credential,
-                    "https://pkg-npm.githubusercontent.com/archive?signature=secret", 1,
-                    "failed " + Files.Credential));
+                    termination), 1, $"failure {Files.Credential} at {files.Originals}",
+                    $"https://pkg-npm.githubusercontent.com/archive?signature=secret {files.Tools}",
+                    1,
+                    $"failed {Files.Credential} in {files.Runtime}"));
             },
             (prepared, _, _) => Task.FromResult(Observe(prepared, reads++ == 0
                 ? ReleaseFileState.Absent : Enum.Parse<ReleaseFileState>(after))),
@@ -90,6 +95,9 @@ public sealed class GithubNpmPublicationTests
         Assert.DoesNotContain(Files.Credential, upload.Command.Stdout);
         Assert.DoesNotContain(Files.Credential, upload.Command.Error!);
         Assert.DoesNotContain("signature", upload.Command.Stderr);
+        Assert.DoesNotContain(files.Originals, upload.Command.Stdout);
+        Assert.DoesNotContain(files.Tools, upload.Command.Stderr);
+        Assert.DoesNotContain(files.Runtime, upload.Command.Error!);
         Assert.AreEqual(1, writes);
         Assert.AreEqual(2, reads);
         Assert.AreEqual(Enum.Parse<ReleaseBusinessState>(business),
@@ -104,8 +112,9 @@ public sealed class GithubNpmPublicationTests
         File.WriteAllBytes(Path.Combine(files.Originals, "original/package.tgz"), [9]);
         int native = 0;
 
-        await Assert.ThrowsAsync<InvalidDataException>(() => GithubNpmPublication.PublishAsync(
-            files.Prepared, files.Originals, files.Runtime, files.Tools, Files.Credential,
+        await Assert.ThrowsAsync<InvalidDataException>(() => ReleaseAdapters.Npm.PublishGithubAsync(
+            files.Preparation, Observe(files.Prepared, ReleaseFileState.Absent),
+            files.Originals, files.Runtime, files.Tools, Files.Credential,
             (_, _) => { native++; return Task.FromResult(Success("")); },
             (prepared, _, _) =>
             {
@@ -138,6 +147,7 @@ public sealed class GithubNpmPublicationTests
         internal string Runtime { get; }
         internal string Tools { get; }
         internal PreparedRelease Prepared { get; }
+        internal ReleasePreparationResult Preparation => new(Prepared, [], [], []);
         internal Files()
         {
             Originals = Directory.CreateDirectory(Path.Combine(Root, "outputs")).FullName;

@@ -451,7 +451,8 @@ public sealed class PythonNativeContractTests(TestContext context)
             using var masks = new StringWriter();
             string state = Directory.CreateDirectory(System.IO.Path.Combine(scratch.Path,
                 "publisher")).FullName;
-            Result = await PythonNativePublisher.PublishAsync(prepared, originals, output,
+            Result = await PythonNativePublisher.PublishAsync(
+                DestinationBindings.Python(prepared), originals, output,
                 new(uv, state), platform, masks, (command, cancellation) =>
                 {
                     // The production command, retargeted to the loopback registry only.

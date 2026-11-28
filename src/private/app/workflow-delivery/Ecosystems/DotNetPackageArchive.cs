@@ -24,11 +24,7 @@ internal static class DotNetPackageArchive
         return new NuspecReader(nuspec).GetIdentity();
     }
 
-    internal static bool MatchesIdentity(string path, string name, string version) =>
-        PackageIdentityComparer.Default.Equals(
-            Identity(path), new(name, NuGetVersion.Parse(version)));
-
-    internal static void RequireIdentity(string path, Dictionary<string, string> expected) =>
+    internal static void RequireArchiveIdentity(string path, Dictionary<string, string> expected) =>
         RequireIdentity(Identity(path), expected);
 
     // A null framework set is the single-framework smoke recipe without dependencies;
@@ -116,16 +112,8 @@ internal static class DotNetPackageArchive
         OwnedFile.Verify(original.Path, original.Size, original.Sha256,
             "The original native package bytes are unavailable.");
 
-    private static HashSet<string> Names(PackageArchiveReader reader)
-    {
-        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        // GetFiles performs NuGet's decoding; no application ZIP decoder is involved.
-        foreach (string name in reader.GetFiles())
-            if (name.Contains('\\') || name.Contains(':') || name.Contains('\0') ||
-                name.Split('/').Any(part => part is "" or "." or "..") || !names.Add(name))
-                throw new InvalidDataException("Unsafe or ambiguous native-decoded package name.");
-        return names;
-    }
+    private static HashSet<string> Names(PackageArchiveReader reader) =>
+        OwnedPath.RequireArchiveNames(reader.GetFiles());
 
     // Reads a required member of the repository's own qualified Pack output, which is
     // not untrusted input; package size is the registry's concern, not this reader's.

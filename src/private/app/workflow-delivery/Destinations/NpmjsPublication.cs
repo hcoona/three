@@ -1,5 +1,4 @@
 using System.Text.RegularExpressions;
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
 
@@ -20,25 +19,22 @@ internal static partial class NpmjsPublication
         "GITHUB_REPOSITORY_OWNER_ID", "GITHUB_REF", "GITHUB_SHA", "GITHUB_RUN_ID",
         "GITHUB_RUN_ATTEMPT", "RUNNER_ENVIRONMENT"];
 
-    internal static async Task<ReleasePublicationResult> PublishAsync(PreparedRelease prepared,
+    internal static NpmPublishSession Bind(PackageDestination prepared,
         string originals, string scratch, string toolchain,
         IReadOnlyDictionary<string, string?> platform,
-        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
-        Func<PreparedRelease, CancellationToken, Task<ReleaseObservationResult>> observe,
-        CancellationToken token)
+        Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute)
     {
-        NpmReleaseUnit unit = ReleaseUnitCatalog.AdmitNpm(prepared.Subject);
         if (prepared.Subject.DryRun || prepared.Subject.Channel != "official" ||
+            prepared.Subject.Destination != "npmjs" ||
             prepared.Files is not [{ Kind: "npm-tarball" } file] ||
-            file.Name != unit.OfficialName)
+            file.Name != prepared.Package)
             throw new InvalidDataException("Unsupported live npmjs request.");
+        LiveReleaseRef.RequireEligible(prepared.Subject);
         string tag = DistTag(file.Version);
         // Empty configuration: no token exists, so npm can only use trusted publishing.
-        return await GithubNpmRuntime.PublishCoreAsync(prepared,
-            file, originals, scratch, toolchain, execute,
-            cancellation => observe(prepared, cancellation), ConfigureEnvironment,
+        return new(file, originals, scratch, toolchain, execute, ConfigureEnvironment,
             ["--registry", Registry, "--access", "public", "--provenance", "--tag", tag],
-            180, token, closeStandardInput: true, minimumVersions: (MinimumNode, MinimumNpm));
+            180, closeStandardInput: true, minimumVersions: (MinimumNode, MinimumNpm));
 
         string ConfigureEnvironment(Dictionary<string, string?> environment)
         {

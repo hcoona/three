@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(CurrentTargetFramework)</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <GlobalPackageReference Update="Microsoft.SourceLink.GitHub" ExcludeAssets="Runtime;Native" />
+    <ProjectReference Include="../../Platform/WorkflowDelivery.NativePlatform.csproj" />
+    <ProjectReference Include="../../Release/Ports/WorkflowDelivery.Release.Ports.csproj" />
+    <InternalsVisibleTo Include="WorkflowDelivery" />
+    <InternalsVisibleTo Include="WorkflowDelivery.Destinations" />
+    <InternalsVisibleTo Include="WorkflowDelivery.Destinations.NuGet" />
+    <InternalsVisibleTo Include="WorkflowDelivery.Tests" />
+  </ItemGroup>
+</Project>

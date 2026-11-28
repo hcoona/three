@@ -149,7 +149,9 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release observe-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" - > "$env:RUNNER_TEMP/observation/observation.json"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($LASTEXITCODE -notin @(0, 1) -or ($LASTEXITCODE -eq 1 -and $env:DRY_RUN -eq 'true')) { exit $LASTEXITCODE }
+          if ($LASTEXITCODE -eq 1) { Set-Content -LiteralPath "$env:RUNNER_TEMP/primary-observation-refused" -Value '1' }
+          exit 0
       - name: Describe native state and dry-run writes
         id: state
         run: |
@@ -188,6 +190,13 @@ jobs:
     steps:
       - *control
       - *prepared
+      - &initial-observation
+        name: Download observation by immutable artifact ID
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.observe.outputs.observation-id }}
+          path: ${{ runner.temp }}/observation
+          digest-mismatch: error
       - *runtime
       - *install
       - &receive-publication
@@ -199,7 +208,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" > "$env:RUNNER_TEMP/publication/publication.json"
+          mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" "$env:RUNNER_TEMP/observation/observation.json" > "$env:RUNNER_TEMP/publication/publication.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Retain actual publication results
         id: retain
@@ -227,6 +236,7 @@ jobs:
     steps:
       - *control
       - *prepared
+      - *initial-observation
       - *runtime
       - *install
       - *receive-publication
@@ -239,7 +249,7 @@ jobs:
         env:
           NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
         run: |
-          mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" > "$env:RUNNER_TEMP/publication/publication.json"
+          mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release publish-nuget "$env:RUNNER_TEMP/prepared/preparation.json" "$env:RUNNER_TEMP/prepared" "$env:RUNNER_TEMP/observation/observation.json" > "$env:RUNNER_TEMP/publication/publication.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Retain actual publication results
         id: retain
@@ -273,12 +283,7 @@ jobs:
         run: |
           mise exec "dotnet@$env:DOTNET_VERSION" -- dotnet "$env:RUNNER_TEMP/control/WorkflowDelivery.dll" release job-inputs nuget receive verification
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Download observation by immutable artifact ID
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          artifact-ids: ${{ needs.observe.outputs.observation-id }}
-          path: ${{ runner.temp }}/observation
-          digest-mismatch: error
+      - *initial-observation
       - name: Download publication by immutable artifact ID
         if: needs.publish-github-packages.outputs.publication-id != '' || needs.publish-nugetorg.outputs.publication-id != ''
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333

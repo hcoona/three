@@ -1,7 +1,9 @@
 using System.Reflection;
 using System.Text.Json;
 using WorkflowDelivery.Core;
+using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Ecosystems;
+using WorkflowDelivery.Release;
 using WorkflowDelivery.Repository;
 
 namespace WorkflowDelivery.Tests.Ecosystems;
@@ -10,6 +12,38 @@ namespace WorkflowDelivery.Tests.Ecosystems;
 public sealed class NativeProviderBoundaryTests
 {
     [TestMethod]
+    public void CompiledDestinationClientsKeepNativeSdksInTheirProvider()
+    {
+        Assembly host = typeof(Program).Assembly;
+        Assembly nuget = typeof(NuGetPublisher).Assembly;
+        Assembly others = typeof(NpmjsObservation).Assembly;
+        Assert.AreSame(nuget, typeof(GithubNuGetObservation).Assembly);
+        Assert.AreSame(nuget, typeof(NuGetOrgObservation).Assembly);
+        foreach (Type endpoint in new[] { typeof(GithubNpmObservation), typeof(NpmPublishSession),
+                     typeof(PythonIndexObservation), typeof(PythonNativePublisher),
+                     typeof(RubyDestinationObservation), typeof(RubyNativePublisher),
+                     typeof(GithubReleaseDestination), typeof(ChromeWebStore),
+                     typeof(FirefoxAmo), typeof(EdgeAddons) })
+            Assert.AreSame(others, endpoint.Assembly);
+        Assert.AreNotSame(host, others);
+        Assert.AreNotSame(host, nuget);
+        Assert.AreNotSame(others, nuget);
+
+        string[] nugetReferences = [.. nuget.GetReferencedAssemblies().Select(a => a.Name!)];
+        Assert.Contains("NuGet.Protocol", nugetReferences);
+        Assert.DoesNotContain(typeof(DotNetRepositoryReader).Assembly.GetName().Name!,
+            nugetReferences);
+        foreach (Assembly assembly in new[] { others, typeof(RegistryHttpClient).Assembly,
+                     typeof(ReleaseObservationResult).Assembly, host })
+            Assert.IsEmpty(assembly.GetReferencedAssemblies().Where(reference =>
+                reference.Name!.StartsWith("NuGet.", StringComparison.Ordinal) ||
+                reference.Name.StartsWith("Microsoft.Build", StringComparison.Ordinal)));
+        foreach (Assembly assembly in new[] { nuget, others })
+            Assert.DoesNotContain(host.GetName().Name!,
+                assembly.GetReferencedAssemblies().Select(reference => reference.Name!));
+    }
+
+    [TestMethod]
     public void CompiledEndpointProvidersDoNotLoadTheHostOrEachOther()
     {
         Assembly host = typeof(Program).Assembly;
@@ -17,7 +51,8 @@ public sealed class NativeProviderBoundaryTests
         Assembly node = typeof(PnpmGraphReader).Assembly;
         Assembly python = typeof(PythonNativeGraphReader).Assembly;
         Assembly ruby = typeof(RubyNativeFactCollector).Assembly;
-        Assembly[] providers = [dotnet, node, python, ruby];
+        Assembly nuget = typeof(NuGetPublisher).Assembly;
+        Assembly[] providers = [dotnet, node, python, ruby, nuget, typeof(ChromeWebStore).Assembly];
         Assert.AreSame(dotnet, typeof(DotNetPackRecipe).Assembly);
         Assert.AreSame(dotnet, typeof(WindowsAssetsRecipe).Assembly);
         Assert.AreSame(dotnet, typeof(DotNetPackageConsumer).Assembly);
@@ -36,8 +71,8 @@ public sealed class NativeProviderBoundaryTests
         JsonElement target = deps.RootElement.GetProperty("targets").GetProperty(
             deps.RootElement.GetProperty("runtimeTarget").GetProperty("name").GetString()!);
         var graph = target.EnumerateObject().ToDictionary(
-            item => item.Name[..item.Name.LastIndexOf('/')], item => item.Value,
-            StringComparer.Ordinal);
+            item => item.Name[..item.Name.LastIndexOf('/')],
+            item => item.Value, StringComparer.Ordinal);
         string[] nativeSdk = ["Microsoft.Build", "NuGet.Commands", "NuGet.ProjectModel",
             "Nerdbank.GitVersioning"];
         foreach (Assembly provider in providers)
@@ -50,6 +85,11 @@ public sealed class NativeProviderBoundaryTests
             if (provider != dotnet)
                 Assert.IsEmpty(dependencies.Where(name => nativeSdk.Any(sdk =>
                     name == sdk || name.StartsWith(sdk + ".", StringComparison.Ordinal))));
+            if (provider == nuget)
+                Assert.Contains("NuGet.Protocol", dependencies);
+            else if (provider != dotnet)
+                Assert.IsEmpty(dependencies.Where(name =>
+                    name.StartsWith("NuGet.", StringComparison.Ordinal)));
 
             void Visit(string name)
             {
@@ -80,12 +120,13 @@ public sealed class NativeProviderBoundaryTests
         var sdist = new UnitOutput("sdist", "source-package", "python-sdist");
         var subject = new UnitBuildSubject(
             "rev", "pkg", "decl", "dist", "pyproject.toml", [wheel, sdist]);
-        var first = new UnitOriginal(wheel, "pkg", "1.0",
-            Path.Combine(AppContext.BaseDirectory, "a.whl"), 1, new string('a', 64));
+        var first = new UnitOriginal(
+            wheel, "pkg", "1.0", Path.Combine(AppContext.BaseDirectory, "a.whl"),
+            1, new string('a', 64));
         var second = first with
         {
             Output = sdist,
-            Path = Path.Combine(AppContext.BaseDirectory, "b.tar.gz"),
+            Path = Path.Combine(AppContext.BaseDirectory, "b.tar.gz")
         };
         UnitOriginal[] files = failure switch
         {

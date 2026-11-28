@@ -1,4 +1,5 @@
 using WorkflowDelivery.Core;
+using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Repository;
@@ -9,19 +10,13 @@ internal static class BrowserStorePreparation
 {
     internal static BrowserStoreUnit DefaultUnit =>
         ReleaseUnitCatalog.BrowserStoreUnits.Single();
-    internal const string ChromeWebStore = "chrome-web-store";
-    internal const string FirefoxAmo = "firefox-amo";
-    internal const string EdgeAddons = "edge-addons";
+    internal const string ChromeWebStore = StoreArtifacts.Chrome;
+    internal const string FirefoxAmo = StoreArtifacts.Firefox;
+    internal const string EdgeAddons = StoreArtifacts.Edge;
     private static readonly string[] Required = ["native-input", "build", "contents",
         "consumer", "original-bytes"];
 
-    internal static string[] StoreOutputs(string store) => store switch
-    {
-        ChromeWebStore => ["chrome-zip"],
-        FirefoxAmo => ["firefox-zip", "firefox-sources"],
-        EdgeAddons => ["edge-zip"],
-        _ => throw new InvalidDataException("Unsupported browser store."),
-    };
+    internal static string[] StoreOutputs(string store) => StoreArtifacts.For(store);
 
     internal static BrowserStoreUnit RequireRequest(ReleaseSubject subject,
         BrowserStoreTarget target)
@@ -119,15 +114,8 @@ internal static class BrowserStorePreparation
         ReleaseFile[] files = [.. all.Where(file => selectedOutputs.Contains(file.Output))];
         PreparedGithubAnchor? anchor = releaseNotes is not null &&
             qualification.Errors.Length == 0 && files.Length > 0
-                ? new(
-                    [.. files.Select(file => file with
-                    {
-                        Name = Path.GetFileName(file.Path),
-                        Version = projected.Npm,
-                    })],
-                    releaseNotes,
-                    [.. all.Where(file => !selectedOutputs.Contains(file.Output))
-                        .Select(file => Path.GetFileName(file.Path))])
+                ? DestinationBindings.GithubAnchor(
+                    request.Subject, files, releaseNotes, projected.Npm)
                 : null;
         return new(new(request.Subject, [.. files], Required.ToArray(), qualification.Checks,
                 Anchor: anchor),

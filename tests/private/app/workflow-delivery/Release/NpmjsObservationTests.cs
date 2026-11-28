@@ -14,7 +14,7 @@ public sealed class NpmjsObservationTests(TestContext context)
     public async Task ExactNativeCoordinateAndOriginalBytesRequireNoWitnessOrTarReparse()
     {
         byte[] original = Encoding.UTF8.GetBytes("qualified original bytes");
-        PreparedRelease prepared = Prepare(original);
+        PackageDestination prepared = Prepare(original);
         using var handler = new ScriptedHttpHandler((_, number) => number == 0
             ? Response(200, Metadata()) : Response(200, original));
         using var client = new HttpClient(handler);
@@ -31,6 +31,10 @@ public sealed class NpmjsObservationTests(TestContext context)
             handler.Requests[0].Uri.AbsoluteUri);
         Assert.AreEqual("https://registry.npmjs.org/original.tgz",
             handler.Requests[1].Uri.AbsoluteUri);
+        DestinationRead tarball = result.Reads.Single(read => read.Stage == "tarball");
+        Assert.IsNull(tarball.Url);
+        Assert.AreEqual(Convert.ToHexStringLower(SHA256.HashData(
+            Encoding.UTF8.GetBytes(handler.Requests[1].Uri.AbsoluteUri))), tarball.UrlSha256);
         Assert.IsTrue(handler.Requests.All(request =>
             request.Headers.Authorization is null && !request.Headers.Contains("Cookie")));
         Assert.AreEqual(ReleaseCheckStatus.Passed,
@@ -109,13 +113,13 @@ public sealed class NpmjsObservationTests(TestContext context)
         Assert.HasCount(1, handler.Requests);
     }
 
-    private static PreparedRelease Prepare(byte[] bytes) => new(
+    private static PackageDestination Prepare(byte[] bytes) => new(
         new(new('a', 40), "refs/heads/development", "example", "product/release.yml",
             "official", "npmjs", true),
         [new("build", "archive", "npm-tarball", "@example/package", "1.2.3",
             "original/package.tgz", bytes.LongLength,
             Convert.ToHexStringLower(SHA256.HashData(bytes)))],
-        ["consumer"], [new("consumer", ReleaseCheckStatus.Passed)]);
+        "@example/package");
 
     private static string Metadata() => """
         {"name":"@example/package","version":"1.2.3",

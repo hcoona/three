@@ -2,20 +2,14 @@ global using NuGetPreparationResult = WorkflowDelivery.Release.ReleasePreparatio
 global using NuGetObservationResult = WorkflowDelivery.Release.ReleaseObservationResult;
 global using NuGetCompletionResult = WorkflowDelivery.Release.ReleaseCompletionResult;
 
+using System.Collections.Immutable;
 using System.Text.Json.Serialization;
+using WorkflowDelivery.Core;
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Release;
 
-internal sealed record ReleaseSubject(string Revision, string SelectedRef, string Unit,
-    string Declaration, string Channel, string Destination, bool DryRun);
-
-internal sealed record ReleaseFile(string Build, string Output, string Kind, string Name,
-    string Version, string Path, long Size, string Sha256);
-
-internal enum ReleaseCheckStatus { Passed, Failed, Missing, Cancelled, Skipped, TimedOut }
-internal sealed record ReleaseCheck(string Id, ReleaseCheckStatus Status);
 internal sealed record ReleaseCommand(string Check, NativeCommand Command,
     NativeCommandResult Result);
 internal sealed record PreparedGithubAnchor(
@@ -31,10 +25,6 @@ internal sealed record PreparedRelease(ReleaseSubject Subject, ReleaseFile[] Fil
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     PreparedGithubAnchor? Anchor = null);
 
-internal sealed record BrowserStoreTarget(string Store, string Item,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? Publisher = null);
-
 internal sealed record RubyPreparationTools(string Ruby, string Gem, string Dotnet, string Mise);
 
 internal sealed record ReleasePreparationRequest(
@@ -47,33 +37,6 @@ internal sealed record ReleasePreparationRequest(
     RubyPreparationTools? Tools = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? MiseDataDirectory = null);
-
-internal enum ReleaseFileState
-{
-    Absent,
-    Exact,
-    Conflict,
-    Unknown,
-    Available,
-    Accepted,
-    Unobserved,
-}
-
-internal sealed record ReleaseFileObservation(string Output, string Name, string Version,
-    ReleaseFileState State, long? Size, string? Sha256);
-
-internal sealed record ReleaseObservation(
-    ReleaseSubject Subject,
-    ReleaseFileObservation[] Files,
-    string[] RequiredChecks,
-    ReleaseCheck[] Checks,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string[]? Reasons = null)
-{
-    internal bool HasConflict() => Files.Any(file => file.State == ReleaseFileState.Conflict);
-}
-
-internal sealed record ReleaseUpload(string Output, NativeCommandResult Command);
 
 internal enum ReleaseBusinessState { Satisfied, Unsatisfied, Unknown }
 internal sealed record ReleaseOutcome(ReleaseSubject Subject, ReleaseBusinessState State,
@@ -91,56 +54,6 @@ internal sealed record ReleasePreparationResult(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     BrowserStoreTarget? Target = null);
 
-internal sealed record ReleaseObservationResult(
-    ReleaseObservation Observation,
-    DestinationRead[] Reads,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    NuGetResources? Resources = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    long? ReleaseId = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    RubySourceReadResult? RubySource = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    StoreState? StoreState = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    BrowserStoreTarget? StoreTarget = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? TarballUrlSha256 = null);
-
-internal sealed record ReleaseWriteStep(
-    string Kind,
-    string Target,
-    bool Succeeded,
-    bool Acknowledged,
-    double DurationSeconds,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? Detail = null,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    NativeCommandResult? Command = null,
-    bool MaskForwardingFailed = false,
-    bool Cancelled = false)
-{
-    internal static ReleaseWriteStep FromUpload(ReleaseUpload upload,
-        bool maskForwardingFailed = false) =>
-        new("upload", upload.Output, upload.Command.Succeeded,
-            upload.Command.Succeeded && upload.Command.Error is null && !maskForwardingFailed,
-            upload.Command.DurationSeconds, upload.Command.Error, upload.Command,
-            maskForwardingFailed);
-
-    internal static ReleaseWriteStep FromContainer(NativeCommandResult command,
-        bool resourceCreated) =>
-        new("container", "release", command.Succeeded && resourceCreated,
-            command.Succeeded && command.Error is null && resourceCreated,
-            command.DurationSeconds, command.Error, command);
-
-    internal static ReleaseWriteStep FromPush(string target, NuGetPushResult push) =>
-        new("push", target, push.ReturnedSuccessfully, push.ReturnedSuccessfully,
-            push.DurationSeconds, push.FailureType, null, false, push.Cancelled);
-
-    internal static ReleaseWriteStep FromStore(string operation, bool succeeded, string detail) =>
-        new("store", operation, succeeded, succeeded, 0, detail);
-}
-
 internal sealed record ReleasePublicationResult(
     ReleaseSubject Subject,
     ReleaseObservationResult Before,
@@ -154,7 +67,7 @@ internal sealed record ReleasePublicationResult(
         .Select(step => new ReleaseUpload(step.Target, step.Command!))];
 
     [JsonIgnore]
-    internal NuGetPushResult? Invocation => Steps.SingleOrDefault(step => step.Kind == "push")
+    internal NativeLibraryResult? Invocation => Steps.SingleOrDefault(step => step.Kind == "push")
         is { } push
             ? new(push.Succeeded, push.Cancelled, push.Detail, push.DurationSeconds)
             : null;
@@ -166,7 +79,7 @@ internal sealed record ReleaseCompletionResult(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     ReleasePublicationResult? Publication = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    NuGetPushResult? Invocation = null,
+    NativeLibraryResult? Invocation = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     StoreState? StoreState = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -178,17 +91,9 @@ internal sealed record ReleaseCompletionResult(
 // request is formed and again by the privileged publisher; dry runs have no write capability.
 internal static class ReleasePolicy
 {
-    internal const string OfficialRef = "refs/heads/main";
-    private const string Branches = "refs/heads/";
-
-    internal static void RequireEligible(ReleaseSubject subject)
-    {
-        if (subject.DryRun) return;
-        if (!(subject.Channel == "official" ? subject.SelectedRef == OfficialRef :
-                subject.SelectedRef.StartsWith(Branches, StringComparison.Ordinal) &&
-                    subject.SelectedRef.Length > Branches.Length))
-            throw new InvalidDataException("Unsupported live Release channel ref.");
-    }
+    internal const string OfficialRef = LiveReleaseRef.Official;
+    internal static void RequireEligible(ReleaseSubject subject) =>
+        LiveReleaseRef.RequireEligible(subject);
 
     internal static bool Qualified(string[] required, ReleaseCheck[] results) =>
         required.All(id => results.Any(check => check.Id == id &&
@@ -302,9 +207,6 @@ internal static class ReleaseCompletion
         return order is null ? missing : [.. order.Where(missing.Contains)];
     }
 
-    // nuget.org repository-signs every accepted package and its versions are immutable.
-    private static readonly string[] VersionObserved = ["nugetorg"];
-
     internal static ReleaseOutcome Evaluate(PreparedRelease prepared,
         ReleaseObservation? observation, ReleaseUpload[] uploads,
         DestinationProfile? profile = null)
@@ -345,7 +247,7 @@ internal static class ReleaseCompletion
     {
         ArgumentNullException.ThrowIfNull(prepared);
         ReleaseSubject subject = prepared.Subject;
-        if (subject.Revision.Length != 40 ||
+        if (!Enum.IsDefined(subject.Clearance) || subject.Revision.Length != 40 ||
             subject.Revision.Any(c => c is not (>= '0' and <= '9' or >= 'a' and <= 'f')) ||
             new[] { subject.SelectedRef, subject.Unit, subject.Channel, subject.Destination }
                 .Any(string.IsNullOrWhiteSpace))
@@ -379,22 +281,35 @@ internal static class ReleaseCompletion
     private static (ReleaseBusinessState, string[]) Assess(PreparedRelease prepared,
         ReleaseObservation? observation, DestinationProfile? profile)
     {
-        var reasons = CheckFailures(prepared.RequiredChecks, prepared.Checks);
-        if (observation is null)
-        {
-            reasons.Add("Required destination observation is missing; effects remain unknown.");
-            return (ReleaseBusinessState.Unknown, [.. reasons]);
-        }
-        (bool unknown, bool absent, List<string> observedReasons) =
-            AssessObservation(prepared, observation, profile);
-        reasons.AddRange(observedReasons);
-        if (unknown && !observation.HasConflict())
-            return (ReleaseBusinessState.Unknown, [.. reasons]);
-        if (reasons.Count != 0 || absent) return (ReleaseBusinessState.Unsatisfied, [.. reasons]);
-        return (ReleaseBusinessState.Satisfied, []);
+        DestinationProfile projected = profile
+            ?? ReleaseAdapters.ObservationProfile(prepared.Subject);
+        var reasons = EvidenceReasons(prepared, observation, projected);
+        PublicationEvidence? evidence = observation is null ? null : new(
+            ReleasePolicy.Qualified(prepared.RequiredChecks, prepared.Checks) &&
+            ReleasePolicy.Qualified(observation.RequiredChecks, observation.Checks),
+            observation.Files.ToImmutableDictionary(file => new OperationId("file", file.Output),
+                file => PublicationBinding.State(projected, file.State)));
+        return (
+            Wire(PublicationConclusion.StatusOf(PublicationConclusion.ProofOf(evidence))), reasons);
     }
 
-    private static (bool Unknown, bool Absent, List<string> Reasons) AssessObservation(
+    internal static ReleaseBusinessState Wire(PublicationStatus state) => state switch
+    {
+        PublicationStatus.Satisfied => ReleaseBusinessState.Satisfied,
+        PublicationStatus.Unsatisfied => ReleaseBusinessState.Unsatisfied,
+        PublicationStatus.Unknown => ReleaseBusinessState.Unknown,
+        _ => throw new InvalidDataException("Unknown publication verdict."),
+    };
+
+    internal static string[] EvidenceReasons(
+        PreparedRelease prepared,
+        ReleaseObservation? observation,
+        DestinationProfile profile) =>
+        [.. CheckFailures(prepared.RequiredChecks, prepared.Checks), .. observation is null
+            ? ["Required destination observation is missing; effects remain unknown."]
+            : AssessObservation(prepared, observation, profile)];
+
+    private static List<string> AssessObservation(
         PreparedRelease prepared, ReleaseObservation observation, DestinationProfile? profile)
     {
         if (observation.Subject != prepared.Subject)
@@ -405,12 +320,10 @@ internal static class ReleaseCompletion
             observation.Files.Select(file => file.Output).Distinct(StringComparer.Ordinal).Count()
                 != observation.Files.Length)
             throw new InvalidDataException("Destination observation must cover the complete set.");
-        bool allowVersion = profile is not null
-            ? profile.Verification == DestinationVerificationMode.VersionAvailable
-            : VersionObserved.Contains(prepared.Subject.Destination, StringComparer.Ordinal);
+        bool allowVersion =
+            (profile ?? ReleaseAdapters.ObservationProfile(prepared.Subject)).Verification ==
+            DestinationVerificationMode.VersionAvailable;
         bool allowStore = profile?.Verification == DestinationVerificationMode.StoreAccepted;
-        bool unknown = false;
-        bool absent = false;
         foreach (ReleaseFile file in prepared.Files)
         {
             ReleaseFileObservation actual = observation.Files.SingleOrDefault(value =>
@@ -439,14 +352,11 @@ internal static class ReleaseCompletion
                     if (!allowStore || actual.Size is not null || actual.Sha256 is not null)
                         throw new InvalidDataException(
                             "Unsupported unobserved destination observation.");
-                    unknown = true;
                     reasons.Add($"Destination state is unobserved for {file.Output}.");
                     break;
                 case ReleaseFileState.Absent:
-                    absent = true;
                     break;
                 case ReleaseFileState.Unknown:
-                    unknown = true;
                     reasons.Add($"Destination state is unknown for {file.Output}.");
                     break;
                 case ReleaseFileState.Conflict:
@@ -454,7 +364,7 @@ internal static class ReleaseCompletion
                     break;
             }
         }
-        return (unknown, absent, reasons);
+        return reasons;
     }
 
     private static void ValidateUploads(PreparedRelease prepared, ReleaseUpload[] uploads)

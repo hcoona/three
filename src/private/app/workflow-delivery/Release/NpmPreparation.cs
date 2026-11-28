@@ -116,9 +116,7 @@ internal static class NpmPreparation
                 qualification.CheckAsync, RunAsync, token));
         PreparedGithubAnchor? anchor = releaseNotes is not null &&
             qualification.Errors.Length == 0 && files.Length > 0
-                ? new([.. files.Select(file => file with
-                    { Name = $"{NpmReleaseUnit.UnscopedName(package)}-{nativeVersion}.tgz" })],
-                    releaseNotes)
+                ? DestinationBindings.GithubAnchor(request.Subject, files, releaseNotes)
                 : null;
         return new(new(request.Subject, [.. files], [.. recipe.Required], qualification.Checks,
                 Anchor: anchor),

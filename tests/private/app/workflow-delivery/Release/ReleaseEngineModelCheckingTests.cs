@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Time.Testing;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using WorkflowDelivery.Core;
 using WorkflowDelivery.Destinations;
 using WorkflowDelivery.Platform;
 using WorkflowDelivery.Release;
@@ -105,6 +106,16 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
 
         public DestinationProfile Profile(ReleaseSubject subject) => profile;
 
+        public PublicationBinding BindPublication(ReleasePreparationResult preparation) =>
+            profile.Verification == DestinationVerificationMode.StoreAccepted
+                ? PublicationBinding.Store(this, preparation,
+                    BrowserStoreDestinationAdapter.SubmissionFor(name))
+                : PublicationBinding.Files(this, preparation,
+                    profile.Visibility == DestinationVisibilityMode.BoundedSettle
+                        ? "push"
+                        : "upload",
+                    usesContainer);
+
         public void ValidatePreparation(ReleasePreparationResult preparation)
         {
             ReleaseCompletion.Validate(preparation.Prepared);
@@ -147,12 +158,12 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
                 DestinationVisibilityMode.BoundedSettle),
             fileCount: 1, readback: DestinationReadbackMode.Required),
         new("TwoFileEventualIndex",
-            new(DestinationVerificationMode.ExactBytes, DestinationVisibilityMode.EventualIndex,
+            new(DestinationVerificationMode.ExactBytes, DestinationVisibilityMode.EventualRead,
                 OrderedKinds: ["kind-0", "kind-1"]),
             fileCount: 2),
         new("ContainerAndTwoAssets",
-            new(DestinationVerificationMode.ExactBytes, DestinationVisibilityMode.Immediate,
-                OrderedKinds: ["kind-0", "kind-1"], AllowsContainer: true),
+            new(DestinationVerificationMode.ExactBytes, DestinationVisibilityMode.EventualRead,
+                OrderedKinds: ["kind-0", "kind-1"]),
             fileCount: 2, usesContainer: true),
         ModelSpec.ForStore(BrowserStorePreparation.ChromeWebStore, fileCount: 1),
         ModelSpec.ForStore(BrowserStorePreparation.FirefoxAmo, fileCount: 2),
@@ -189,19 +200,16 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
 
         ReleasePublicationResult interrupted = await ReleaseEngine.PublishAsync(storeSpec,
             storePrep, "/originals", initialAbsent,
-            new(
-                ObserveAsync: (_, _) => Task.FromResult(initialAbsent),
-                SubmitStoreAsync: (steps, _) =>
-                {
-                    steps.Add(ReleaseWriteStep.FromStore("upload", true, "uploaded"));
-                    throw new HttpRequestException("publish dropped");
-                }),
+            DestinationPublishPlan.Store((_, _) => Task.FromResult(initialAbsent), "publish",
+                (operation, _) => operation == "upload"
+                    ? Task.FromResult(DestinationInvocation.Store(operation, true, "uploaded"))
+                    : throw new HttpRequestException("publish dropped"), readAfterAttempt: false),
             CancellationToken.None);
 
         Assert.HasCount(2, interrupted.Steps);
         Assert.AreEqual("upload", interrupted.Steps[0].Target);
         Assert.IsTrue(interrupted.Steps[0].Succeeded);
-        Assert.AreEqual("submission", interrupted.Steps[1].Target);
+        Assert.AreEqual("publish", interrupted.Steps[1].Target);
         Assert.IsFalse(interrupted.Steps[1].Succeeded);
 
         // Reject store step injected into ExactBytes completion.
@@ -281,7 +289,7 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
                 unprivilegedPhase: true);
             bool initialProceeds = ReleaseEngine.ObservationProceeds(profile,
                 initialObs.Observation);
-            bool writeNeeded = ReleaseEngine.WriteNeeded(spec, livePrep, initialObs);
+            bool writeNeeded = ReleaseEngine.MayEnterPublisher(spec, livePrep, initialObs);
             if (spec.PublisherReportsStoreState)
                 AssertInvariant(initialObs.StoreState == StoreState.Unobserved &&
                     initialProceeds && writeNeeded,
@@ -292,8 +300,12 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
                 if (profile.Verification != DestinationVerificationMode.StoreAccepted)
                 {
                     transitions++;
-                    Assert.ThrowsExactly<InvalidDataException>(() =>
-                        ReleaseEngine.Complete(spec, livePrep, initialObs, initialObs, null));
+                    var stopped = ReleaseEngine.Complete(
+                        spec, livePrep, initialObs, initialObs, null);
+                    Assert.AreEqual(initialObs.Observation.HasConflict()
+                        ? ReleaseBusinessState.Unsatisfied
+                        : ReleaseBusinessState.Unknown, stopped.Outcome.State);
+                    Assert.IsFalse(stopped.MutationAttempted);
                     visitedPostRun1.TryAdd(root.World, new("InitialBlocked", root.World, root));
                     continue;
                 }
@@ -414,7 +426,7 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
             // Healthy (Absent / Partial / Complete) post-crash world MUST deterministically
             // converge to Satisfied in one clean recovery run, writing ONLY still-absent outputs!
             int expectedMissingCount = CountAbsentArtifacts(spec, settled);
-            bool recWriteNeeded = ReleaseEngine.WriteNeeded(spec, livePrep, recInitial);
+            bool recWriteNeeded = ReleaseEngine.MayEnterPublisher(spec, livePrep, recInitial);
 
             ReleasePublicationResult? cleanPub = null;
             WorldState finalWorld = settled;
@@ -506,7 +518,7 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
             AssertInvariant(IsTrulyCompleteInGroundTruth(spec, effectiveWorld),
                 "SoundSatisfaction violated: reported Satisfied while ground-truth world is " +
                 $"incomplete or conflicting ({effectiveWorld})", node);
-            bool initialNeededWrite = ReleaseEngine.WriteNeeded(spec, prep, initial);
+            bool initialNeededWrite = ReleaseEngine.MayEnterPublisher(spec, prep, initial);
             if (initialNeededWrite)
                 AssertInvariant(publication is not null,
                     "SoundSatisfaction violated: reported Satisfied despite lost publication " +
@@ -515,7 +527,7 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
 
         // A lost receipt leaves the attempt unknown. A verifier can still disprove a byte match.
         if (vFault == VerificationFault.LostPublicationArtifact &&
-            ReleaseEngine.WriteNeeded(spec, prep, initial))
+            ReleaseEngine.MayEnterPublisher(spec, prep, initial))
         {
             bool observedConflict = profile.Verification == DestinationVerificationMode.ExactBytes
                 && finalObs?.Observation.Files.Any(file =>
@@ -597,24 +609,26 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
                 WorldState world = startWorld;
                 int writes = 0;
                 ReleasePublicationResult pub = await ReleaseEngine.PublishAsync(spec, prep,
-                    "/originals", initial, new(
-                        ObserveAsync: (_, _) => Task.FromResult(before),
-                        SubmitStoreAsync: (steps, _) =>
+                    "/originals",
+                    initial, DestinationPublishPlan.Store((_, _) => Task.FromResult(before),
+                        BrowserStoreDestinationAdapter.SubmissionFor(spec.Name), (stage, _) =>
                         {
                             writes++;
+                            if (stage == "upload")
+                                return Task.FromResult(
+                                    DestinationInvocation.Store("upload", true, "uploaded"));
                             bool ok = outcome is StoreState.Received or StoreState.InReview or
                                 StoreState.Published;
                             world = world with { Store = outcome };
-                            steps.Add(ReleaseWriteStep.FromStore("submit", ok,
-                                ok ? "ok" : "failed"));
                             ReleaseObservationResult? after = spec.PublisherReportsStoreState
                                 ? StoreReport(prep.Prepared, outcome) : null;
-                            return Task.FromResult(after);
-                        }), CancellationToken.None);
+                            return Task.FromResult(DestinationInvocation.Store(
+                                stage, ok, ok ? "ok" : "failed", after));
+                        }, readAfterAttempt: false), CancellationToken.None);
                 string label = $"StorePublish(before={before.StoreState},outcome={outcome})";
                 bool shouldSubmit = before.StoreState == (spec.IsEdge
                     ? StoreState.Unobserved : StoreState.Absent);
-                AssertInvariant(writes == (shouldSubmit ? 1 : 0),
+                AssertInvariant(writes == (shouldSubmit ? 2 : 0),
                     $"{spec.Name}: {writes} submissions from {before.StoreState}",
                     new(label, world, parent));
                 results.Add((label, pub, world, writes));
@@ -648,8 +662,7 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
                     int outputCallIndex = 0;
 
                     ReleasePublicationResult pub = await ReleaseEngine.PublishAsync(spec, prep,
-                        "/originals", spec.Readback == DestinationReadbackMode.Required
-                            ? null : initial,
+                        "/originals", initial,
                         new(
                             ObserveAsync: (_, token) =>
                             {
@@ -659,28 +672,24 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
                                 return Task.FromResult(Observe(spec, prep.Prepared, world,
                                     unprivilegedPhase: false));
                             },
-                            EnsureContainerAsync: spec.UsesContainer
-                                ? (_, before, _) =>
+                            InvokeAsync: (id, _) =>
+                            {
+                                writes++;
+                                if (id.Kind == "container")
                                 {
-                                    if (before.ReleaseId is not null)
-                                        return Task.FromResult<ReleaseWriteStep?>(null);
-                                    writes++;
                                     if (containerOk) world = world with { ContainerCreated = true };
                                     var cmd = new NativeCommandResult(NativeTermination.Exited,
                                         containerOk ? 0 : 500, "", "", 0.1,
                                         containerOk ? null : "container error");
-                                    return Task.FromResult<ReleaseWriteStep?>(
-                                        ReleaseWriteStep.FromContainer(cmd, containerOk));
+                                    return Task.FromResult(new DestinationInvocation(
+                                        ReleaseWriteStep.FromContainer(cmd, containerOk),
+                                        cmd.Error));
                                 }
-                    : null,
-                            WriteOutputAsync: (file, _) =>
-                            {
-                                writes++;
-                                int fileIdx = file.Output == "out-0" ? 0 : 1;
+                                int fileIdx = id.Target == "out-0" ? 0 : 1;
                                 WriteFault fault = outputCallIndex++ == 0 ? f1 : f2;
-                                ReleaseWriteStep step = ApplyFileFault(spec, file.Output, fileIdx,
+                                ReleaseWriteStep step = ApplyFileFault(spec, id.Target, fileIdx,
                                     fault, cts, ref world);
-                                return Task.FromResult(step);
+                                return Task.FromResult(new DestinationInvocation(step));
                             },
                             Readback: spec.Readback),
                         cts.Token);
@@ -704,45 +713,44 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
         if (profile.Verification == DestinationVerificationMode.StoreAccepted)
         {
             ReleasePublicationResult storePub = await ReleaseEngine.PublishAsync(spec, prep,
-                "/originals", initial, new(
-                    ObserveAsync: (_, _) => Task.FromResult(Observe(spec, prep.Prepared, world,
+                "/originals", initial, DestinationPublishPlan.Store(
+                    (_, _) => Task.FromResult(Observe(spec, prep.Prepared, world,
                         unprivilegedPhase: false)),
-                    SubmitStoreAsync: (steps, _) =>
+                    BrowserStoreDestinationAdapter.SubmissionFor(spec.Name), (stage, _) =>
                     {
                         writes++;
+                        if (stage == "upload")
+                            return Task.FromResult(
+                                DestinationInvocation.Store("upload", true, "uploaded"));
                         world = world with { Store = StoreState.InReview };
-                        steps.Add(ReleaseWriteStep.FromStore("submit", true, "ok"));
                         ReleaseObservationResult? after = spec.PublisherReportsStoreState
                             ? StoreReport(prep.Prepared, world.Store) : null;
-                        return Task.FromResult(after);
-                    }), CancellationToken.None);
+                        return Task.FromResult(
+                            DestinationInvocation.Store(stage, true, "ok", after));
+                    }, readAfterAttempt: false), CancellationToken.None);
             return (storePub, world, writes);
         }
 
         ReleasePublicationResult pub = await ReleaseEngine.PublishAsync(spec, prep, "/originals",
-            spec.Readback == DestinationReadbackMode.Required ? null : initial,
+            initial,
             new(
                 ObserveAsync: (_, _) => Task.FromResult(Observe(spec, prep.Prepared, world,
                     unprivilegedPhase: false)),
-                EnsureContainerAsync: spec.UsesContainer
-                    ? (_, before, _) =>
+                InvokeAsync: (id, _) =>
+                {
+                    writes++;
+                    if (id.Kind == "container")
                     {
-                        if (before.ReleaseId is not null)
-                            return Task.FromResult<ReleaseWriteStep?>(null);
-                        writes++;
                         world = world with { ContainerCreated = true };
                         var cmd = new NativeCommandResult(NativeTermination.Exited, 0, "", "",
                             0.1, null);
-                        return Task.FromResult<ReleaseWriteStep?>(
-                            ReleaseWriteStep.FromContainer(cmd, true));
+                        return Task.FromResult(
+                            new DestinationInvocation(ReleaseWriteStep.FromContainer(cmd, true)));
                     }
-        : null,
-                WriteOutputAsync: (file, _) =>
-                {
-                    writes++;
-                    int idx = file.Output == "out-0" ? 0 : 1;
+                    int idx = id.Target == "out-0" ? 0 : 1;
                     world = world.WithArtifact(idx, ArtifactTruth.CommittedMatching, lagged: false);
-                    return Task.FromResult(MakeSuccessStep(spec, file.Output));
+                    return Task.FromResult(
+                        new DestinationInvocation(MakeSuccessStep(spec, id.Target)));
                 },
                 Readback: spec.Readback),
             CancellationToken.None);
@@ -834,7 +842,7 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
             WriteFault.AmbiguousTimeoutAfterCommit,
             WriteFault.AmbiguousTimeoutBeforeCommit,
         };
-        if (vis is DestinationVisibilityMode.EventualIndex or
+        if (vis is DestinationVisibilityMode.EventualRead or
             DestinationVisibilityMode.BoundedSettle)
             faults.Add(WriteFault.AcknowledgedCommitWithLag);
         if (spec.FileCount > 1 || spec.Readback == DestinationReadbackMode.AllowCancellation)
@@ -935,10 +943,11 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
                 state == ReleaseFileState.Exact ? expected.Sha256 : null);
         }
 
-        long? releaseId = spec.UsesContainer && world.ContainerCreated ? 42L : null;
+        ContainerPresence? container = !spec.UsesContainer ? null : world.ContainerCreated
+            ? ContainerPresence.Present : ContainerPresence.Missing;
         return new(new(prepared.Subject, files, ["remote-check"],
             [new("remote-check", checkPassed ? ReleaseCheckStatus.Passed
-                : ReleaseCheckStatus.Failed)]), [], ReleaseId: releaseId);
+                : ReleaseCheckStatus.Failed)]), [], Container: container);
     }
 
     private static ReleaseObservationResult StoreReport(PreparedRelease prepared, StoreState state)
@@ -1029,7 +1038,8 @@ public sealed class ReleaseEngineModelCheckingTests(TestContext context)
     private static ReleaseSubject ModelSubject(string destination, bool dryRun) =>
         new(new string('a', 40), "refs/heads/main", "model-unit",
             "src/public/lib/model/workflow-delivery.release-unit.yml", "official", destination,
-            dryRun);
+            dryRun, !dryRun && destination == BrowserStorePreparation.EdgeAddons
+                ? SubmissionClearance.First : SubmissionClearance.Unresolved);
 
     private static void AssertInvariant(bool condition, string message, TraceNode trace)
     {

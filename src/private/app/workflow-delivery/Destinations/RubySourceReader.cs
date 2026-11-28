@@ -1,25 +1,12 @@
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
-using WorkflowDelivery.Ecosystems;
 using WorkflowDelivery.Platform;
 
 namespace WorkflowDelivery.Destinations;
 
-internal sealed record RubySourceRequest(string Host, string Name, string Version,
-    string Directory);
-internal sealed record RubySourceAnswer(string State, string? Name = null, string? Version = null,
-    string? Platform = null, string? Path = null, long? Size = null, string? Sha256 = null);
-
-[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,
-    RespectNullableAnnotations = true, RespectRequiredConstructorParameters = true,
-    UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow)]
-[JsonSerializable(typeof(RubySourceRequest))]
-[JsonSerializable(typeof(RubySourceAnswer))]
-internal partial class RubySourceJson : JsonSerializerContext;
-
 internal sealed record RubySourceTools(string Ruby, string Helper, string Scratch);
 internal sealed record RubyReadCredential(string User, string Token);
+internal sealed record RubySourceCoordinate(string Host, string Name, string Version);
 internal sealed record RubySourceOriginal(string Path, string Name, string Version,
     string Platform, long Size, string Sha256);
 internal enum RubySourceState { Absent, Present, Unknown }
@@ -30,20 +17,20 @@ internal sealed record RubySourceReadResult(RubySourceState State, RubySourceOri
 // command outcome cross this boundary; no credential-bearing native diagnostic does.
 internal static class RubySourceReader
 {
-    internal static Task<RubySourceReadResult> ReadAsync(string host, string name,
-        string version, RubySourceTools tools, RubyReadCredential? credential,
+    internal static Task<RubySourceReadResult> ReadAsync(RubySourceCoordinate coordinate,
+        RubySourceTools tools, RubyReadCredential? credential,
         CancellationToken token) =>
-        ReadAsync(host, name, version, tools, credential, NativeProcess.ExecuteAsync, token);
+        ReadAsync(coordinate, tools, credential, NativeProcess.ExecuteAsync, token);
 
-    internal static async Task<RubySourceReadResult> ReadAsync(string host, string name,
-        string version,
+    internal static async Task<RubySourceReadResult> ReadAsync(RubySourceCoordinate coordinate,
         RubySourceTools tools, RubyReadCredential? credential,
         Func<NativeCommand, CancellationToken, Task<NativeCommandResult>> execute,
         CancellationToken token)
     {
+        (string host, string name, string version) = coordinate;
         bool buddy = host == "https://rubygems.pkg.github.com/hcoona";
         if (!(buddy || host == "https://rubygems.org") ||
-            !ReleaseUnitCatalog.IsRubyRegistered(name) ||
+            string.IsNullOrWhiteSpace(name) ||
             string.IsNullOrWhiteSpace(version) ||
             new[] { tools.Ruby, tools.Helper, tools.Scratch }.Any(path =>
                 !Path.IsPathFullyQualified(path)) || !Directory.Exists(tools.Scratch) ||

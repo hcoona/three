@@ -1,5 +1,3 @@
-using WorkflowDelivery.Destinations;
-
 namespace WorkflowDelivery.Core;
 
 internal enum DestinationVersionRead
@@ -11,12 +9,10 @@ internal enum DestinationVersionRead
 
 internal static class ReleaseDecisions
 {
+    internal static bool CanEnterPublisher(DestinationVersionRead capability,
+        SubmissionClearance clearance) => capability != DestinationVersionRead.Unavailable ||
+        clearance is SubmissionClearance.First or SubmissionClearance.OwnerChecked;
+
     internal static bool CanReadBeforeGate(DestinationVersionRead? capability, bool dryRun) =>
         !dryRun && capability == DestinationVersionRead.BeforeGate;
-
-    internal static bool MaySubmit(DestinationVersionRead capability, StoreState? freshState,
-        bool observationProceeds) =>
-        freshState == (capability == DestinationVersionRead.Unavailable
-            ? StoreState.Unobserved : StoreState.Absent) &&
-        observationProceeds;
 }
