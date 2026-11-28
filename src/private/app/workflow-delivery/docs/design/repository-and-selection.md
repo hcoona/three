@@ -240,6 +240,14 @@ establishes no applicable owner. An endpoint-local empty closure, missing facts
 or unknown ownership cannot justify exclusion. The core selected-check guard
 remains unchanged.
 
+For Python and Ruby the native readers bind actual UV, RubyGems or Bundler
+relations and declared test/package owners to the shared
+[`ProducerImpact`](../../Core/CI/ProducerImpact.cs) graph. Only after including
+both revisions does it project reachable owners: deleting a producer or
+changing a dependency cannot hide a surviving consumer behind a member with
+no checks of its own. This is selection within the native group's stated
+scope, not a repository-wide cross-language dependency resolver.
+
 The shared selection operation accepts these paired direct reasons before its
 existing union relation and Release Unit closure. Validate each reason against a
 normalized changed path, an exact comparison revision and a real owner in the

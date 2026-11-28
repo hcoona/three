@@ -52,6 +52,7 @@ artifact, ambient fallback or second dependency declaration.
 | `release prepare-python-index-tools`           | Prepare Python Index tooling                                                                      |
 | `release prepare-*`, `observe-*`, `describe-*` | Independently qualify originals and describe exact, absent, partial, conflicting or unknown state |
 | `release publish-*`, `complete-*`              | Invoke the native publisher, require separate registry readback and report truthful results       |
+| `release may-publish-github-anchor`            | Evaluate the Official primary proof without acquiring repository write access                     |
 | `native-message-schemas <directory>`           | Regenerate static descriptions of maintained native helper messages                               |
 
 The [static native helper contracts](Native/contracts) come from actual serializer
@@ -59,32 +60,72 @@ metadata. Managed tests check regeneration; native helper tests use the static
 schemas directly. Native identity and business checks remain separate.
 
 Ordinary Release callers use typed `job-inputs` operations for `request`, `originals`,
-`receive <phase>` and `state`. `receive` is the one check of the downloaded
-preparation in each later job: it binds its subject to the request and applies the
-ecosystem's complete preparation check before creating the phase output directory.
+`receive <phase>` and `state`. `receive` binds the downloaded preparation to the
+request and validates it before creating the phase output directory. `state`
+uses that preparation and the typed observation to select the same live routes
+as the publisher; on a dry run it exposes only hypothetical writes.
+For live requests, a typed observation with exit status `1` is evidence for
+read-only completion, not a successful write preflight. A primary or required
+Official anchor observation that does not proceed keeps both writers closed.
+A failed observation or missing or invalid required transfer stops preflight.
 Every `job-inputs` entry rejects a live run attempt other than 1, so partial
 reruns of later jobs stop too. Native tool-config operations
 remain ecosystem-specific. Each `complete-*` command takes preparation, initial observation,
 final observation and publication (`-` only when omitted) paths, plus an optional
 three-argument Official GitHub Release anchor group (initial observation, final
 observation and publication, `-` when omitted) on `Python`, `npm`, `Ruby` and
-`BrowserStore`. Missing required publication information remains unknown even
-when final bytes match.
+`BrowserStore`. A retained refusal establishes that the affected writer was
+not entered; losing a required receipt on an admitted route does not establish
+non-start, even when final bytes match.
+The read-only verifier receives primary and anchor receipts independently.
+A failed receipt download is reported as an infrastructure failure, and its
+files are not used; it does not prevent independent readback or use of the
+other receipt. The anchor gate still requires its own validated primary proof.
 
 ### Source Layout
 
-| Directory       | Contents                                                                      |
-| --------------- | ----------------------------------------------------------------------------- |
-| `CI/`           | Per-ecosystem group execution and native check receipts                       |
-| `CI/Callers/`   | Typed CI callers composing each ecosystem's requests and transfers            |
-| `Core/`         | CI contracts and paired impact rules; pure browser-store Release decisions    |
-| `Engine/`       | CI obligation planning, partition joins and required-result collection        |
-| `Repository/`   | Native fact readers and assemblers, CI scope and Git materialization          |
-| `Release/`      | Release requests, preparation, job inputs, state and completion               |
-| `Destinations/` | Registry observation, publication and the shared registry HTTP client         |
-| `Ecosystems/`   | Shared package build, inspection and clean consumption used by CI and Release |
-| `Platform/`     | Git, native processes, bounded paths and the .NET CLI                         |
-| `Native/`       | Python and Ruby helper scripts and their generated message schemas            |
+| Directory        | Contents                                                                        |
+| ---------------- | ------------------------------------------------------------------------------- |
+| `CI/`            | Per-ecosystem group execution and native check receipts                         |
+| `CI/Callers/`    | Typed CI callers composing each ecosystem's requests and transfers              |
+| `Core/`          | CI obligations, destination-blind unit originals and pure publication decisions |
+| `Engine/`        | CI obligation planning and receipt joins; shared Release publication window     |
+| `Repository/`    | Native fact readers and assemblers, CI scope and Git materialization            |
+| `Release/`       | Release requests, preparation, job inputs, state and completion                 |
+| `Destinations/`  | Native readers and writers; separate NuGet SDK plugin and bounded HTTP project  |
+| `Release/Ports/` | Portable coordinates, observations and invocation evidence; no native handles   |
+| `Ecosystems/`    | Shared package build, inspection and clean consumption used by CI and Release   |
+| `Platform/`      | Git, native processes, bounded paths and the .NET CLI                           |
+| `Native/`        | Python and Ruby helper scripts and their generated message schemas              |
+
+The CLI statically references four native libraries under `Ecosystems/`.
+`WorkflowDelivery.DotNet` binds endpoint MSBuild/NBGV facts and inspects and
+clean-consumes NuGet originals; its MSBuild tasks load from the transferred
+`WorkflowDelivery.DotNet.dll`. `WorkflowDelivery.Node` reads PNPM workspace and
+script facts and qualifies packed tarballs. `WorkflowDelivery.Python` projects
+UV/PyPA dependency facts and qualifies wheel/sdist pairs. `WorkflowDelivery.Ruby`
+projects RubyGems/Bundler facts and qualifies original gems. Their projects
+compile the corresponding `Repository/`, `CI/` and `Ecosystems/` sources in
+place. They share BCL process, filesystem and Git operations through
+`WorkflowDelivery.NativePlatform`, not the CLI or one another.
+
+The CLI parses each recognized build definition's own qualification fields.
+Unregistered definitions remain passive comparison inventory, not executable
+recipes. The native producers accept a Core `UnitBuildSubject` and return the
+complete `QualifiedUnitOriginals` after native build, inspection and clean
+consumption. This includes Windows installer/portable assets and all four WXT
+archives. Only the host projects a store's subset and the permitted Official
+anchor siblings. Native package identities can vary by channel, but producers
+do not receive a store, clearance decision or publication credentials.
+
+The CLI still composes declarations, selection, check results, native-input
+preparation and Release admission. The .NET provider uses `NuGet.ProjectModel`
+for lock files and `PackageSpec`, including restore configuration contributors.
+`NuGet.Commands.BuildAssetsUtils` supplies the exact generated props/targets
+paths for that specification. `NuGet.Configuration` and `NuGet.ProjectModel`
+do not expose this producer API; deriving the filenames or trusting a directory
+would lose that binding. `NuGet.Protocol` is therefore also a transitive
+restore dependency, not a publisher call or a direct dependency of a producer.
 
 ## Implemented Scope
 
@@ -207,8 +248,9 @@ An entry is `CALLER:INPUT=VALUE,...`; `CALLER` names the
 (`browser-store`, `github`, `npm`, `nuget`, `python` or `ruby`). The
 [entry point](../../../../eng/scripts/release_batch_dispatch.py) validates every
 entry against the caller's `workflow_dispatch` inputs in the current checkout
-before dispatching anything. Each entry must give every input, including
-`dry-run`. It dispatches one run per entry on `--ref` through the GitHub API,
+before dispatching anything. Each entry must give every required input and an
+explicit `dry-run` choice. Omitting `edge-clearance` never authorizes a live
+Edge submission. The tool dispatches one run per entry on `--ref` through the GitHub API,
 which returns each created run's ID. It then waits for every run and prints each
 run's ID, URL and conclusion. It exits `0` only when every run succeeded, `1`
 when any run failed, was not dispatched or could not be read, and `2` for
@@ -232,7 +274,8 @@ invocation; GitHub Packages uses the job token and npmjs uses npm trusted
 publishing with provenance. A separate no-write registry readback and common
 result component establish completion. A dry run is hypothetical and never
 claims live completion. Tags remain routing metadata, not original-package
-authority. The [concrete contract](docs/integration/node.md#concrete-npm-release-integration)
+authority. Read evidence fingerprints native tarball URLs; npm diagnostics omit
+credentials and runner directories. The [concrete contract](docs/integration/node.md#concrete-npm-release-integration)
 lists the units and their recipes.
 
 ### NuGet Release
@@ -242,8 +285,10 @@ The product-neutral
 selects a registered `unit`, `registry` (`github-packages` Buddy or `nugetorg`
 Official) and `dry-run`. It uses native MSBuild/NBGV Build/Pack, original nupkg
 inspection and a clean local consumer. Bounded observation uses maintained NuGet
-interpretation; the publisher uses the official native upload invocation. The
-nuget.org publisher holds only a short-lived key from trusted publishing.
+interpretation; the publisher invokes the official NuGet library. Its receipt
+records the return, cancellation, failure type and duration, not a subprocess
+exit code. The nuget.org publisher holds only a short-lived key from trusted
+publishing.
 nuget.org completion is its version list reporting the exact version available,
 with no served-byte comparison; GitHub Packages keeps the original-byte
 comparison. A fresh registry observation runs in a separate read-only
@@ -283,6 +328,12 @@ with its original. Different existing assets are a conflict and are never
 replaced. The [GitHub Release integration contract](docs/integration/github-release.md)
 owns the coordinates and conditions.
 
+Pre-gate observation records whether the release container exists, not its
+GitHub ID. For both primary releases and Official anchors, the publisher looks
+up the target again and uses only the ID from that read or its own creation.
+The Official anchor receiver rebinds asset names and bytes to the primary
+originals; only the declared sibling browser archives may share the release.
+
 ### Ordinary Ruby Release
 
 The caller releases the smoke unit and `asciidoctor-latexmath` to GitHub Packages
@@ -298,12 +349,17 @@ and native campaigns are not alternate operational entries.
 ### Browser Store Release
 
 The [browser-store caller](../../../../.github/workflows/workflow-delivery-v3-browser-store-release.yml)
-builds `steam-account-history-to-csv` once with WXT and qualifies the selected
-store's zips (`prepare-browser-store`). The Chrome Web Store, Firefox AMO and
+builds `steam-account-history-to-csv` with WXT, qualifies all four archives,
+then selects the requested store's originals (`prepare-browser-store`).
+The Chrome Web Store, Firefox AMO and
 Edge Add-ons are Official only; Buddy is a dry run. No dry run acquires a store
 credential. Live Chrome pre-gate and final reads use a read-only Workload Identity
 Federation token. AMO reads the version only inside its gated publisher. Edge has
-no version read; its publisher polls the submission operation for receipt. A store
+no version read; a live request needs an explicit `edge-clearance` (`first` or
+`owner-checked`) before the store Environment can be entered. Its publisher
+polls the submission operation for receipt. AMO upload UUIDs and Edge operation
+locations stay in the publisher; its portable evidence identifies the target
+and reported state. A store
 reporting the version as received, in review or published satisfies the store
 condition. The [browser-store integration](docs/integration/browser-store.md)
 owns the store contracts and the owner setup.
@@ -332,8 +388,12 @@ them. It also excludes `PythonNativePreparation` and `PythonNativeContract`
 (`mise exec --locked dotnet node pnpm`). To run them locally,
 override the default with `--filter 'TestCategory=NuGetNativePreparation'
 --minimum-expected-tests 10` or `--filter 'TestCategory=NuGetNativeScenarios'
---minimum-expected-tests 3`. An explicit filter replaces the default, so an
-unrestricted local run uses `--filter 'FullyQualifiedName~WorkflowDelivery'`.
+--minimum-expected-tests 3`. An explicit filter replaces the default; run
+native suites only with their required tools. `DeliveryTlcConformance` is
+also excluded by default: its expected decisions come from TLC, not a checked-in
+table. Run `mise exec --locked dotnet java github:tlaplus/tlaplus -- python
+eng/scripts/check_workflow_delivery_models.py` for the bounded models and caller
+comparisons, or add `--conformance-only` for just the comparisons.
 
 The managed test assembly points `TMPDIR`, `TMP` and `TEMP` at one short
 `wdt-<pid>-<random>` directory for the run and tries to delete it at assembly cleanup;

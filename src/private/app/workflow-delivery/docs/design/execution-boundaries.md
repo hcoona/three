@@ -83,8 +83,9 @@ read endpoint and accepts an `Unobserved` first-submission prestate. The AMO
 publish job makes the pre-submission and completion reads; the Edge publish
 job polls upload and submission operations. Both emit credential-free,
 request-bound observations that result collection evaluates
-([WD-REL-008](../requirements.md#release-delivery)). A live AMO or Edge request
-therefore always enters the write gate. A browser-store dry run acquires no
+([WD-REL-008](../requirements.md#release-delivery)). Live AMO requests and
+Edge submissions with `first` or `owner-checked` clearance enter the native
+gate. Unresolved Edge requests stop before any credential is acquired. A browser-store dry run acquires no
 store credential, including the Chrome read token from the one write-capable
 service account, and reports state as unobserved
 ([WD-CHN-004](../requirements.md#buddy-and-official-channels)). Dry-run paths do not
@@ -140,6 +141,13 @@ completion evidence leaves uncertainty. No permanent external release ledger is
 added; Official `Python`, `npm`, `Ruby` and `BrowserStore` requests record their
 tag and GitHub Release anchor as part of same-request completion under
 [WD-RET-004](../requirements.md#retention-and-platform-state).
+
+For these four callers, an Official request enters the repository
+`contents: write` job only after the [read-only gate](../../../../../../.github/workflows/workflow-delivery-v3-anchor-gate.yml)
+validates the primary evidence delivered to it. The gate has no product
+checkout, destination credential or write token. A missing required receipt
+does not grant access. The writer still checks the bound inputs and refreshes
+the anchor before mutating; verification reads its own transfers.
 
 ## Native Helper and Caller Boundaries
 

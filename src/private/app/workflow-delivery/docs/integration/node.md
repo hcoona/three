@@ -191,11 +191,11 @@ Use the endpoint-selected native MSBuild graph to bind the control project's
 ordinary owned source region, evaluated file items, explicit reference HintPaths,
 imports, locked restore and configuration candidates. Node's independent caller
 uses the managed control project as its graph entry; the .NET group consumes the
-control node from its existing complete root graph. Starting from the CLI's one
-inner dimension, follow evaluated project references transitively within the
-control application directory. This includes the Engine and Core when referenced,
-but not unrelated projects in that directory. A dependency outside this supported
-control boundary requires a concrete adapter rather than a broad fallback.
+control node from its existing complete root graph. Follow its evaluated project
+references transitively: a file compiled by a referenced provider is a control
+input, while an unreferenced project under the same directory is not. The CLI
+requires one supported inner dimension. A dependency outside the supported
+control projects requires a concrete adapter, not a directory-wide fallback.
 
 Explicit native reference HintPaths retain committed files outside the control
 region and use existing native SDK/package provider bindings for external files.
@@ -551,7 +551,9 @@ obligation beyond the code it cites.
   It accepts only HTTPS port 443 on those hosts and the GitHub package storage
   hosts. [npmjs Official observation](../../Destinations/NpmjsObservation.cs)
   reads only `https://registry.npmjs.org`. Both enforce their chosen origins
-  through the [shared destination HTTP session](../../Destinations/DestinationHttp.cs).
+  through the [shared destination HTTP session](../../Destinations/Http/DestinationHttp.cs).
+  Read evidence identifies a resolved tarball location by its SHA-256
+  fingerprint, not by a reusable URL.
 - **Observation bounds.** Each observation has a 60-second operation deadline
   and a 20-second deadline per request including its body, with metadata bodies
   limited to 1,000,000 bytes. The GitHub reader attaches its Bearer credential

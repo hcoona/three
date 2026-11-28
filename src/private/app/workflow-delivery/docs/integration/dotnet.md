@@ -682,7 +682,7 @@ by the consumer, omitting checkout-specific physical paths.
 
 Use the coherent official packaged NuGet 8.0.0 group: Commands, Protocol,
 Configuration, ProjectModel, Packaging, Versioning and Frameworks. Resolve all
-seven through official package references, separately from the
+the native APIs through the projects that consume them, separately from the
 [MSBuild API and native host roles](#msbuild-api-and-native-host-roles).
 Resolve Newtonsoft.Json through the official package
 graph rather than a second NBGV task-directory copy source; retain official NBGV.
@@ -690,8 +690,11 @@ The [publisher source basis](../research/nuget-native-publisher.md#client-distri
 explains this selection. Verify resolved package and output assembly identities,
 NBGV binding, native restore and consumer execution before accepting the
 implementation. Source inspection and installed package availability establish
-neither runtime compatibility nor live publication. Keep this client untrimmed
-and JIT; no AOT claim is made.
+neither runtime compatibility nor live publication. The NuGet destination
+references the registry SDK; only the .NET ecosystem provider references
+MSBuild and NuGet's restore/build APIs. The CLI resolves their pinned runtime
+assets without compiling against either SDK. Keep this client untrimmed and JIT;
+no AOT claim is made.
 
 Observe the selected Buddy `https://nuget.pkg.github.com/hcoona/index.json` through the
 shared registry HTTP client described in the
@@ -714,7 +717,8 @@ packed `RepositoryUrl` links it to `hcoona/three`. Package visibility is not
 checked.
 
 Observe Official nuget.org anonymously through the same shared client
-(`Destinations/NuGetOrgObservation`). Official `ServiceIndexResourceV3`
+([NuGet destination reader](../../Destinations/NuGet/NuGetOrgObservation.cs)).
+Official `ServiceIndexResourceV3`
 interprets `https://api.nuget.org/v3/index.json`, which must name
 `https://api.nuget.org/v3-flatcontainer/` as PackageBaseAddress and
 `https://www.nuget.org/api/v2/package` as PackagePublish, compared after
@@ -784,7 +788,10 @@ version is still unlisted would attempt the upload again, which nuget.org reject
 as a duplicate, so that run also ends unknown. No
 remote restore, build or invocation runs after publication. Common result
 evaluation may report satisfaction after a handled upload error only with a
-complete fresh observation, preserving the command abnormality. Missing or malformed subject, file,
+complete fresh observation, preserving the command abnormality. An unreadable
+publisher refresh issues no push. With its zero-write receipt retained, the
+separate verifier can still establish exact bytes or version availability;
+if it cannot read the coordinate, completion is unknown. Missing or malformed subject, file,
 digest or required result cannot satisfy the request.
 
 The product-neutral caller `workflow-delivery-v3-nuget-release.yml` takes `unit`,
