@@ -55,7 +55,7 @@ jobs:
       - name: Prepare selected native tools
         uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
-          version: '2026.11.13'
+          version: '2026.11.14'
           experimental: true
           install_args: --jobs 1 dotnet node pnpm
       - name: Prepare required frameworks in the native SDK root
