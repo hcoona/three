@@ -20,7 +20,7 @@ internal sealed record NodeCheckFailure(CheckKey Key, string Error);
 internal sealed record NodeRunResult(
     string Candidate, CheckResult[] Results, NodeCommandObservation[] Commands,
     NodeOriginalOutput[] Outputs, NodeCheckFailure[] Failures,
-    string Runtime, NodeRuntimeReadback? RuntimeVersions
+    string Runtime, NodeRuntimeReadback? RuntimeVersions, CiPlan OriginalPlan
 );
 
 // This is one registered quality recipe, not a runtime graph scheduler.
@@ -54,7 +54,7 @@ internal static class NodeExecution
                 "Node execution requires the exact native commit identity.");
         await GitMaterialization.BindAsync(checkout, plan.Candidate, token);
         if (plan.Checks.Length == 0)
-            return new(plan.Candidate, [], [], [], [], request.Runtime, null);
+            return new(plan.Candidate, [], [], [], [], request.Runtime, null, plan);
         NativeCommandResult node = await execute(new("node", checkout, ["--version"], 30), token);
         NativeCommandResult pnpm = await execute(new("pnpm", checkout, ["--version"], 30), token);
         NodeRuntimeReadback runtimeVersions = ReadRuntime(selected, node, pnpm);
@@ -121,7 +121,7 @@ internal static class NodeExecution
             });
         }
         return new(plan.Candidate, runner.InPlanOrder(),
-            [.. commands], [.. outputs], [.. failures], request.Runtime, runtimeVersions);
+            [.. commands], [.. outputs], [.. failures], request.Runtime, runtimeVersions, plan);
 
         Task CompleteAsync(CheckSpec check, Func<Task<CheckStatus>> action) =>
             runner.RunAsync(check, async () =>

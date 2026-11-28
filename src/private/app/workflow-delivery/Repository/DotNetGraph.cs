@@ -131,13 +131,12 @@ internal static class DotNetGraph
             node.ProjectReferences.Where(dependency => !helpers.Contains(dependency))
             .Select(dependency =>
                 new DotNetGraphEdge(identities[node], identities[dependency]))).ToArray();
+        var control = ControlInputs.Reachable(root, nodes, edges, required: false);
         DotNetGraphInput[] inputs = retained.SelectMany(node =>
         {
             ProjectInstance project = node.ProjectInstance;
             DotNetNodeIdentity consumer = identities[node];
-            bool control = Path.GetRelativePath(root, project.FullPath).Replace('\\', '/') is
-                NodeGroupReader.ControlProject or ControlInputs.CoreProject;
-            if (control)
+            if (control.Count != 0 && control.Contains(DotNetRepositoryReader.Key(consumer)))
             {
                 foreach (string name in UnsupportedControlIndirectInputs)
                     if (project.GetPropertyValue(name).Length != 0 || project.GetItems(

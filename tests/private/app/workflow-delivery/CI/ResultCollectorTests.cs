@@ -55,7 +55,7 @@ public sealed class ResultCollectorTests
     }
 
     [TestMethod]
-    public void CollectAllRequiredPassedWithDuplicateResultIsSatisfied()
+    public void CollectRepeatedRequiredPassCannotSatisfyTheOriginalPlan()
     {
         CheckSpec build = Scenario.Check("library", "build");
         CheckSpec test = Scenario.Check("library", prerequisites: [build.Key]);
@@ -64,11 +64,12 @@ public sealed class ResultCollectorTests
         CiOutcome outcome = ResultCollector.Collect(Scenario.Plan(build, test),
             [new("candidate", build.Key, CheckStatus.Passed), passed, passed]);
 
-        Assert.IsTrue(outcome.Satisfied);
-        Assert.IsEmpty(outcome.Errors);
+        Assert.IsFalse(outcome.Satisfied);
+        Assert.Contains(test.Key.ToString(), Assert.ContainsSingle(outcome.Errors));
         CollectionAssert.AreEquivalent(new[]
         {
-            new CheckOutcome(build.Key, true, "passed"), new CheckOutcome(test.Key, true, "passed"),
+            new CheckOutcome(build.Key, true, "passed"),
+            new CheckOutcome(test.Key, true, "duplicate"),
         }, outcome.Checks);
     }
 
@@ -152,6 +153,26 @@ public sealed class ResultCollectorTests
         string operation, string variant) =>
         AssertInvalidResult(new(candidate, new(target, operation, variant), CheckStatus.Passed),
             "Unexpected result subject");
+
+    [TestMethod]
+    [DataRow("other-tree", (int)CheckStatus.Passed, "unbound")]
+    [DataRow("candidate", 999, "unknown")]
+    public void JoinedAdvisoryReceiptCannotClaimAPassOrBlockMandatoryWork(string candidate,
+        int status, string advisoryStatus)
+    {
+        CheckSpec test = Scenario.Check("library");
+        CheckSpec lint = Scenario.Check("library", "lint", required: false);
+        CiPlan plan = Scenario.Plan(test, lint);
+        CiGroupReceipt receipt = new("group", plan.Candidate,
+            [new(plan.Candidate, test.Key, CheckStatus.Passed), new(candidate, lint.Key,
+                (CheckStatus)status)], plan);
+
+        var (_, outcome) = ResultCollector.Join(plan, ["group"], _ => "group",
+            [new("group", receipt)], "group", requireCompleteSets: true);
+
+        Assert.IsTrue(outcome.Satisfied);
+        Assert.Contains(new CheckOutcome(lint.Key, false, advisoryStatus), outcome.Checks);
+    }
 
     [TestMethod]
     public void CollectUnknownResultStatusPreventsSuccess() =>

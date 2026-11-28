@@ -44,7 +44,7 @@ internal static class NodeCiCaller
             TransferJson.Default.NodeGroupRequest);
         NodeGroupReadback group = await NodeGroupReader.ReadAsync(request, token);
         CiCallerTransfer.Plan(group.Adopted, context.Basis.Reference, context.Candidate.Reference,
-            NodeFactsAssembler.Scope);
+            NodeFactsAssembler.Scope, context.Full);
         if (group.Runtime.Revision != context.Candidate.Reference)
             throw new InvalidDataException("Node runtime has a different original subject.");
         CiCallerTransfer.Write(Path.Combine(directory, "group-plan.json"), group,
@@ -75,7 +75,7 @@ internal static class NodeCiCaller
         NodeGroupReadback group = Group(directory);
         NodeCiCallerContext context = Context(directory);
         CiCallerTransfer.Plan(group.Adopted, context.Basis.Reference, context.Candidate.Reference,
-            NodeFactsAssembler.Scope);
+            NodeFactsAssembler.Scope, context.Full);
         NodeRuntimeVariant variant = Variant(group, key);
         if (group.Adopted.Checks.Length == 0)
             throw new InvalidDataException("Empty Node plan has no runtime execution.");
@@ -102,7 +102,7 @@ internal static class NodeCiCaller
         NodeGroupReadback group = Group(directory);
         NodeCiCallerContext context = Context(directory);
         CiCallerTransfer.Plan(group.Adopted, context.Basis.Reference, context.Candidate.Reference,
-            NodeFactsAssembler.Scope);
+            NodeFactsAssembler.Scope, context.Full);
         _ = Variant(group, key);
         NodeRunRequest request = CiCallerTransfer.Read(Path.Combine(directory, key +
             "-request.json"),
@@ -115,7 +115,8 @@ internal static class NodeCiCaller
             token);
         CiCallerTransfer.Write(Path.Combine(directory, key + "-result.json"), result,
             TransferJson.Default.NodeRunResult);
-        if (result.Candidate != group.Adopted.Candidate || result.Runtime != key)
+        if (result.Candidate != group.Adopted.Candidate || result.Runtime != key ||
+            !group.Adopted.SamePlan(result.OriginalPlan))
             throw new InvalidDataException("Runtime result has a different original subject.");
         CiOutcome outcome = ResultCollector.Collect(NodeExecution.SelectRuntime(group.Adopted,
             key), result.Results);
@@ -130,52 +131,41 @@ internal static class NodeCiCaller
     {
         NodeGroupReadback group = Group(directory);
         NodeCiCallerContext context = Context(directory);
-        CiCallerTransfer.Plan(group.Adopted, context.Basis.Reference, context.Candidate.Reference,
-            NodeFactsAssembler.Scope);
-        // Runtime absence is missing work, never success or a reason to run another variant.
-        var sets = new List<NodeRunResult>();
-        if (group.Adopted.Checks.Length != 0)
-            foreach (NodeRuntimeVariant variant in group.Runtime.Variants)
-            {
-                string path = Path.Combine(directory, variant.Key + "-result.json");
-                if (File.Exists(path)) sets.Add(CiCallerTransfer.Read(path,
-                    TransferJson.Default.NodeRunResult));
-            }
-        (CheckResult[] results, CiOutcome outcome) = Join(group, sets.ToArray());
-        return CiCallerTransfer.WriteOutcome(directory, group.Adopted, outcome, results,
+        CiPlan original = CiCallerTransfer.Read(Path.Combine(directory, "parent-plan.json"),
+            TransferJson.Default.CiPlan);
+        CiCallerTransfer.Plan(original, context.Basis.Reference, context.Candidate.Reference,
+            NodeFactsAssembler.Scope, context.Full);
+        const string suffix = "-result.json";
+        var sets = Directory.EnumerateFiles(directory, "*" + suffix).Select(path =>
+            KeyValuePair.Create(Path.GetFileName(path)[..^suffix.Length],
+                CiCallerTransfer.Read(path, TransferJson.Default.NodeRunResult)));
+        (CheckResult[] results, CiOutcome outcome) = Join(original, group, sets);
+        return CiCallerTransfer.WriteOutcome(directory, original, outcome, results,
             [], [], diagnostics: null);
     }
 
-    internal static (CheckResult[] Results, CiOutcome Outcome) Join(NodeGroupReadback group,
-        NodeRunResult[] sets)
+    internal static (CheckResult[] Results, CiOutcome Outcome) Join(CiPlan original,
+        NodeGroupReadback group, IEnumerable<KeyValuePair<string, NodeRunResult>> sets)
     {
-        if (group.Runtime.Revision != group.Adopted.Candidate ||
+        group.Adopted.Validate();
+        if (!original.SamePlan(group.Adopted) || group.Runtime.Revision != original.Candidate ||
             group.Runtime.Variants.Select(v => v.Key).Distinct(StringComparer.Ordinal).Count() !=
-                group.Runtime.Variants.Length ||
-            sets.Select(s => s.Runtime).Distinct(StringComparer.Ordinal).Count() != sets.Length)
+                group.Runtime.Variants.Length)
             throw new
                 InvalidDataException("Node runtime join has a different or repeated subject.");
-        foreach (NodeRunResult result in sets)
+
+        // Retained-only runtimes have their own job; adopted execution owes only these groups.
+        string[] groups = [.. original.Checks.Select(check => check.Work.Key.Variant)
+            .Distinct(StringComparer.Ordinal)];
+        foreach (string key in groups)
         {
-            _ = Variant(group, result.Runtime);
-            CiPlan selected = NodeExecution.SelectRuntime(group.Adopted, result.Runtime);
-            if (result.Candidate != group.Adopted.Candidate ||
-                result.Results.Any(r => r.Candidate != group.Adopted.Candidate ||
-                    r.Key.Variant != result.Runtime) ||
-                ResultCollector.Collect(selected, result.Results).Errors.Length != 0)
-                throw new
-                    InvalidDataException("Node runtime result has a different original subject.");
+            _ = Variant(group, key);
+            _ = NodeExecution.SelectRuntime(original, key);
         }
-        CheckResult[] results = sets.SelectMany(result => result.Results).ToArray();
-        CiOutcome outcome = ResultCollector.Collect(group.Adopted, results);
-        string[] repeats = [.. results.CountBy(result => result.Key)
-            .Where(pair => pair.Value > 1)
-            .Select(pair => $"Node runtime reported repeated check: {pair.Key}.")];
-        return (results, repeats.Length == 0 ? outcome : outcome with
-        {
-            Satisfied = false,
-            Errors = [.. outcome.Errors, .. repeats],
-        });
+        return ResultCollector.Join(original, groups, check => check.Work.Key.Variant,
+            sets.Select(pair => KeyValuePair.Create(pair.Key, new CiGroupReceipt(pair.Value.Runtime,
+                pair.Value.Candidate, pair.Value.Results, pair.Value.OriginalPlan))),
+            "Node runtime", requireCompleteSets: false);
     }
 
     internal static string[] RetainedMembers(NodeGroupReadback group, string key)

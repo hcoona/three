@@ -191,9 +191,11 @@ Use the endpoint-selected native MSBuild graph to bind the control project's
 ordinary owned source region, evaluated file items, explicit reference HintPaths,
 imports, locked restore and configuration candidates. Node's independent caller
 uses the managed control project as its graph entry; the .NET group consumes the
-control node from its existing complete root graph. The supported control has one
-inner dimension and no ordinary project dependencies. A changed relevant shape
-requires a concrete adapter rather than a task interpreter or broad fallback.
+control node from its existing complete root graph. Starting from the CLI's one
+inner dimension, follow evaluated project references transitively within the
+control application directory. This includes the Engine and Core when referenced,
+but not unrelated projects in that directory. A dependency outside this supported
+control boundary requires a concrete adapter rather than a broad fallback.
 
 Explicit native reference HintPaths retain committed files outside the control
 region and use existing native SDK/package provider bindings for external files.

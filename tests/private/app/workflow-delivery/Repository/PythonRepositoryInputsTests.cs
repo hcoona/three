@@ -52,7 +52,7 @@ public sealed class PythonRepositoryInputsTests
     {
         PythonFactAssembly assembly = PythonFactsAssembler.Assemble(basis, candidate,
             [path], full, PythonRepositoryInputs.Pair(basis, candidate, [path]));
-        return ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
+        return CiPlanner.Plan(assembly.Request, assembly.PairedReasons);
     }
 
     [TestMethod]

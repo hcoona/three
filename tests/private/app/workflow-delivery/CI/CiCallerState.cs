@@ -122,13 +122,15 @@ internal sealed class CiCallerState : IDisposable
         Put("context.json", new NodeCiCallerContext(endpoint, endpoint, true, At("scope.json"),
             At("WorkflowDelivery.dll")), TransferJson.Default.NodeCiCallerContext);
         Put("group-plan.json", group, TransferJson.Default.NodeGroupReadback);
+        Put("parent-plan.json", group.Adopted, TransferJson.Default.CiPlan);
         return group;
     }
 
     internal static NodeGroupReadback NodeGroup() => new(Plan(NodeFactsAssembler.Scope,
         [.. Runtimes.SelectMany(runtime => NodeOperations.Select(operation => Check("src/node",
             operation, runtime, new() { ["node"] = runtime[4..] + ".x", ["pnpm"] = "10.0.0" },
-            "node/hcoona-release-smoke-npm-v1")))]), [], "src/node",
+            "node/hcoona-release-smoke-npm-v1")))]) with
+    { Full = true }, [], "src/node",
         new(Candidate, [new("node22", "22.x", "22.1.0"), new("node24", "24.x", null)],
             "10.0.0", ["mise.toml", "eng/node-release-schedule.json"], "node22",
             new string('d', 40), "24.1.0", 22, []));
@@ -137,7 +139,7 @@ internal sealed class CiCallerState : IDisposable
         CheckStatus status) => new(Candidate, [.. group.Adopted.Checks
             .Where(c => c.Work.Key.Variant == runtime)
             .Select(c => new CheckResult(Candidate, c.Work.Key, status))],
-            [], [], [], runtime, null);
+            [], [], [], runtime, null, group.Adopted);
 
     internal static PlannedCheck Check(string target, string operation, string variant,
         Dictionary<string, string>? arguments = null, string? preset = null,
@@ -152,10 +154,14 @@ internal sealed class CiCallerState : IDisposable
     internal void WriteDotNetPlan(CiPlan plan) =>
         Put("transfer/dotnet-plan.json", plan, TransferJson.Default.CiPlan);
 
-    internal void WriteDotNetGroup(string directory, string group, params CheckResult[] results) =>
-        Put($"groups/{directory}/{DotNetCiCaller.GroupResults}",
-            new DotNetGroupResultSet(group, Candidate, results),
-            TransferJson.Default.DotNetGroupResultSet);
+    internal void WriteDotNetGroup(string artifact, string group, CiPlan original,
+        params CheckResult[] results)
+    {
+        string path = Make("groups");
+        Put(Path.Combine(path, DotNetCiCaller.GroupReceiptFile(artifact)),
+            new CiGroupReceipt(group, original.Candidate, results, original),
+            TransferJson.Default.CiGroupReceipt);
+    }
 
     internal static Call Run(int expected, params string[] args)
     {

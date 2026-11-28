@@ -482,7 +482,8 @@ the planned Python version when `python` is declared, and `actions/setup-node`
 with the planned Node.js version when `node` is declared. It does not install
 tools through mise. `ci caller-dotnet execute` takes the group key, executes only
 the checks of that group (package preset checks belong to `none`) in one test
-session, and the job uploads `dotnet-group-results-<key>`.
+session. The job retains diagnostics in `dotnet-group-results-<key>` and uploads
+`dotnet-group-receipt-<key>.json` as a single unarchived result file.
 
 Before its build session, the executor validates the provisioned tools and
 fails closed. It resolves each declared tool on the job `PATH`:
@@ -500,16 +501,19 @@ resolve npm.
 
 A `dotnet-results` job, named `.NET results`, needs `scope` and `dotnet-tests`,
 runs unless cancelled and executes `ci caller-dotnet join`. The join downloads
-the original plan and every `dotnet-group-results-*` artifact. It requires
-exactly one result set for each planned group and no other; each set covers
-exactly its group's checks, once each. It then collects the union against the
-original plan through the existing result collector. `Validate` needs both
+the original plan and every `dotnet-group-receipt-*.json` artifact without
+decompression. The native single-file artifact name and the receipt must name
+the same planned producer, whether one or many artifacts arrive. The join
+requires exactly one set for each planned group and no other. Each set carries
+the whole original plan from its execution job, reports only its group's checks
+and covers every required key in that group exactly once. The engine joins these
+sets against the independently downloaded original. `Validate` needs both
 `dotnet-tests` and `dotnet-results`.
 
 Planning failure fails `scope`, and no group runs. A failed, cancelled or
-missing group leaves failed or missing results. Extra, duplicated or misplaced
-results fail the join even when their statuses passed. Any of these fails
-`Validate`.
+missing group leaves failed or missing results. An extra or misplaced result,
+or a repeated required result, fails the join even when it reports a pass. Any
+of these fails `Validate`.
 
 Qualify the declaration and version reads, including
 their failure cases; plan reading; partition and exact join with missing,

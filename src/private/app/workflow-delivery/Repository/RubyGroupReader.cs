@@ -62,7 +62,7 @@ internal static class RubyGroupReader
             throw new InvalidDataException("Ruby collection returned different endpoints.");
         RubyFactAssembly assembly = RubyFactsAssembler.Assemble(beforeFacts, afterFacts,
             comparison.ChangedPaths, request.Full);
-        return new(ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons), before, after);
+        return new(CiPlanner.Plan(assembly.Request, assembly.PairedReasons), before, after);
     }
 
     private static RubyFactsEndpoint WithOtherResponsibilities(RubyFactsEndpoint inputs,

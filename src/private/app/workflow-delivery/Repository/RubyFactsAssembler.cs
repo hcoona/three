@@ -173,7 +173,7 @@ internal static class RubyFactsAssembler
         var facts = new RepositoryFacts(endpoint.Revision.Commit, Scope,
             quality.ToArray(), [], [], []);
         // Validate complete available obligations, including unselected and basis-only owners.
-        _ = ImpactPlanner.Plan(new(facts, facts, [], true));
+        _ = CiPlanner.Plan(new(facts, facts, [], true));
         return (facts, entries,
             endpoint.Native.Inputs.ToLookup(input => input.Path, StringComparer.Ordinal),
             endpoint.OperationInputs.ToLookup(input => input.Path, StringComparer.Ordinal),

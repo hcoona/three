@@ -46,7 +46,7 @@ public sealed class PythonFactsAssemblerTests
         new(directory, directory, [], [], null, "python/package-v1", checks ?? [Check(directory)]);
 
     private static CiPlan Plan(PythonFactAssembly assembly) =>
-        ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
+        CiPlanner.Plan(assembly.Request, assembly.PairedReasons);
 
     [TestMethod]
     public void MixedEndpointsReachCandidateOnlyTargetWithoutProxy()

@@ -73,17 +73,18 @@ when final bytes match.
 
 ### Source Layout
 
-| Directory       | Contents                                                                        |
-| --------------- | ------------------------------------------------------------------------------- |
-| `CI/`           | Contracts, impact planning, per-ecosystem group execution and result collection |
-| `CI/Callers/`   | Typed CI callers composing each ecosystem's requests and transfers              |
-| `Core/`         | Pure Release decisions for browser-store version reads and submissions          |
-| `Repository/`   | Native fact readers and assemblers, CI scope and Git materialization            |
-| `Release/`      | Release requests, preparation, job inputs, state and completion                 |
-| `Destinations/` | Registry observation, publication and the shared registry HTTP client           |
-| `Ecosystems/`   | Shared package build, inspection and clean consumption used by CI and Release   |
-| `Platform/`     | Git, native processes, bounded paths and the .NET CLI                           |
-| `Native/`       | Python and Ruby helper scripts and their generated message schemas              |
+| Directory       | Contents                                                                      |
+| --------------- | ----------------------------------------------------------------------------- |
+| `CI/`           | Per-ecosystem group execution and native check receipts                       |
+| `CI/Callers/`   | Typed CI callers composing each ecosystem's requests and transfers            |
+| `Core/`         | CI contracts and paired impact rules; pure browser-store Release decisions    |
+| `Engine/`       | CI obligation planning, partition joins and required-result collection        |
+| `Repository/`   | Native fact readers and assemblers, CI scope and Git materialization          |
+| `Release/`      | Release requests, preparation, job inputs, state and completion               |
+| `Destinations/` | Registry observation, publication and the shared registry HTTP client         |
+| `Ecosystems/`   | Shared package build, inspection and clean consumption used by CI and Release |
+| `Platform/`     | Git, native processes, bounded paths and the .NET CLI                         |
+| `Native/`       | Python and Ruby helper scripts and their generated message schemas            |
 
 ## Implemented Scope
 
@@ -112,10 +113,12 @@ blocks planning; it does not silently select everything. Explicit full
 validation remains available.
 
 Projects select supported quality presets through their existing declarations.
-All selected required checks and supported variants must return satisfied
-results. Missing, skipped, cancelled or incompatible required outcomes cannot
-pass. Native tools own build ordering and caches; Actions owns job execution and
-concurrency. The application supplies no general graph scheduler or cache layer.
+Each selected required check must pass exactly once. Node runtime and .NET tool
+group receipts carry the original plan used for execution; a different basis,
+candidate, plan or producer cannot fill a gap. Advisory outcomes remain visible
+without gating success. Native tools own build ordering and caches; Actions owns
+job execution and concurrency. The application supplies no general graph
+scheduler or cache layer.
 
 ### Native Node CI Caller
 

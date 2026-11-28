@@ -27,7 +27,7 @@ public sealed class RubyFactsAssemblerTests
     }
 
     private static CiPlan Plan(RubyFactAssembly assembly) =>
-        ImpactPlanner.Plan(assembly.Request, assembly.PairedReasons);
+        CiPlanner.Plan(assembly.Request, assembly.PairedReasons);
 
     [TestMethod]
     [DataRow(".")]

@@ -509,6 +509,15 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - name: Transfer the required group receipt as one immutable file
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ runner.temp }}/dotnet-execution/${{ matrix.group.key }}/dotnet-group-receipt-${{ matrix.group.key }}.json
+          archive: false
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Reject canceled validation
         if: cancelled()
         shell: bash
@@ -558,9 +567,11 @@ jobs:
       - name: Receive every .NET group result
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          pattern: dotnet-group-results-*
+          pattern: dotnet-group-receipt-*.json
           path: ${{ runner.temp }}/dotnet-group-results
           merge-multiple: true
+          skip-decompress: true
+          digest-mismatch: error
 
       - name: Join the group results against the unchanged original native plan
         shell: bash

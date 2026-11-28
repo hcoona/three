@@ -155,12 +155,14 @@ internal static class CiCallerTransfer
             throw new InvalidDataException("Scope requires full native commit identities.");
     }
 
-    internal static void Plan(CiPlan plan, string basis, string candidate, string scope)
+    internal static void Plan(CiPlan plan, string basis, string candidate, string scope,
+        bool? full = null)
     {
         Commit(basis); Commit(candidate);
-        if (plan.Comparison != basis || plan.Candidate != candidate || plan.Scope != scope)
+        if (plan.Comparison != basis || plan.Candidate != candidate || plan.Scope != scope ||
+            (full.HasValue && plan.Full != full.Value))
             throw new InvalidDataException("The original CI plan has a different binding.");
-        _ = ResultCollector.Collect(plan, []);
+        plan.Validate();
     }
 
     internal static void WritePlan(string directory, CiPlan plan)

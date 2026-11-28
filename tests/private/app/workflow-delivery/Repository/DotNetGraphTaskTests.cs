@@ -902,6 +902,32 @@ public sealed class DotNetGraphTaskTests(TestContext context)
     }
 
     [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    [Timeout(30000, CooperativeCancellation = true)]
+    public async Task ControlIndirectInputChecksFollowEvaluatedReferences(bool referenced)
+    {
+        using var fixture = new GraphFixture();
+        const string sibling = "src/private/app/workflow-delivery/Extra/Extra.csproj";
+        fixture.ControlProject(referenced ? References("Extra/Extra.csproj") : "");
+        fixture.SdkProject(sibling, body: Items("""<Reference Include="System.Xml" />"""));
+        fixture.Entry(NodeGroupReader.ControlProject, sibling);
+        fixture.Commit(NodeGroupReader.ControlProject, sibling);
+        if (referenced)
+        {
+            InvalidDataException failure = await RejectAsync(fixture);
+            Assert.Contains("Control references require explicit native HintPaths",
+                failure.Message);
+        }
+        else
+        {
+            DotNetGraphResponse graph = await fixture.ReadAsync(context.CancellationToken);
+            Assert.Contains(fixture.PathOf(sibling),
+                graph.Nodes.Select(node => node.Identity.Project));
+        }
+    }
+
+    [TestMethod]
     [DataRow("<CompilerResponseFile>unadapted-file</CompilerResponseFile>", null)]
     [DataRow("<AdditionalLibPaths>unadapted-file</AdditionalLibPaths>", null)]
     [DataRow("<KeyOriginatorFile>unadapted-file</KeyOriginatorFile>", null)]

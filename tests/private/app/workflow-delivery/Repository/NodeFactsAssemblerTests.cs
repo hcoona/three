@@ -722,7 +722,7 @@ public sealed class NodeFactsAssemblerTests
         };
 
         CiPlan assembled = await NodeScenario.Plan(basis, candidate, "src/a/index.js");
-        CiPlan supplied = ImpactPlanner.Plan(new(before, after, ["src/a/index.js"], false));
+        CiPlan supplied = CiPlanner.Plan(new(before, after, ["src/a/index.js"], false));
 
         Assert.AreEqual(JsonSerializer.Serialize(supplied, TransferJson.Default.CiPlan),
             JsonSerializer.Serialize(assembled, TransferJson.Default.CiPlan));

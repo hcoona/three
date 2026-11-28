@@ -106,7 +106,8 @@ public sealed class ControlTestInputsTests(TestContext context)
         {
             Graph = evaluated.Graph with
             {
-                Edges = [new(control.Identity, new("/checkout/other.csproj", new()))],
+                Edges = [new(control.Identity, new(Path.GetFullPath("other.csproj",
+                    evaluated.Graph.Root), control.Identity.Globals))],
             },
         };
 
@@ -119,30 +120,51 @@ public sealed class ControlTestInputsTests(TestContext context)
     [TestMethod]
     [DataRow(true)]
     [DataRow(false)]
-    public void CoreInputsFollowTheEvaluatedProjectReference(bool referenced)
+    public void CoreInputsFollowTheTransitiveEvaluatedProjectReferences(bool referenced)
     {
         const string coreRoot = "src/private/app/workflow-delivery/Core/";
+        const string coreProject = coreRoot + "WorkflowDelivery.Core.csproj";
+        const string engineProject =
+            "src/private/app/workflow-delivery/Engine/WorkflowDelivery.Engine.csproj";
         const string source = coreRoot + "ReleaseDecisions.cs";
         const string restoreLock = coreRoot + "packages.lock.json";
         const string configuration = coreRoot + "version.json";
         DotNetRevisionInputs inputs = EvaluatedControl();
         DotNetGraphNode cli = Assert.ContainsSingle(inputs.Nodes).Native;
-        var core = cli with { Identity = new("/checkout/" + ControlInputs.CoreProject, new()) };
+        string PathOf(string path) => Path.GetFullPath(path, inputs.Graph.Root);
+        var engine = cli with { Identity = new(PathOf(engineProject), cli.Identity.Globals) };
+        var core = cli with { Identity = new(PathOf(coreProject), cli.Identity.Globals) };
+        var alternate = core with
+        {
+            Identity = core.Identity with
+            { Globals = new(core.Identity.Globals) { ["Flavor"] = "B" } },
+            VersionBaseDirectory = PathOf("other"),
+        };
+        var unrelatedEdge = new DotNetGraphEdge(alternate.Identity, new(PathOf("other.csproj"),
+            cli.Identity.Globals));
         inputs = inputs with
         {
             Revision = inputs.Revision with
             {
                 Entries = [.. inputs.Revision.Entries,
-                    NodeScenario.File(ControlInputs.CoreProject), NodeScenario.File(source),
-                    NodeScenario.File(restoreLock)],
+                    NodeScenario.File(engineProject), NodeScenario.File(coreProject),
+                    NodeScenario.File(source), NodeScenario.File(restoreLock)],
             },
             Graph = inputs.Graph with
-            { Edges = referenced ? [new(cli.Identity, core.Identity)] : [] },
-            Nodes = [.. inputs.Nodes, new(ControlInputs.CoreProject, core, [source])],
-            Inputs = [.. inputs.Inputs, new(restoreLock, new("/checkout/" + restoreLock,
-                "RestoreLock", "LockedRestore", core.Identity))],
+            {
+                Edges = referenced
+                    ? [new(cli.Identity, engine.Identity), new(engine.Identity, core.Identity),
+                        unrelatedEdge] : [new(engine.Identity, core.Identity), unrelatedEdge],
+            },
+            Nodes = [.. inputs.Nodes, new(engineProject, engine, [engineProject]),
+                new(coreProject, core, [source]), new(coreProject, alternate, [coreRoot + "B.cs"])],
+            Inputs = [.. inputs.Inputs, new(restoreLock, new(PathOf(restoreLock),
+                "RestoreLock", "LockedRestore", core.Identity)), new(coreRoot + "b.lock",
+                new(PathOf(coreRoot + "b.lock"), "RestoreLock", "LockedRestore",
+                    alternate.Identity))],
             SelectionInputs = [.. inputs.SelectionInputs, new(configuration,
-                [ControlInputs.CoreProject])],
+                [coreProject]), new(coreRoot + "alternate.json", [coreProject])],
+            Versions = [new(inputs.Revision.Commit, "other", [coreRoot + "alternate.json"], [])],
         };
 
         ControlSourceInput[] coreInputs = ControlInputs.Read(inputs, true)!.Sources
@@ -157,17 +179,24 @@ public sealed class ControlTestInputsTests(TestContext context)
     private static DotNetRevisionInputs EvaluatedControl()
     {
         string project = NodeGroupReader.ControlProject;
-        var identity = new DotNetNodeIdentity("/checkout/" + project, new());
+        string root = Path.Combine(Path.GetTempPath(), "control-endpoint");
+        var identity = new DotNetNodeIdentity(Path.GetFullPath(project, root), new()
+        {
+            ["Configuration"] = "Debug",
+            ["ContinuousIntegrationBuild"] = "true",
+            ["RestoreLockedMode"] = "true",
+        });
         var node = new DotNetGraphNode(identity, false, new("Debug", "net10.0"), "", "", [],
             "None");
         string[] paths = [project, "control/Program.cs", "shared/runtime.dll",
             "control/Native/facts.rb"];
         var revision = new GitRevision(NodeScenario.Candidate, paths.Select(
             NodeScenario.File).ToArray());
-        return new(revision, new(revision.Commit, "/checkout", "/checkout/dirs.proj", [], [], []),
+        return new(revision,
+            new(revision.Commit, root, Path.Combine(root, "dirs.proj"), [], [], []),
             [new(project, node, [project, "control/Program.cs", "control/Native/facts.rb"])],
-            [new("shared/runtime.dll", new("/checkout/shared/runtime.dll", "ReferenceHintPath",
-                "Evaluation", identity))],
+            [new("shared/runtime.dll", new(Path.GetFullPath("shared/runtime.dll", root),
+                "ReferenceHintPath", "Evaluation", identity))],
             [], new Dictionary<string, QualitySelection?>(),
             [new SharedInput("Directory.Build.targets", [project])], []);
     }

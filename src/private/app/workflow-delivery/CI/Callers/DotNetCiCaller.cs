@@ -115,7 +115,7 @@ internal static class DotNetCiCaller
             [.. control.Basis.Inputs, .. control.Candidate.Inputs],
             readback.Plan.Checks.Select(c => c.Work.Key.Target).Distinct(StringComparer.Ordinal));
         CiCallerTransfer.Plan(readback.Plan, request.Basis.Reference,
-            request.Candidate.Reference, Scope);
+            request.Candidate.Reference, Scope, request.Full);
         CiCallerTransfer.Write(Path.Combine(transfer, "dotnet-plan.json"), readback.Plan,
             TransferJson.Default.CiPlan);
         CiCallerTransfer.Write(Path.Combine(Path.GetDirectoryName(requestPath)!, "readback.json"),
@@ -209,9 +209,9 @@ internal static class DotNetCiCaller
             TransferJson.Default.DotNetGroupRunResult);
         if (result.Candidate != candidate)
             throw new InvalidDataException(".NET result has a different original candidate.");
-        CiCallerTransfer.Write(Path.Combine(directory, GroupResults),
-            new DotNetGroupResultSet(group, candidate, result.Results),
-            TransferJson.Default.DotNetGroupResultSet);
+        CiCallerTransfer.Write(Path.Combine(directory, GroupReceiptFile(group)),
+            new CiGroupReceipt(group, candidate, result.Results, original),
+            TransferJson.Default.CiGroupReceipt);
         return CiCallerTransfer.WriteOutcome(directory, plan, result.Outcome, result.Results, [
             .. result.Retained.Failures.Select(failure => new CiCallerFailure(failure.Key,
                 failure.Error)),
@@ -221,11 +221,9 @@ internal static class DotNetCiCaller
                 command.Result)), diagnostics);
     }
 
-    internal const string GroupResults = "group-results.json";
+    internal static string GroupReceiptFile(string group) => $"dotnet-group-receipt-{group}.json";
 
-    // The downloaded group artifacts hold one <key>/group-results.json each. A missing group
-    // leaves missing results and fails the join; any other entry or misplaced, repeated or
-    // extra result fails.
+    // Each raw artifact is one receipt; its service filename is not a path inside an archive.
     internal static CiOutcome Join(string root, string transfer, string results,
         string directory, string basis, string candidate)
     {
@@ -234,53 +232,24 @@ internal static class DotNetCiCaller
             TransferJson.Default.CiPlan);
         CiCallerTransfer.Plan(plan, basis, candidate, Scope);
         string[] groups = DotNetTools.Groups(plan).Select(group => group.Key).ToArray();
-        var sets = new Dictionary<string, DotNetGroupResultSet>(StringComparer.Ordinal);
+        var producers = groups.ToDictionary(GroupReceiptFile, group => group,
+            StringComparer.Ordinal);
+        var sets = new Dictionary<string, CiGroupReceipt>(StringComparer.Ordinal);
         results = CiCallerTransfer.Absolute(results);
         if (Directory.Exists(results))
             foreach (string entry in Directory.EnumerateFileSystemEntries(results))
             {
-                string key = Path.GetFileName(entry);
-                if (!groups.Contains(key, StringComparer.Ordinal) || !Directory.Exists(entry))
-                    throw new InvalidDataException("Unplanned .NET group result: " + key);
-                string path = Path.Combine(entry, GroupResults);
-                if (File.Exists(path)) sets.Add(key, CiCallerTransfer.Read(path,
-                    TransferJson.Default.DotNetGroupResultSet));
+                string artifact = Path.GetFileName(entry);
+                if (!producers.TryGetValue(artifact, out string? key) || !File.Exists(entry))
+                    throw new InvalidDataException("Unplanned .NET group result: " + artifact);
+                sets.Add(key, CiCallerTransfer.Read(entry, TransferJson.Default.CiGroupReceipt));
             }
         else if (File.Exists(results))
             throw new InvalidDataException("Unplanned .NET group result: " + results);
-        (CheckResult[] union, CiOutcome outcome) = Join(plan, sets);
+        (CheckResult[] union, CiOutcome outcome) = ResultCollector.Join(plan, groups,
+            DotNetTools.Group, sets, ".NET group", requireCompleteSets: true);
         CiCallerTransfer.Fresh(directory);
         return CiCallerTransfer.WriteOutcome(directory, plan, outcome, union,
             [], [], diagnostics: null);
     }
-
-    internal static (CheckResult[] Results, CiOutcome Outcome) Join(CiPlan plan,
-        IReadOnlyDictionary<string, DotNetGroupResultSet> sets)
-    {
-        foreach ((string key, DotNetGroupResultSet set) in sets)
-        {
-            CiPlan selected = DotNetTools.Select(plan, key);
-            CheckKey[] keys = set.Results.Select(result => result.Key).ToArray();
-            if (set.Group != key || set.Candidate != plan.Candidate ||
-                keys.Distinct().Count() != keys.Length ||
-                !keys.ToHashSet().SetEquals(selected.Checks.Select(check => check.Work.Key)) ||
-                ResultCollector.Collect(selected, set.Results).Errors.Length != 0)
-                throw new InvalidDataException(
-                    ".NET group result does not cover exactly its planned checks: " + key);
-        }
-        CheckResult[] union = sets.Values.SelectMany(set => set.Results).ToArray();
-        CiOutcome outcome = ResultCollector.Collect(plan, union);
-        // Every planned group, including one with no checks, must report its own result set.
-        string[] absent = DotNetTools.Groups(plan).Select(group => group.Key)
-            .Where(key => !sets.ContainsKey(key)).ToArray();
-        return absent.Length == 0 ? (union, outcome) : (union, outcome with
-        {
-            Satisfied = false,
-            Errors = [.. outcome.Errors, .. absent.Select(key =>
-                ".NET group reported no result set: " + key)],
-        });
-    }
 }
-
-internal sealed record DotNetGroupResultSet(string Group, string Candidate,
-    CheckResult[] Results);
